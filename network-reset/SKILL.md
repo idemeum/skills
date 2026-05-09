@@ -92,20 +92,22 @@ Call `check_connectivity` one final time to confirm all targets are reachable. R
 
 ---
 
-## Graceful degradation when corrective steps deny
+## Privilege handling — helper-routed (default) vs. fallback
 
-Steps 4 (`renew_dhcp_lease`), 5 (`flush_dns_cache`), 8 (`forget_wifi_network`), and 9 (`reset_network_settings`) require administrator privileges. For non-admin users the G4 scope check returns `outcome: "denied"` and the corrective step does not run — but this does **not** abort the workflow. Continue diagnostic steps to completion; the diagnosis itself is the deliverable.
+Steps 4 (`renew_dhcp_lease`), 5 (`flush_dns_cache`), 8 (`forget_wifi_network`), and 9 (`reset_network_settings`) require administrator privileges to execute the underlying OS commands. The agent handles this transparently in two modes:
 
-When a corrective step denies due to insufficient privileges, in the response:
+**When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): the agent routes these steps through the helper daemon and they complete silently for **all users — admin and non-admin alike**. The user sees the step succeed; the diagnosis is the corrective step. No "this requires admin" messaging is needed in the response.
 
-1. **Do not present the denied step as a failure.** State plainly that the step requires admin privileges and the agent could not run it.
+**When the helper is unavailable** (`HELPER_DAEMON_ENABLED=false`, helper not installed, or helper unreachable — `denyCategory: "helper-unavailable"` / `"helper-error"` / `"scope-boundary"`): the corrective step denies and the diagnostic continues to completion — the diagnosis itself is still the deliverable. In this fallback case, in the response:
+
+1. **Do not present the denied step as a failure.** State plainly that the agent couldn't complete the privileged step on this device and explain why (helper unavailable / not enabled / non-admin user).
 2. **Provide a self-service path the user can follow themselves.** Examples:
    - DHCP renew (macOS): System Settings → Wi-Fi → Details on the active network → "Renew DHCP Lease"
    - DHCP renew (Windows): Settings → Network & Internet → Status → "Network reset"
    - DNS flush (Windows): admin Command Prompt → `ipconfig /flushdns`
    - Forget Wi-Fi (macOS): System Settings → Wi-Fi → Details on the saved network → "Forget This Network"
    - Forget Wi-Fi (Windows): Settings → Network & Internet → Wi-Fi → "Manage known networks" → Forget
-3. **Tell the user the diagnosis is being packaged for IT escalation** — the support ticket created at the end of the run captures the interface state, signal strength, proxy configuration, and firewall status, so a tier-1 helpdesk can pick up exactly where the agent left off.
+3. **Tell the user the diagnosis is being packaged for IT escalation** — the support ticket captures the interface state, signal strength, proxy configuration, and firewall status, so a tier-1 helpdesk can pick up exactly where the agent left off. IT can also investigate why the helper is unavailable on this device.
 
 ---
 

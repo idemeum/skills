@@ -158,6 +158,18 @@ Escalate to IT when:
 
 ---
 
+## Cross-skill redirects
+
+Cloud-sync issues often share root causes with problems other skills handle better. Before drilling deeper into a sync diagnostic, check whether the symptom maps to one of these adjacent skills and redirect — the user gets a faster, more focused fix and the diagnostic isn't repeated:
+
+- **Disk full / "no space" errors during sync** → use the **Disk Cleanup** skill (`disk-cleanup`) first to free space, then retry cloud sync. Sync clients commonly stop with low-space warnings that an empty `~/.Trash` or a Downloads cleanup will resolve in minutes.
+- **"Stale credentials" / "expired token" / authentication-loop errors** → use the **Cloud IDP Password Reset** skill (`cloud-idp-password-reset`) to refresh the user's identity-provider credentials. SSO-mediated sync clients (OneDrive for Business, Google Drive on Workspace, iCloud after an Apple-ID password change) re-authenticate cleanly after a successful IDP reset.
+- **Network unreachable / "cannot reach cloud service" with no captive portal** → use the **Network Reset** skill (`network-reset`) to restore basic connectivity (`flush_dns_cache`, `renew_dhcp_lease`, etc. — most are now non-admin via the privileged helper). Once `check_connectivity` reports the cloud endpoint reachable, retry the cloud-sync diagnostic.
+
+When you redirect, keep the cloud-sync diagnostic state captured so far in the run report — it's still useful context for whichever skill takes over, and it goes into the IT-escalation ticket regardless of which skill closes the run.
+
+---
+
 ## Edge cases
 
 - **OneDrive Files On-Demand** — by default, OneDrive on macOS Sonoma+ uses File Provider (on-demand sync). Files appear locally but contents are downloaded on first open. A user reporting "the file isn't there" may actually have the placeholder but not the content. The current tooling can't differentiate; advise the user to right-click the file and select "Always keep on this device"

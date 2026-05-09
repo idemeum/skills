@@ -5,6 +5,8 @@ license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
   - detect_identity_provider
+  - check_mdm_enrollment
+  - check_agent_heartbeat
   - probe_idp_sspr_available
   - open_idp_sspr_portal
   - request_idemeum_idp_reset
@@ -21,6 +23,8 @@ metadata:
   prerequisites:
     before-corrective:
       - detect_identity_provider
+      - check_mdm_enrollment
+      - check_agent_heartbeat
       - probe_idp_sspr_available
   maxAggregateRisk: high
   userLabel: "Reset my Okta/Entra/Google password"
@@ -57,6 +61,29 @@ The new password is NEVER handled by the agent. Either the user types it into th
 
 **Step 1 — Detect the IDP**
 Call `detect_identity_provider` (no parameters) to identify which cloud IDP the device is joined to. The tool returns `{ primary, secondary, evidence }` where `primary` is one of `okta | entra | google | unknown`. If `primary === "unknown"`, inform the user that no supported IDP was detected on this device and end the run — the end-of-run ticket will capture the outcome so IT can follow up. Do not attempt subsequent steps.
+
+**Step 1.5 — Device-identity gate (security)**
+
+Before attempting any password reset, confirm this device is in a healthy state for cloud-IDP work. Conditional-Access policies on most enterprise IDPs gate SSPR on "is this a compliant managed device with a current posture report?" — running the cleanup steps blind on an unmanaged or out-of-touch device leads to confusing, hard-to-diagnose downstream failures. Both checks below are user-scope diagnostics; no admin or privileged operations.
+
+*1.5a. MDM enrollment.* Call `check_mdm_enrollment`. The tool returns `enrolled: bool` plus the management system (Jamf, Intune, JumpCloud) and enrollment evidence.
+
+*1.5b. Management agent heartbeat.* Call `check_agent_heartbeat`. The tool reports whether the device's management agent has communicated with its cloud recently (default freshness window: 1 hour).
+
+Branch on the combined results:
+
+- **Both healthy** (managed + recent heartbeat) → proceed to Step 2 with confidence. Conditional-Access policies that gate SSPR on "compliant device" will recognise this device.
+- **Unmanaged device** (`enrolled: false`) → tell the user this device is not enrolled in IT's management system. Recommend one of:
+  1. Initiate the password reset from a managed corp device, where the IT trust chain is intact.
+  2. Use the **cloud-mediated path (Step 5)** which routes through idemeum cloud's IT-trusted channel and does not depend on local-device management state.
+
+  If the user accepts neither option, end the run cleanly — the end-of-run ticket captures the unmanaged-device finding so IT has the context.
+
+- **Managed but stale heartbeat** (`enrolled: true`, agent heartbeat unhealthy) → warn the user the management agent is not reaching its cloud right now. Surface the heartbeat output. Conditional-Access policies may reject the SSPR with messages that look like account locks (because the device's posture report is stale, not because the account is actually locked). Recommend one of:
+  1. Wait 5–10 minutes and try again — transient network issues commonly self-resolve.
+  2. Escalate to IT — the ticket includes the `check_agent_heartbeat` output so IT can investigate the management agent independently.
+
+This is a hard gate, not a soft warning. Steps 2+ assume a managed device with a current heartbeat.
 
 **Step 2 — Probe SSPR availability**
 Call `probe_idp_sspr_available` with `idp` from Step 1 and, when the user is on Okta, the tenant slug the user supplies (e.g. "acme" for `acme.okta.com`). For Entra supply the tenant directory if you know it; the tool falls back to the `common` endpoint otherwise. The result `{ available: "yes" | "no" | "unknown", evidence }` drives Step 3's branch decision.

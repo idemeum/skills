@@ -92,8 +92,14 @@ Call `check_kerberos_ticket` with `expiryWarnMinutes: 60`. The tool lists active
 
 **Step 4 — Renew Kerberos ticket (if expiring or expired)**
 Call `renew_kerberos_ticket` with `dryRun: true`. The tool's G4 gate fires the dry-run preview (showing `kinit -R` on macOS, `klist purge && gpupdate /force` on Windows). After user confirmation, call `dryRun: false`.
+
+**On Windows** with the privileged helper daemon installed (default), the `renew_kerberos_ticket` op runs through the helper as `LocalSystem` and completes silently for **all users — admin and non-admin alike**. AD reissues a fresh TGT on next access. No "this requires admin" messaging is needed.
+
+**On macOS** the op is **not yet supported via the helper** in v1 fast-follow — Heimdal / MIT-KfM integration is deferred. The handler returns `helper-error` with `stderr: "Platform not supported"` on macOS; the user must renew interactively (`kinit <principal>` in Terminal). The agent will not handle the password.
+
+Status outcomes:
 - `status === "renewed"` → success; re-run `check_kerberos_ticket` to confirm a valid ticket is back in place.
-- `status === "interactive"` → the ticket is not renewable (typical after full expiry). Surface the tool's message verbatim — the user must open a terminal and run `kinit <principal>` themselves; the agent will **not** handle the password.
+- `status === "interactive"` → the ticket is not renewable (macOS path; or Windows when the helper is unavailable / disabled). Surface the tool's message verbatim — the user must open a terminal and run `kinit <principal>` themselves; the agent will **not** handle the password.
 - `status === "failed"` → surface the tool's error message and continue to Step 5.
 
 **Step 5 — Enumerate client certificates**

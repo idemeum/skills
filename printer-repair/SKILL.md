@@ -100,13 +100,15 @@ After any repair, ask the user to send a real print job and confirm it completes
 
 ---
 
-## Graceful degradation when corrective steps deny
+## Privilege handling — helper-routed (default) vs. fallback
 
-Steps 3 (`clear_print_queue`), 5 (`restart_cups`), 7 (`remove_printer` + `add_printer`), and 8 (`reset_printing_system`) require administrator privileges. For non-admin users the G4 scope check returns `outcome: "denied"` and the corrective step does not run — but this does **not** abort the workflow. Continue diagnostic steps; the diagnosis itself is the deliverable.
+Steps 3 (`clear_print_queue`), 5 (`restart_cups`), 7 (`remove_printer` + `add_printer`), and 8 (`reset_printing_system`) require administrator privileges to execute the underlying OS commands. The agent handles this transparently in two modes:
 
-When a corrective step denies due to insufficient privileges, in the response:
+**When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): the agent routes these steps through the helper daemon and they complete silently for **all users — admin and non-admin alike**. The user sees the step succeed end-to-end. No "this requires admin" messaging is needed in the response.
 
-1. **Do not present the denied step as a failure.** State plainly that the step requires admin privileges and the agent could not run it.
+**When the helper is unavailable** (`HELPER_DAEMON_ENABLED=false`, helper not installed, or helper unreachable — `denyCategory: "helper-unavailable"` / `"helper-error"` / `"scope-boundary"`): the corrective step denies and the diagnostic continues to completion — the diagnosis is still the deliverable. In this fallback case, in the response:
+
+1. **Do not present the denied step as a failure.** State plainly that the agent couldn't complete the privileged step on this device and explain why (helper unavailable / not enabled / non-admin user).
 2. **Provide a self-service path the user can follow themselves.** Examples:
    - Clear stuck jobs (macOS): System Settings → Printers & Scanners → click the printer → "Open Print Queue" → click the stuck job → press the X to cancel. The user can clear their own jobs without admin.
    - Clear stuck jobs (Windows): Settings → Bluetooth & devices → Printers & scanners → click the printer → Open print queue → right-click each stuck job → Cancel.
@@ -114,7 +116,7 @@ When a corrective step denies due to insufficient privileges, in the response:
    - Restart print spooler (Windows): user can run `Restart-Service Spooler` only from an elevated PowerShell prompt — recommend they ask IT.
    - Remove and re-add (macOS): System Settings → Printers & Scanners → click printer → press the minus button to remove; click the plus button to re-add by IP.
    - Remove and re-add (Windows): Settings → Bluetooth & devices → Printers & scanners → click printer → Remove; then Add device.
-3. **Tell the user the diagnosis is being packaged for IT escalation** — the support ticket created at the end of the run captures the printer list, queue state, and network reachability so a tier-1 helpdesk can pick up exactly where the agent left off.
+3. **Tell the user the diagnosis is being packaged for IT escalation** — the support ticket captures the printer list, queue state, and network reachability so a tier-1 helpdesk can pick up exactly where the agent left off. IT can also investigate why the helper is unavailable on this device.
 
 ---
 
@@ -123,7 +125,7 @@ When a corrective step denies due to insufficient privileges, in the response:
 - **Printer shows online but jobs stuck immediately** — this often means the driver is sending a job format the printer does not understand. When re-adding via `add_printer`, use `protocol: "ipp"` with no custom PPD to use IPP Everywhere — this uses driverless printing with a format guaranteed to be compatible
 - **USB printers** — `check_printer_connectivity` tests network ports only. For a USB-connected printer, skip Step 4 entirely. If the USB printer is offline, unplug and replug the USB cable, then call `restart_cups` to force the OS to re-detect it
 - **Shared network printer via another computer** — if the printer is shared from another computer (not a direct network printer), that computer must be on and the sharing must be enabled. `check_printer_connectivity` will show the host computer's IP as reachable but the printer port may still fail if sharing is disabled
-- **CUPS requires sudo** — `restart_cups` and `reset_printing_system` on macOS require elevated privileges. If the agent cannot obtain sudo access, guide the user to open Terminal and run `sudo launchctl stop org.cups.cupsd && sudo launchctl start org.cups.cupsd` manually
+- **CUPS requires elevated privileges** — `restart_cups` and `reset_printing_system` on macOS need root to talk to `launchctl system/...`. With the privileged helper daemon installed (default), this is handled silently end-to-end. If the helper is unavailable or disabled, guide the user to open Terminal and run `sudo launchctl kickstart -k system/org.cups.cupsd` manually as the fallback.
 - **Printer IP address changes** — DHCP-assigned printer IPs can change after a router reboot. If the printer was working before and is now offline, the IP may have changed. Ask the user to print a configuration page directly from the printer's control panel to find its current IP, then remove and re-add with the new IP
 - **Windows Spooler corruption** — on Windows, if `restart_cups` (Spooler restart) does not resolve stuck jobs, the spooler spool files themselves may be corrupt. Guide the user to: stop the Spooler service, delete files in C:\Windows\System32\spool\PRINTERS, restart the Spooler. This is equivalent to `reset_printing_system` on Windows
 - **Enterprise print servers** — on corporate networks, printers may be managed via a Windows print server. In this case, `add_printer` should point to the print server's shared printer path (\\printserver\printername) rather than the printer's IP directly. If the print server itself is down, no device-side repair will help — escalate to IT

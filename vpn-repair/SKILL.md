@@ -93,18 +93,20 @@ Summarise what was found and what was fixed. If the issue persists after all ste
 
 ---
 
-## Graceful degradation when corrective steps deny
+## Privilege handling — helper-routed (default) vs. fallback
 
-Steps 7 (`reconnect_vpn`) and 8 (`flush_dns_cache`) require administrator privileges. For non-admin users the G4 scope check returns `outcome: "denied"` and the corrective step does not run — but this does **not** abort the workflow. Continue diagnostic steps; the diagnosis itself is the deliverable.
+Step 8 (`flush_dns_cache`) requires admin to execute the underlying OS command. Step 7 (`reconnect_vpn`) requires admin only on certain VPN clients that need to manipulate the network extension; some clients accept user-initiated disconnect/reconnect from the menu-bar UI without elevation.
 
-When a corrective step denies due to insufficient privileges:
+**When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): `flush_dns_cache` routes through the helper and completes silently for **all users — admin and non-admin alike**. `reconnect_vpn` is NOT in the helper allowlist (VPN clients vary too much to handle uniformly); it still depends on the underlying client's design.
+
+**When the helper is unavailable for `flush_dns_cache`** (`denyCategory: "helper-unavailable"` / `"helper-error"` / `"scope-boundary"`) or for `reconnect_vpn`:
 
 1. **Self-service for `reconnect_vpn` is unusually clean** — every enterprise VPN client (Cisco AnyConnect, GlobalProtect, Pulse Secure, NetSkope, Zscaler, Microsoft VPN) has a **Disconnect** / **Connect** toggle in its menu-bar (macOS) or system-tray (Windows) icon that works without admin. Tell the user: *"Click your VPN client's icon in the menu bar (top-right on macOS) or system tray (bottom-right on Windows), choose Disconnect, wait 5 seconds, then choose Connect. This is the same operation the agent's `reconnect_vpn` performs internally."* For most "connected but no traffic" cases this resolves the issue.
-2. **Self-service for DNS flush is harder.**
+2. **Self-service for DNS flush** (only relevant when helper is unavailable):
    - **macOS:** no clean self-service path; sleeping the laptop and waking it often refreshes the DNS resolver.
    - **Windows:** the user can run `ipconfig /flushdns` from a regular Command Prompt without admin (Windows DNS cache is per-user-accessible).
 3. **For "VPN won't connect at all" tickets** that aren't fixed by the menu-bar toggle: the diagnostic packet from Steps 1–6 (VPN status, profiles, server reachability, certificate expiry, network extension state) is enough for tier-1 IT to pick up immediately without re-running the diagnosis.
-4. **Always package the diagnostic for IT escalation** — the end-of-run ticket includes everything captured above so the user does not have to re-collect it.
+4. **Always package the diagnostic for IT escalation** — the end-of-run ticket includes everything captured above so the user does not have to re-collect it. IT can also investigate why the helper is unavailable on this device when `helper-unavailable` denies surface.
 
 ---
 
