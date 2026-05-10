@@ -52,6 +52,12 @@ interface BrowserCacheResult {
   cachePath: string;
   sizeMb:    number;
   cleared:   boolean;
+  /**
+   * Set when the clear operation reported success but post-clear size
+   * confirms the data is still there — typically a TCC denial on a
+   * protected cache directory. Includes actionable remediation text.
+   */
+  error?:    string;
 }
 
 // -- Helpers ------------------------------------------------------------------
@@ -113,8 +119,38 @@ async function processCachePath(
         fsp.rm(nodePath.join(cachePath, entry), { recursive: true, force: true }),
       ),
     );
+
+    // ── Silent-failure detection ──────────────────────────────────────────────
+    // The rm loop reports success (Promise.allSettled never throws), but
+    // individual removes may have been denied silently. Re-measure after
+    // the clear: if size barely changed, the cache wasn't actually cleared
+    // — almost always a TCC denial on a protected browser cache directory.
+    const sizeAfterMb = await getDirSizeMb(cachePath);
+    if (sizeMb > 0 && sizeAfterMb >= sizeMb * 0.9) {
+      return {
+        name, cachePath, sizeMb,
+        cleared: false,
+        error:
+          `Could not clear ${name} cache (${sizeMb} MB still present after ` +
+          `the operation). Full Disk Access is required to remove protected ` +
+          `browser cache files. Open System Settings → Privacy & Security → ` +
+          `Full Disk Access, enable AI Support Agent, then quit and relaunch.`,
+      };
+    }
+
     return { name, cachePath, sizeMb, cleared: true };
-  } catch {
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "EPERM" || code === "EACCES") {
+      return {
+        name, cachePath, sizeMb,
+        cleared: false,
+        error:
+          `Could not clear ${name} cache — macOS denied access. ` +
+          `Open System Settings → Privacy & Security → Full Disk Access, ` +
+          `enable AI Support Agent, then quit and relaunch.`,
+      };
+    }
     return { name, cachePath, sizeMb, cleared: false };
   }
 }
@@ -221,7 +257,20 @@ export async function run({
     browsers.filter((b) => b.cleared).reduce((s, b) => s + b.sizeMb, 0) * 100,
   ) / 100;
 
-  return { platform, dryRun, browsers, totalSizeMb, freedMb };
+  // Aggregate any per-browser TCC / silent-failure errors into a top-level
+  // error string so the soft-error pipeline (execution.ts → log.warn,
+  // summarizer → result bubble) surfaces them. Without this, only the
+  // per-browser entries carry the message and the user-facing summary
+  // typically loses the detail.
+  const failedBrowsers = browsers.filter((b) => b.error);
+  const error = failedBrowsers.length > 0
+    ? failedBrowsers.map((b) => b.error).join(" ")
+    : undefined;
+
+  return {
+    platform, dryRun, browsers, totalSizeMb, freedMb,
+    ...(error ? { error } : {}),
+  };
 }
 
 // -- CLI smoke test -----------------------------------------------------------

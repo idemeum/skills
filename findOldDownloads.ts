@@ -89,6 +89,23 @@ export async function run({
   try {
     dirents = await fsp.readdir(downloadsPath, { withFileTypes: true });
   } catch (err) {
+    // Distinguish TCC denial from genuinely-missing folder so the user
+    // sees an actionable remediation path rather than a generic error.
+    const code = (err as { code?: string }).code;
+    if (code === "EPERM" || code === "EACCES") {
+      return {
+        platform,
+        downloadsPath,
+        totalFiles:  0,
+        oldFiles:    [] as OldFile[],
+        totalSizeMb: 0,
+        error:
+          "Cannot read Downloads folder — macOS denied access. " +
+          "Open System Settings → Privacy & Security → Files and Folders, " +
+          "find AI Support Agent, and enable the Downloads Folder checkbox. " +
+          "Alternatively, grant Full Disk Access. Then quit and relaunch AI Support Agent.",
+      };
+    }
     throw new Error(`[find_old_downloads] Cannot read Downloads folder: ${(err as Error).message}`);
   }
 

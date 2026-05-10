@@ -16,11 +16,9 @@
 import * as fs       from "fs/promises";
 import * as os       from "os";
 import * as nodePath from "path";
-import { exec }      from "child_process";
-import { promisify } from "util";
 import { z }         from "zod";
 
-const execAsync = promisify(exec);
+import { loggedExec } from "./_shared/platform";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -66,12 +64,12 @@ interface Entry {
 
 // -- PowerShell helper --------------------------------------------------------
 
-export async function runPS(script: string): Promise<string> {
+export async function runPS(script: string, tag = "ps"): Promise<string> {
   // -EncodedCommand accepts Base64 UTF-16LE — avoids all shell quoting issues.
   const encoded = Buffer.from(script, "utf16le").toString("base64");
-  const { stdout } = await execAsync(
+  const { stdout } = await loggedExec(
     `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
-    { maxBuffer: 20 * 1024 * 1024, timeout: 30_000 },
+    { tag: `disk_scan:${tag}`, maxBuffer: 20 * 1024 * 1024, timeoutMs: 30_000 },
   );
   return stdout.trim();
 }
@@ -102,6 +100,9 @@ async function statChildren(scanPath: string): Promise<Entry[]> {
 
 async function scanDarwin(scanPath: string): Promise<Entry[]> {
   // du exits non-zero when some children are permission-denied — stdout still useful.
+  // We do NOT redirect stderr to /dev/null any more: loggedExec captures it and
+  // detects TCC patterns ("Operation not permitted", EPERM, etc.) so partial
+  // results from missing Full Disk Access become visible in idemeum-agent.log.
   let stdout = "";
   try {
     // Security: use single-quoted path to prevent shell injection.
@@ -109,9 +110,9 @@ async function scanDarwin(scanPath: string): Promise<Entry[]> {
     // or variable expansion. Escape any literal single quotes by ending
     // the string, inserting a backslash-quoted ', then restarting.
     const safePath = scanPath.replace(/'/g, `'\\''`);
-    ({ stdout } = await execAsync(
-      `du -sk '${safePath}'/* 2>/dev/null`,
-      { maxBuffer: 20 * 1024 * 1024, shell: "/bin/bash", timeout: 30_000 },
+    ({ stdout } = await loggedExec(
+      `du -sk '${safePath}'/*`,
+      { tag: "disk_scan:du", maxBuffer: 20 * 1024 * 1024, timeoutMs: 30_000 },
     ));
   } catch (err) {
     stdout = (err as { stdout?: string }).stdout ?? "";
@@ -200,11 +201,38 @@ export async function run({ path: inputPath = os.homedir() }: { path?: string })
     ? await scanWin32(scanPath)
     : await scanDarwin(scanPath);
 
+  // ── Partial-result detection ────────────────────────────────────────────────
+  // Compare the entry count we got back from `du`/PowerShell against what
+  // fs.readdir reports for the same directory. A significant shortfall is
+  // almost always a TCC denial — without Full Disk Access, du can list a
+  // path it cannot recurse into, so children disappear silently. Surface
+  // this so the user knows the scan is incomplete instead of trusting
+  // partial sizes for cleanup decisions.
+  let warning: string | undefined;
+  try {
+    const expected = (await fs.readdir(scanPath)).filter((n) => n !== ".DS_Store");
+    if (expected.length > 0) {
+      const skipped = Math.max(0, expected.length - entries.length);
+      const ratio   = skipped / expected.length;
+      if (ratio > 0.2) {
+        warning =
+          `Scan results are incomplete: ${skipped} of ${expected.length} children ` +
+          `could not be read (likely missing Full Disk Access). ` +
+          `Open System Settings → Privacy & Security → Full Disk Access, ` +
+          `enable AI Support Agent, then quit and relaunch.`;
+      }
+    }
+  } catch {
+    // readdir itself failed — main scan likely already failed too; let the
+    // empty entries result speak for itself.
+  }
+
   return {
     scannedPath: scanPath,
     platform,
     entryCount:  entries.length,
     entries,
+    ...(warning ? { warning } : {}),
   };
 }
 

@@ -22,11 +22,9 @@
 import * as fs       from "fs/promises";
 import * as os       from "os";
 import * as nodePath from "path";
-import { exec }      from "child_process";
-import { promisify } from "util";
 import { z }         from "zod";
 
-const execAsync = promisify(exec);
+import { loggedExec } from "./_shared/platform";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -61,20 +59,20 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`;
 }
 
-async function runPS(script: string): Promise<string> {
+async function runPS(script: string, tag: string): Promise<string> {
   const encoded = Buffer.from(script, "utf16le").toString("base64");
-  const { stdout } = await execAsync(
+  const { stdout } = await loggedExec(
     `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
-    { maxBuffer: 4 * 1024 * 1024 },
+    { tag: `empty_trash:${tag}`, maxBuffer: 4 * 1024 * 1024 },
   );
   return stdout.trim();
 }
 
 /** Run an AppleScript snippet via osascript; returns stdout (trimmed). */
-async function runOsa(script: string): Promise<string> {
-  const { stdout } = await execAsync(
+async function runOsa(script: string, tag: string): Promise<string> {
+  const { stdout } = await loggedExec(
     `osascript -e ${JSON.stringify(script)}`,
-    { maxBuffer: 4 * 1024 * 1024 },
+    { tag: `empty_trash:${tag}`, maxBuffer: 4 * 1024 * 1024 },
   );
   return stdout.trim();
 }
@@ -119,7 +117,7 @@ tell application "Finder"
   end repeat
 end tell
 return (itemCount as text) & "," & (totalBytes as text)`.trim();
-  const out = await runOsa(script);
+  const out = await runOsa(script, "osa-measure");
   const [countStr, bytesStr] = out.split(",");
   return {
     itemCount: parseInt(countStr ?? "0", 10) || 0,
@@ -184,7 +182,7 @@ async function emptyTrashDarwin(dryRun: boolean) {
   let method: "finder" | "fs" = "finder";
   let emptyError: string | undefined;
   try {
-    await runOsa(`tell application "Finder" to empty trash`);
+    await runOsa(`tell application "Finder" to empty trash`, "osa-empty");
   } catch (osaErr) {
     // Fall back to direct fs.rm — only works with Full Disk Access.
     method = "fs";
@@ -214,6 +212,26 @@ async function emptyTrashDarwin(dryRun: boolean) {
   const freedBytes   = Math.max(0, measured.bytes     - after.bytes);
   const itemsRemoved = Math.max(0, measured.itemCount - after.itemCount);
 
+  // ── Silent-failure detection ────────────────────────────────────────────────
+  // If the empty operation reported success (no thrown error → emptyError
+  // unset) but the before-measurement showed items and zero were actually
+  // removed, Finder accepted the AppleScript but did not perform the operation.
+  // This is the defining symptom of macOS TCC silently denying Apple Events
+  // to Finder — osascript exits 0, nothing happens. Surface a clear, actionable
+  // error so the user knows what to fix; without this, the agent reports fake
+  // success and the trash stays full.
+  if (
+    emptyError === undefined &&
+    measured.itemCount > 0 &&
+    itemsRemoved === 0
+  ) {
+    emptyError =
+      "Trash was not actually emptied (Finder reported success but the items remain). " +
+      "This usually means AI Support Agent does not have permission to automate Finder. " +
+      "Open System Settings → Privacy & Security → Automation, find AI Support Agent, " +
+      "and enable the Finder checkbox. Then quit and relaunch AI Support Agent.";
+  }
+
   return {
     dryRun:          false,
     method,
@@ -242,7 +260,7 @@ $items = $bin.Items()
   let bytes = 0;
   let items = 0;
   try {
-    const out    = await runPS(sizeScript);
+    const out    = await runPS(sizeScript, "ps-measure");
     const parsed = JSON.parse(out) as { bytes: number; items: number };
     bytes = parsed.bytes ?? 0;
     items = parsed.items ?? 0;
@@ -253,7 +271,7 @@ $items = $bin.Items()
   }
 
   const clearScript = `Clear-RecycleBin -Force -ErrorAction SilentlyContinue; exit 0`;
-  await runPS(clearScript).catch(() => { /* ignore — Clear-RecycleBin is best-effort */ });
+  await runPS(clearScript, "ps-clear").catch(() => { /* ignore — Clear-RecycleBin is best-effort */ });
 
   return { dryRun: false, itemsRemoved: items, freedBytes: bytes, freedHuman: formatBytes(bytes) };
 }

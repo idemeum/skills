@@ -86,19 +86,36 @@ function hashFile(filePath: string): Promise<string> {
   });
 }
 
+interface WalkStats {
+  dirsVisited:          number;
+  dirsPermissionDenied: number;
+}
+
+/** True if a Node fs error looks like a TCC / OS permission denial. */
+function isPermissionError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return code === "EPERM" || code === "EACCES";
+}
+
 async function walk(
   dir:        string,
   minBytes:   number,
   extensions: Set<string> | null,
   acc:        { path: string; size: number }[],
   depth:      number,
+  stats:      WalkStats,
 ): Promise<void> {
   if (depth > MAX_DEPTH) return;
+  stats.dirsVisited++;
 
   let entries: import("fs").Dirent[];
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    // Track TCC / permission denials separately so the run() result can
+    // surface a partial-coverage warning. Other errors (ENOENT, EBUSY)
+    // are still ignored silently — they're not actionable.
+    if (isPermissionError(err)) stats.dirsPermissionDenied++;
     return;
   }
 
@@ -109,7 +126,7 @@ async function walk(
 
       if (e.isDirectory()) {
         if (SKIP_DIRS.has(e.name)) return;
-        await walk(full, minBytes, extensions, acc, depth + 1);
+        await walk(full, minBytes, extensions, acc, depth + 1, stats);
       } else if (e.isFile()) {
         if (extensions && !extensions.has(nodePath.extname(e.name).toLowerCase())) return;
         try {
@@ -159,7 +176,8 @@ export async function run({
     : null;
 
   const files: { path: string; size: number }[] = [];
-  await walk(scanPath, minBytes, extSet, files, 0);
+  const walkStats: WalkStats = { dirsVisited: 0, dirsPermissionDenied: 0 };
+  await walk(scanPath, minBytes, extSet, files, 0, walkStats);
 
   // Group by size first (cheap pre-filter before hashing)
   const bySize = new Map<number, typeof files>();
@@ -212,11 +230,29 @@ export async function run({
 
   const totalWastedMb = Math.round((totalWastedBytes / (1024 * 1024)) * 100) / 100;
 
+  // ── Partial-result detection ────────────────────────────────────────────────
+  // Same logic as get_large_files: when the walk skipped a meaningful share
+  // of directories due to OS permission errors, the duplicate set is
+  // necessarily incomplete. Surface so the user knows there may be more
+  // duplicates in unscanned subtrees.
+  let warning: string | undefined;
+  if (
+    walkStats.dirsVisited > 0 &&
+    walkStats.dirsPermissionDenied / walkStats.dirsVisited > 0.2
+  ) {
+    warning =
+      `Duplicate scan is incomplete: ${walkStats.dirsPermissionDenied} of ` +
+      `${walkStats.dirsVisited} directories could not be read (likely missing ` +
+      `Full Disk Access). Open System Settings → Privacy & Security → ` +
+      `Full Disk Access, enable AI Support Agent, then quit and relaunch.`;
+  }
+
   return {
     scannedPath:     scanPath,
     scannedFiles:    files.length,
     duplicateGroups,
     totalWastedMb,
+    ...(warning ? { warning } : {}),
   };
 }
 

@@ -88,19 +88,36 @@ interface FileEntry {
 
 // -- Recursive walker ---------------------------------------------------------
 
+interface WalkStats {
+  dirsVisited:        number;
+  dirsPermissionDenied: number;
+}
+
+/** True if a Node fs error looks like a TCC / OS permission denial. */
+function isPermissionError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return code === "EPERM" || code === "EACCES";
+}
+
 async function walk(
   dir:     string,
   minSize: number,
   acc:     FileEntry[],
   depth:   number,
+  stats:   WalkStats,
 ): Promise<void> {
   if (depth > MAX_DEPTH) return;
+  stats.dirsVisited++;
 
   let entries: import("fs").Dirent<string>[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return; // unreadable directory — skip silently
+  } catch (err) {
+    // Track permission denials separately so the run() result can flag
+    // partial coverage. Non-permission errors (ENOENT, EBUSY, etc.) are
+    // ignored silently as before.
+    if (isPermissionError(err)) stats.dirsPermissionDenied++;
+    return;
   }
 
   await Promise.allSettled(
@@ -112,7 +129,7 @@ async function walk(
 
       if (e.isDirectory()) {
         if (SKIP_DIRS.has(e.name)) return;
-        await walk(full, minSize, acc, depth + 1);
+        await walk(full, minSize, acc, depth + 1, stats);
       } else if (e.isFile()) {
         try {
           const stat = await fs.stat(full);
@@ -171,10 +188,29 @@ export async function run({
   }
 
   const results: FileEntry[] = [];
-  await walk(realScanPath, minSizeBytes, results, 0);
+  const stats: WalkStats     = { dirsVisited: 0, dirsPermissionDenied: 0 };
+  await walk(realScanPath, minSizeBytes, results, 0, stats);
   results.sort((a, b) => b.size - a.size);
 
   const files = results.slice(0, limit);
+
+  // ── Partial-result detection ────────────────────────────────────────────────
+  // If a meaningful share of directories couldn't be read because of OS
+  // permission errors, the file list is incomplete and the user shouldn't
+  // trust it for cleanup decisions. Almost always a TCC denial — the agent
+  // doesn't have Full Disk Access and can't traverse into protected
+  // subtrees (~/Library, etc.).
+  let warning: string | undefined;
+  if (
+    stats.dirsVisited > 0 &&
+    stats.dirsPermissionDenied / stats.dirsVisited > 0.2
+  ) {
+    warning =
+      `Scan results are incomplete: ${stats.dirsPermissionDenied} of ` +
+      `${stats.dirsVisited} directories could not be read (likely missing ` +
+      `Full Disk Access). Open System Settings → Privacy & Security → ` +
+      `Full Disk Access, enable AI Support Agent, then quit and relaunch.`;
+  }
 
   return {
     scannedPath:  scanPath,
@@ -183,6 +219,7 @@ export async function run({
     totalFound:   results.length,
     returned:     files.length,
     files,
+    ...(warning ? { warning } : {}),
   };
 }
 
