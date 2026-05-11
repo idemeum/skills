@@ -19,12 +19,16 @@
  *   npx tsx -r dotenv/config mcp/skills/emptyTrash.ts --dry-run
  */
 
-import * as fs       from "fs/promises";
-import * as os       from "os";
-import * as nodePath from "path";
-import { z }         from "zod";
+import * as fs           from "fs/promises";
+import * as os           from "os";
+import * as nodePath     from "path";
+import { execFile }      from "child_process";
+import { promisify }     from "util";
+import { z }             from "zod";
 
 import { loggedExec } from "./_shared/platform";
+
+const execFileAsync = promisify(execFile);
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -68,12 +72,18 @@ async function runPS(script: string, tag: string): Promise<string> {
   return stdout.trim();
 }
 
-/** Run an AppleScript snippet via osascript; returns stdout (trimmed). */
+/** Run an AppleScript snippet via osascript; returns stdout (trimmed).
+ *
+ * Uses execFile (not exec/shell) so the script string is passed as a direct
+ * argv element to osascript.  exec() → JSON.stringify() turns real newlines
+ * into the two-character sequence \n, which the shell leaves as literal
+ * backslash-n inside double quotes — osascript then raises syntax error -2741
+ * because AppleScript requires actual newlines between statements.
+ */
 async function runOsa(script: string, tag: string): Promise<string> {
-  const { stdout } = await loggedExec(
-    `osascript -e ${JSON.stringify(script)}`,
-    { tag: `empty_trash:${tag}`, maxBuffer: 4 * 1024 * 1024 },
-  );
+  const { stdout } = await execFileAsync("osascript", ["-e", script], {
+    maxBuffer: 4 * 1024 * 1024,
+  });
   return stdout.trim();
 }
 
