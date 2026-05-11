@@ -119,7 +119,7 @@ export interface CloudResetResult {
   payloadWithoutSecrets?: CloudResetPayload;
   /** Present on network / http errors. */
   httpStatus?:     number;
-  failureReason?:  "timeout" | "network" | "http" | "parse";
+  failureReason?:  "connect_timeout" | "response_timeout" | "network" | "circuit_open" | "http" | "parse";
 }
 
 // -- Implementation -----------------------------------------------------------
@@ -189,16 +189,27 @@ export async function run(args: {
   }
 
   const body = JSON.stringify(payload);
-  const r = await httpPost(endpoint, body, headers, { timeoutMs: 10_000 });
+  const responseTimeoutMs = (() => {
+    const v = parseInt(process.env["IDEMEUM_IDP_RESPONSE_TIMEOUT_MS"] ?? "10000", 10);
+    return isNaN(v) || v <= 0 ? 10_000 : v;
+  })();
+  const r = await httpPost(endpoint, body, headers, {
+    timeoutMs:  responseTimeoutMs,
+    breakerKey: "IDEMEUM_IDP_URL",
+  });
 
   if (r.failureReason) {
+    const isTimeout = r.failureReason === "connect_timeout" || r.failureReason === "response_timeout";
+    const isOpen    = r.failureReason === "circuit_open";
     return {
       status:        "failed",
       failureReason: r.failureReason,
       message:
-        r.failureReason === "timeout"
-          ? `idemeum cloud reset request timed out contacting ${endpoint}.`
-          : `Could not reach idemeum cloud at ${endpoint}.`,
+        isOpen
+          ? `idemeum cloud unavailable — circuit open for ${endpoint}.`
+          : isTimeout
+            ? `idemeum cloud reset request timed out contacting ${endpoint}.`
+            : `Could not reach idemeum cloud at ${endpoint}.`,
     };
   }
 
