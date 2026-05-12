@@ -163,6 +163,10 @@ async function checkMdmEnrollmentDarwin(): Promise<MdmEnrollmentResult> {
   }
 
   // 3. Check Jamf specifically (only if not already identified).
+  //    Step 1 (profiles status -type enrollment) is the authoritative source.
+  //    This Jamf-specific fallback covers cases where Apple's `profiles` CLI is
+  //    unavailable or restricted but `jamf checkJSSConnection` confirms an
+  //    active JSS link — strong evidence of Jamf-based MDM enrollment.
   if (!result.mdmProvider) {
     try {
       const { stdout } = await execAsync(
@@ -184,29 +188,36 @@ async function checkMdmEnrollmentDarwin(): Promise<MdmEnrollmentResult> {
     }
   }
 
-  // 4. system_profiler for supervision status
-  try {
-    const { stdout } = await execAsync(
-      "system_profiler SPConfigurationProfileDataType -json 2>/dev/null",
-      {
-        maxBuffer:  5 * 1024 * 1024,
-        timeout:    EXEC_TIMEOUT_MS,
-        killSignal: EXEC_KILL_SIGNAL,
-      },
-    );
-    if (stdout.trim()) {
-      const parsed = JSON.parse(stdout) as {
-        SPConfigurationProfileDataType?: Array<{ _supervised?: boolean }>;
-      };
-      const profiles = parsed.SPConfigurationProfileDataType ?? [];
-      if (profiles.length > 0) {
-        result.isEnrolled = true;
-        result.supervised = profiles[0]._supervised ?? null;
-        if (!result.mdmProvider) result.mdmProvider = "Unknown MDM";
+  // 4. system_profiler for supervision status — metadata enrichment only.
+  //    SPConfigurationProfileDataType lists ALL installed configuration
+  //    profiles (Wi-Fi, VPN, certs, AppleSeed/Beta enrollment, manually
+  //    installed .mobileconfig files), NOT just MDM-pushed ones.  A device
+  //    can have profiles without being MDM-enrolled, so we must NOT use
+  //    profile presence to flip isEnrolled.  Step 1 (profiles status -type
+  //    enrollment) is the authoritative source for MDM enrollment state.
+  if (result.isEnrolled) {
+    try {
+      const { stdout } = await execAsync(
+        "system_profiler SPConfigurationProfileDataType -json 2>/dev/null",
+        {
+          maxBuffer:  5 * 1024 * 1024,
+          timeout:    EXEC_TIMEOUT_MS,
+          killSignal: EXEC_KILL_SIGNAL,
+        },
+      );
+      if (stdout.trim()) {
+        const parsed = JSON.parse(stdout) as {
+          SPConfigurationProfileDataType?: Array<{ _supervised?: boolean }>;
+        };
+        const profiles = parsed.SPConfigurationProfileDataType ?? [];
+        if (profiles.length > 0) {
+          result.supervised = profiles[0]._supervised ?? null;
+          if (!result.mdmProvider) result.mdmProvider = "Unknown MDM";
+        }
       }
+    } catch {
+      // system_profiler may fail or return empty — best effort
     }
-  } catch {
-    // system_profiler may fail or return empty — best effort
   }
 
   if (!result.isEnrolled) result.enrollmentType = "none";

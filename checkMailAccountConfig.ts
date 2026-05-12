@@ -37,6 +37,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  tccCategories:   ["FullDiskAccess"],
   schema: {
     client: z
       .enum(["mail", "outlook", "auto"])

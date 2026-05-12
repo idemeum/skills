@@ -36,6 +36,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  tccCategories:   ["FullDiskAccess", "Automation"],
   schema: {
     includeSystem: z
       .boolean()

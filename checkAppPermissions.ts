@@ -20,6 +20,8 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
+import { TCC_CATEGORIES } from "./_shared/tcc";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -70,28 +72,10 @@ async function runPS(script: string): Promise<string> {
 
 // -- darwin implementation ----------------------------------------------------
 
-// TCC privacy category service names -> human-readable labels
-const TCC_CATEGORIES: Record<string, string> = {
-  kTCCServiceSystemPolicyAllFiles:    "Full Disk Access",
-  kTCCServiceAccessibility:           "Accessibility",
-  kTCCServiceCamera:                  "Camera",
-  kTCCServiceMicrophone:              "Microphone",
-  kTCCServiceCalendar:                "Calendar",
-  kTCCServiceAddressBook:             "Contacts",
-  kTCCServicePhotos:                  "Photos",
-  kTCCServiceScreenCapture:           "Screen Recording",
-  kTCCServiceLocation:                "Location",
-  kTCCServiceBluetoothAlways:         "Bluetooth",
-  kTCCServiceUserAvailability:        "Focus Status",
-  kTCCServiceAppleEvents:             "Automation",
-  kTCCServiceSystemPolicySysAdminFiles: "Administrator Files",
-  kTCCServiceSpeechRecognition:       "Speech Recognition",
-  kTCCServiceMediaLibrary:            "Media Library",
-  kTCCServiceReminders:               "Reminders",
-  kTCCServiceLiverpool:               "Location Services",
-  kTCCServiceShareKit:                "Share Menu",
-  kTCCServicePostEvent:               "Input Monitoring",
-};
+// TCC privacy category service names → human-readable labels are sourced
+// from _shared/tcc.ts so the vocabulary stays in one place.  See that file
+// for the full list and for the higher-level TccCategory union consumed by
+// G4's tccPreflightCheck.
 
 async function checkAppPermissionsDarwin(appName: string): Promise<PermissionsResult> {
   // Security: validate appName before using in shell

@@ -52,6 +52,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  tccCategories:   ["FullDiskAccess"],
   // See docs/proactivesupport/PROACTIVE-ARCHITECTURE.md §6.
   outputKeys: [
     "platform",

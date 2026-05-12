@@ -57,6 +57,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  tccCategories:   ["FullDiskAccess"],
   schema: {
     app: z
       .enum(["teams", "slack", "zoom", "webex"])

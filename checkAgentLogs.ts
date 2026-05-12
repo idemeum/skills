@@ -36,6 +36,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  tccCategories:   ["FullDiskAccess"],
   schema: {
     agent: z
       .enum(["crowdstrike", "sentinelone", "jamf", "carbonblack", "cylance", "defender"])

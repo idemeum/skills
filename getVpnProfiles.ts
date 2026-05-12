@@ -37,6 +37,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  tccCategories:   ["FullDiskAccess"],
   schema: {} as Record<string, z.ZodTypeAny>,
 } as const;
 

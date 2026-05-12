@@ -35,10 +35,21 @@
  * other browsers.
  */
 
-import { z }   from "zod";
-import * as fs from "fs";
+import { z }            from "zod";
+import * as fs          from "fs";
+import { execFile }     from "child_process";
+import { promisify }    from "util";
 
 import { execAsync, isDarwin }   from "./_shared/platform";
+
+// osascript multi-line scripts must NOT be passed through a shell-quoting
+// layer — JSON.stringify of a real-newline string emits "\n" (two-char
+// escape) which the shell preserves as literal backslash-n inside the
+// double-quoted argv. osascript then raises syntax error -2741 because
+// AppleScript requires actual newlines between statements. Use execFile so
+// the script reaches osascript as a single argv element with newlines
+// intact. See emptyTrash.ts:75 for the same fix applied to that tool.
+const execFileAsync = promisify(execFile);
 import { listCookieStores, type CookieStore, type Browser } from "./_shared/browser";
 
 // -- Meta ---------------------------------------------------------------------
@@ -229,8 +240,10 @@ async function clearSafariCookies(domain: string, dryRun: boolean): Promise<Stor
     `end tell`;
 
   try {
-    const { stdout } = await execAsync(
-      `osascript -e ${JSON.stringify(script)}`,
+    // execFile (not execAsync) — see file-top comment for why.
+    const { stdout } = await execFileAsync(
+      "osascript",
+      ["-e", script],
       { maxBuffer: 1 * 1024 * 1024, timeout: 10_000 },
     );
     const out = stdout.trim();

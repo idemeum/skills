@@ -40,6 +40,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  tccCategories:   ["FullDiskAccess"],
   schema: {
     dryRun: z
       .boolean()
