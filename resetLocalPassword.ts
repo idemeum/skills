@@ -39,6 +39,12 @@ export const meta = {
     darwin: "sudo dscl . -passwd /Users/<username> '<newPassword>'  # substitute the user's real username and a strong temporary password; user should change at next login",
     win32:  "Set-LocalUser -Name '<username>' -Password (ConvertTo-SecureString '<newPassword>' -AsPlainText -Force)  # run from elevated PowerShell",
   },
+  // Edit 7 — newPassword is a credential. Runtime redaction substitutes
+  // "[redacted]" for this field in task_logs, scratchpad replays, the
+  // summarizer Output:, and RAG embeddings. The value still reaches the
+  // tool boundary (Zod validates and the OS command receives it); only
+  // downstream records / replays / LLM contexts see the redaction.
+  sensitiveParams: ["newPassword"] as const,
   schema: {
     username: z
       .string()

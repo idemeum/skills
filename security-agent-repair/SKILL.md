@@ -144,6 +144,29 @@ Advise on any items that require IT intervention (SIP disabled, MDM unenrolled, 
 
 ---
 
+## Privilege handling — agent restart and tamper protection
+
+Step 7 (`restart_process` of the security agent) is the only privileged operation in this skill. All enterprise security agents (CrowdStrike Falcon, SentinelOne, Microsoft Defender for Endpoint, Carbon Black, Cylance, Jamf Protect) run as **root** (macOS) or **SYSTEM** (Windows), so a user-space restart request requires elevated rights. The agent handles this in two modes:
+
+**When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): the agent routes the restart through the helper daemon and it completes silently for **all users — admin and non-admin alike**. The user sees the step succeed.
+
+**When the helper is unavailable** (`HELPER_DAEMON_ENABLED=false`, helper not installed, or helper unreachable — `denyCategory: "helper-unavailable"` / `"helper-error"` / `"scope-boundary"`) **OR when tamper protection blocks the restart even with admin rights**: the restart denies and the diagnostic continues to completion. In this fallback case, in the response:
+
+1. **Do not present the denied step as a failure.** State plainly that restarting the agent could not be performed on this device and explain why (helper unavailable, non-admin user, or tamper protection blocking the call even for admins).
+2. **Try the vendor's built-in user-space refresh first** — most enterprise agents expose a "Refresh connection" or "Reset" action in their menu-bar / system-tray UI that does NOT require admin and bypasses tamper protection:
+   - CrowdStrike Falcon: menu-bar icon → "Refresh sensor connection"
+   - SentinelOne: tray icon → "Reset agent"
+   - Microsoft Defender: open Defender app → Settings → "Sync"
+   - Jamf Protect: menu-bar icon → "Check in now"
+   - Carbon Black: tray icon → "Send Status"
+3. **Management-console restart** — when tamper protection is enabled (most enterprise deployments), even an admin restart will fail; the proper path is via the management console:
+   - CrowdStrike: Falcon Console → Host Management → select host → Restart Sensor
+   - SentinelOne: Management Console → Sentinels → select agent → Actions → Restart
+   - Microsoft Defender: Microsoft 365 Defender portal → Devices → select device → "Initiate response action" → Restart
+4. **Escalation packet** — the diagnostic from Steps 1–6 and 8–9 captures everything IT needs to triage without further back-and-forth: process state, SIP / Secure Boot status, system extension status, version, console reachability, log error excerpts, FileVault status, and MDM enrollment. The end-of-run ticket includes all of this so a tier-1 helpdesk can pick up cleanly.
+
+---
+
 ## Edge cases
 
 - **Tamper protection** — most enterprise security agents have tamper protection that prevents the agent from being stopped, modified, or uninstalled without a management console token. If `restart_process` fails with a permissions error, tamper protection is active — do not attempt to work around it; escalate to IT who can issue a maintenance token

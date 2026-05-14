@@ -89,6 +89,20 @@ After repairs, ask the user to relaunch the email client and test sending and re
 
 ---
 
+## Graceful degradation when account or mailbox repair requires IT
+
+Every tool in this skill operates in user space — `rebuild_mail_index`, `repair_outlook_database`, `clear_app_cache`, `reset_app_preferences`, and `check_mail_permissions` (even with `fix: true`) all touch only the user's own `~/Library/Mail` / `%LOCALAPPDATA%\Microsoft\Outlook` directories and never need admin privileges. The privileged-helper-daemon routing does not apply to this skill.
+
+The agent still hits failure modes it cannot resolve directly when the root cause sits outside the user's own mail data:
+
+1. **Corporate Exchange / Microsoft 365 account locked by IT** — when an account is mid-migration, MFA-suspended, or password-expired on the server side, no client-side repair recovers it. Surface this in the response and direct the user to the IT helpdesk; the SMTP / IMAP connectivity probe and certificate check from Steps 1–2 are the diagnostic IT needs.
+2. **MDM-pushed mail profile blocks configuration changes** — on macOS / iOS / Windows, IT can deploy a configuration profile that pre-fills account settings and locks the user out of editing them. `check_mail_account_config` will surface the locked settings, but `reset_app_preferences` only clears the *client-side* preferences — the profile re-applies on next launch. Tell the user this is an IT-managed account and the change must be made via MDM (Jamf Self Service, Intune Company Portal) or by an IT admin.
+3. **Mail directory has root-owned files** (rare, macOS — typically post-migration or post-restore): `check_mail_permissions` with `fix: true` only adjusts permissions the current user owns. If it reports paths it cannot fix, surface the offending path list and guide the user to fix it themselves: open Terminal → `sudo chown -R $USER ~/Library/Mail` → enter their login password. Do NOT attempt to run this via the agent.
+4. **Outlook database corruption beyond the local repair utility** — when `repair_outlook_database` reports "could not repair", the next step is profile re-creation: Outlook → File → Account Settings → remove the account → re-add it. For Microsoft 365 / Exchange accounts this re-downloads the mailbox from the server, so no local data is lost. For POP accounts there is no server copy — escalate to IT before removing the account.
+5. **Escalation packet** — the diagnostic from Steps 1–4 captures everything IT needs: SMTP reachability, certificate expiry status, configured account settings, mail-permissions output, and (where relevant) the Outlook database repair attempt. The end-of-run ticket includes all of this so a tier-1 helpdesk can pick up cleanly without further back-and-forth.
+
+---
+
 ## Edge cases
 
 - **Authentication failures vs connectivity failures** — `check_smtp_connectivity` tests TCP only; a successful TCP connection does not mean credentials are valid. If connectivity is fine but send/receive still fails, the issue is likely credentials or 2FA/app password configuration — guide the user through their provider's account settings

@@ -93,6 +93,26 @@ Summarise what was found (expired password, Keychain desync, broken AD binding, 
 
 ---
 
+## Privilege handling — helper-routed (default) vs. fallback
+
+Steps 4 (`reset_local_password`) and 6 (`repair_keychain` with `action: "reset"`) require administrator privileges to execute the underlying OS commands (`dscl . -passwd` on macOS, `net user` on Windows, `security delete-keychain` on macOS). The agent handles this transparently in two modes:
+
+**When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): the agent routes these steps through the helper daemon and they complete silently for **all users — admin and non-admin alike**. The user sees the step succeed; the diagnosis is the corrective step. No "this requires admin" messaging is needed in the response.
+
+**When the helper is unavailable** (`HELPER_DAEMON_ENABLED=false`, helper not installed, or helper unreachable — `denyCategory: "helper-unavailable"` / `"helper-error"` / `"scope-boundary"`): the corrective step denies and the diagnostic continues to completion — the diagnosis itself is still the deliverable. In this fallback case, in the response:
+
+1. **Do not present the denied step as a failure.** State plainly that the agent couldn't complete the privileged step on this device and explain why (helper unavailable / not enabled / non-admin user).
+2. **Provide a self-service path the user can follow themselves.** Examples:
+   - Local password reset (macOS, user signed in): System Settings → Users & Groups → click the (i) next to the user → "Change Password…"
+   - Local password reset (macOS, user locked out): boot into Recovery (⌘R) → Utilities → Terminal → `resetpassword`
+   - Local password reset (Windows, user signed in): Settings → Accounts → Sign-in options → Password → "Change"
+   - Local password reset (Windows, user locked out): boot from a Windows recovery USB → Command Prompt → `net user <username> <newPassword>`
+   - Keychain reset (macOS): Keychain Access → Preferences → "Reset My Default Keychain", then re-enter saved credentials in apps as they prompt
+3. **Domain (AD) accounts** — `reset_local_password` cannot reset Active Directory passwords; direct the user to the IT helpdesk, AD self-service portal, or a Windows-bound machine where AD password change works natively (Ctrl-Alt-Delete → Change Password).
+4. **Tell the user the diagnosis is being packaged for IT escalation** — the support ticket captures the account state, password-expiry status, AD-binding result, Keychain status, FileVault status, and MDM enrollment, so a tier-1 helpdesk can pick up exactly where the agent left off. IT can also investigate why the helper is unavailable on this device.
+
+---
+
 ## Edge cases
 
 - **User locked out of the machine entirely** — this skill cannot help a user who is fully locked out (no access to a terminal or admin account). Advise them to boot into macOS Recovery Mode (hold Cmd+R at startup) and use the Reset Password utility, or contact IT for Windows domain machines
