@@ -16,6 +16,7 @@ allowed-tools:
   - clear_xcode_derived_data
   - delete_files
   - empty_trash
+  - present_preview
 metadata:
   prerequisites:
     before-corrective:
@@ -91,25 +92,97 @@ If the user is a developer or has large ~/Library entries:
 - Call `prune_docker` with `dryRun: true` if Docker is installed — note that `prune_docker` is marked `requiresConsent: true` in its meta, so when later called with `dryRun: false` the G4 consent gate will fire automatically and prompt the user for confirmation (no need to ask separately before invoking)
 - Call `clear_xcode_derived_data` with `dryRun: true` on macOS if Xcode DerivedData appears large
 
-**Step 9 — Summarise and confirm**
-Present a consolidated cleanup plan grouped by category with total potential space recovery for each:
-- Large files and folders
-- Duplicate files
-- Old downloads
-- App caches
-- Browser caches
-- Developer / Docker caches
+**Step 9 — Present consolidated cleanup plan**
 
-Ask the user to confirm which categories they want to proceed with.
+Call `present_preview` with:
+
+```yaml
+title: "Cleanup Plan"
+summary: "You can recover {totalSize} by cleaning the following:"
+categories:
+  - id: large-files
+    label: "Large files in Downloads & Desktop"
+    summary: "{N} files over 50 MB ({size})"
+    defaultSelected: true
+
+  - id: duplicates
+    label: "Duplicate files"
+    summary: "{N} duplicate groups sorted by wasted space ({size})"
+    defaultSelected: true
+
+  - id: old-downloads
+    label: "Old downloads"
+    summary: "{N} installers/archives older than 90 days ({size})"
+    defaultSelected: true
+
+  - id: app-cache
+    label: "App caches"
+    summary: "Slack, Spotify, Discord, etc. ({size})"
+    defaultSelected: true
+
+  - id: browser-cache
+    label: "Browser caches"
+    summary: "Chrome, Safari, Edge — rebuild automatically ({size})"
+    defaultSelected: true
+
+  - id: dev-cache
+    label: "Developer caches"
+    summary: "npm, yarn, pip, gradle, Xcode DerivedData ({size})"
+    destructive: true
+    defaultSelected: false
+
+  - id: docker
+    label: "Docker resources"
+    summary: "Unused images, containers, volumes ({size})"
+    destructive: true
+    defaultSelected: false
+
+  - id: trash
+    label: "Trash"
+    summary: "{N} items ({size})"
+    defaultSelected: true
+```
+
+Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from prior scratchpad outputs):
+
+- top-level `{totalSize}` — sum of every category's size, formatted human-readable
+- inside large-files.summary:
+  - `{N}` — `output.fileCount` from the `get_large_files` step
+  - `{size}` — `output.totalBytes` from the `get_large_files` step, formatted human-readable
+- inside duplicates.summary:
+  - `{N}` — `output.duplicateGroupCount` from the `find_duplicate_files` step
+  - `{size}` — `output.totalWastedBytes` from the `find_duplicate_files` step, formatted human-readable
+- inside old-downloads.summary:
+  - `{N}` — `output.fileCount` from the `find_old_downloads` step
+  - `{size}` — `output.totalBytes` from the `find_old_downloads` step, formatted human-readable
+- inside app-cache.summary:
+  - `{size}` — `output.totalSizeBytes` from the `clear_app_cache` dry-run step, formatted human-readable
+- inside browser-cache.summary:
+  - `{size}` — `output.totalSizeBytes` from the `clear_browser_cache` dry-run step, formatted human-readable
+- inside dev-cache.summary:
+  - `{size}` — `output.totalSizeBytes` from the `clear_dev_cache` dry-run step, formatted human-readable
+- inside docker.summary:
+  - `{size}` — `output.reclaimableBytes` from the `prune_docker` dry-run step, formatted human-readable
+- inside trash.summary:
+  - `{N}` — `output.itemCount` from the `empty_trash` dry-run step
+  - `{size}` — `output.totalSizeBytes` from the `empty_trash` dry-run step, formatted human-readable
+
+The card stays visible until the user submits; the gate returns `{ selected: string[] }` carrying the category ids the user kept checked. Empty selection = cancel; downstream corrective steps no-op.
 
 **Step 10 — Execute confirmed cleanups**
-For each confirmed category, re-call the relevant tool with `dryRun: false`:
-- `delete_files` for large files and old downloads (always show `dryRun: true` output first, confirm, then execute)
-- `clear_app_cache` for app caches
-- `clear_browser_cache` for browser caches
-- `clear_dev_cache` for developer caches
-- `prune_docker` for Docker resources
-- `clear_xcode_derived_data` for Xcode artifacts
+
+For each category id in Step 9's `selected` output, re-call the relevant tool with `dryRun: false`:
+
+- `"large-files"`    → call `delete_files` once per file in the `get_large_files` output
+- `"duplicates"`     → call `delete_files` once per file in the `find_duplicate_files` output
+- `"old-downloads"`  → call `delete_files` once per file in the `find_old_downloads` output
+- `"app-cache"`      → call `clear_app_cache` with `dryRun: false`
+- `"browser-cache"`  → call `clear_browser_cache` with `browser: "all"`, `dryRun: false`
+- `"dev-cache"`      → call `clear_dev_cache` with `dryRun: false`; on macOS also call `clear_xcode_derived_data` with `dryRun: false`
+- `"docker"`         → call `prune_docker` with `dryRun: false`
+- `"trash"`          → call `empty_trash` with `dryRun: false`
+
+Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `When:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Iterative steps additionally use `forEach` against the relevant prior diagnostic output. Skip silently when the category id is not in `selected`.
 
 **Step 11 — Check and empty Trash (always include)**
 This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space and the G4 consent gate handles user confirmation automatically. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
