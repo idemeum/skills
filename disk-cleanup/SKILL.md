@@ -9,6 +9,12 @@ allowed-tools:
   - get_large_files
   - find_duplicate_files
   - find_old_downloads
+  - get_app_cache_info
+  - get_browser_cache_info
+  - get_dev_cache_info
+  - get_docker_disk_usage
+  - get_trash_info
+  - get_xcode_derived_data_info
   - clear_app_cache
   - clear_browser_cache
   - clear_dev_cache
@@ -81,16 +87,16 @@ Call `find_duplicate_files` on the home directory with `minSizeMb: 10` to find i
 Call `find_old_downloads` with `olderThanDays: 90` to list stale downloads. Installers (.dmg, .pkg, .exe) older than 90 days are almost always safe to remove.
 
 **Step 6 — Check application caches**
-Call `clear_app_cache` with `dryRun: true` (no appName) to list all app caches and their sizes. Present the largest caches. Ask the user if they want to clear specific ones or all.
+Call `get_app_cache_info` to list all app cache directories and their sizes. Present the largest caches. Ask the user if they want to clear specific ones or all. This is a read-only probe — nothing is deleted at this step.
 
 **Step 7 — Check browser caches**
-Call `clear_browser_cache` with `dryRun: true` and `browser: "all"` to report browser cache sizes. Browser caches are always safe to clear — they rebuild automatically on next use.
+Call `get_browser_cache_info` to report browser cache sizes (Chrome, Safari, Firefox, Edge). Browser caches are always safe to clear — they rebuild automatically on next use. This is a read-only probe.
 
 **Step 8 — Check developer caches (if applicable)**
 If the user is a developer or has large ~/Library entries:
-- Call `clear_dev_cache` with `dryRun: true` to report npm/yarn/pip/gradle/maven cache sizes
-- Call `prune_docker` with `dryRun: true` if Docker is installed — note that `prune_docker` is marked `requiresConsent: true` in its meta, so when later called with `dryRun: false` the G4 consent gate will fire automatically and prompt the user for confirmation (no need to ask separately before invoking)
-- Call `clear_xcode_derived_data` with `dryRun: true` on macOS if Xcode DerivedData appears large
+- Call `get_dev_cache_info` to report npm/yarn/pnpm/pip/gradle/maven cache sizes (read-only)
+- Call `get_docker_disk_usage` if relevant — reports reclaimable bytes via `docker system df` without modifying anything; returns `dockerInstalled:false` when Docker is unavailable so the caller can branch
+- Call `get_xcode_derived_data_info` on macOS to report DerivedData / Archives / DeviceSupport sizes (read-only; returns `supported:false` on non-darwin)
 
 **Step 9 — Present consolidated cleanup plan**
 
@@ -156,16 +162,16 @@ Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from pr
   - `{N}` — `output.fileCount` from the `find_old_downloads` step
   - `{size}` — `output.totalBytes` from the `find_old_downloads` step, formatted human-readable
 - inside app-cache.summary:
-  - `{size}` — `output.totalSizeBytes` from the `clear_app_cache` dry-run step, formatted human-readable
+  - `{size}` — `output.totalBytes` from the `get_app_cache_info` step, formatted human-readable
 - inside browser-cache.summary:
-  - `{size}` — `output.totalSizeBytes` from the `clear_browser_cache` dry-run step, formatted human-readable
+  - `{size}` — `output.totalBytes` from the `get_browser_cache_info` step, formatted human-readable
 - inside dev-cache.summary:
-  - `{size}` — `output.totalSizeBytes` from the `clear_dev_cache` dry-run step, formatted human-readable
+  - `{size}` — `output.totalBytes` from the `get_dev_cache_info` step, formatted human-readable
 - inside docker.summary:
-  - `{size}` — `output.reclaimableBytes` from the `prune_docker` dry-run step, formatted human-readable
+  - `{size}` — `output.totalReclaimableBytes` from the `get_docker_disk_usage` step, formatted human-readable (when `dockerInstalled` is true; omit the category entirely otherwise)
 - inside trash.summary:
-  - `{N}` — `output.itemCount` from the `empty_trash` dry-run step
-  - `{size}` — `output.totalSizeBytes` from the `empty_trash` dry-run step, formatted human-readable
+  - `{N}` — `output.itemCount` from the `get_trash_info` step
+  - `{size}` — `output.totalBytes` from the `get_trash_info` step, formatted human-readable
 
 The card stays visible until the user submits; the gate returns `{ selected: string[] }` carrying the category ids the user kept checked. Empty selection = cancel; downstream corrective steps no-op.
 
@@ -184,10 +190,10 @@ For each category id in Step 9's `selected` output, re-call the relevant tool wi
 
 Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `When:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Iterative steps additionally use `forEach` against the relevant prior diagnostic output. Skip silently when the category id is not in `selected`.
 
-**Step 11 — Check and empty Trash (always include)**
-This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space and the G4 consent gate handles user confirmation automatically. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
+**Step 11 — Check Trash contents (always include)**
+This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space, and the consolidated `present_preview` card lets the user opt in or out of emptying it. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
 
-Call `empty_trash` with `dryRun: true` to report Trash contents and size. The G4 dry-run and consent gates will present the preview to the user and ask for confirmation before anything is deleted. If the user confirms, the follow-up call with `dryRun: false` empties the Trash.
+Call `get_trash_info` to report Trash item count and total size. This is a read-only probe — nothing is deleted. The corrective `empty_trash` invocation in Step 10 (gated on `'trash'` being in the user's `present_preview` selection) is the single user-facing surface that actually empties the Trash, fronted by the G4 consent gate.
 
 **Step 12 — Final report**
 Summarise total space recovered across all operations. Optionally call `disk_scan` again on the home directory to show the updated sizes.

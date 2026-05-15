@@ -18,8 +18,8 @@
  * --------------------------------------------
  * electron/agent/guards/execution.ts:1122 wraps every tool invocation in
  * Promise.race([skillPromise, timeoutPromise]) against TOOL_TIMEOUT_MS
- * (default 30 s).  An out-of-band SSPR / cloud password reset can take
- * minutes — a blocking tool run() would be force-killed at 30 s and the
+ * (default 60 s).  An out-of-band SSPR / cloud password reset can take
+ * minutes — a blocking tool run() would be force-killed at 60 s and the
  * user's eventual click would be orphaned.  The user-ack gate runs
  * OUTSIDE that Promise.race with its own USER_ACK_TIMEOUT_MS (default
  * 15 min), resolving cleanly on choice or on gate timeout.
@@ -56,7 +56,7 @@ export const meta = {
     "chosen option id to the agent.\n" +
     "\n" +
     "IMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses " +
-    "the 30s TOOL_TIMEOUT_MS ceiling for this call and instead races the " +
+    "the 60s TOOL_TIMEOUT_MS ceiling for this call and instead races the " +
     "user's choice against USER_ACK_TIMEOUT_MS (default 15 min). Include " +
     "one option with id 'done' to proceed; other option ids (e.g. 'failed', " +
     "'cancel') should cause the skill to stop subsequent plan steps.",

@@ -19,9 +19,9 @@
  * --------------------------------------------
  * electron/agent/guards/execution.ts wraps every tool invocation in
  * Promise.race([skillPromise, timeoutPromise]) against TOOL_TIMEOUT_MS
- * (default 30 s). A user reading a multi-category preview and deciding
+ * (default 60 s). A user reading a multi-category preview and deciding
  * which boxes to keep checked can take minutes — a blocking tool run()
- * would be force-killed at 30 s and the user's eventual click would be
+ * would be force-killed at 60 s and the user's eventual click would be
  * orphaned. The present-preview gate runs OUTSIDE that Promise.race with
  * its own USER_ACK_TIMEOUT_MS (default 15 min), resolving cleanly on
  * submission or on gate timeout.
@@ -213,7 +213,7 @@ export const meta = {
     "which categories to proceed with'.\n" +
     "\n" +
     "IMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses " +
-    "the 30 s TOOL_TIMEOUT_MS ceiling for this call and instead races the " +
+    "the 60 s TOOL_TIMEOUT_MS ceiling for this call and instead races the " +
     "user's submission against USER_ACK_TIMEOUT_MS (default 15 min). " +
     "Returns { selected: string[] } — the category ids the user kept " +
     "checked. Empty array means cancel / dismiss / timeout / zero items.",
