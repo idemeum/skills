@@ -116,7 +116,19 @@ async function scanDarwin(scanPath: string): Promise<Entry[]> {
       { tag: "disk_scan:du", maxBuffer: 20 * 1024 * 1024, timeoutMs: 30_000 },
     ));
   } catch (err) {
-    stdout = (err as { stdout?: string }).stdout ?? "";
+    // A timeout-killed du leaves only the entries that finished quickly in
+    // stdout — typically tiny dotfiles, with the actual large directories
+    // missing. Returning that partial output silently misleads the cleanup
+    // planner. Treat killed-by-signal as fatal; only fall back to partial
+    // stdout when du exited normally with errors (e.g. TCC denials).
+    const e = err as { stdout?: string; killed?: boolean; signal?: string };
+    if (e.killed || e.signal) {
+      throw new Error(
+        `[disk_scan] du timed out after 30s scanning ${scanPath} — ` +
+        `partial results suppressed to avoid misleading the cleanup planner.`,
+      );
+    }
+    stdout = e.stdout ?? "";
   }
 
   if (!stdout.trim()) return statChildren(scanPath);
@@ -178,7 +190,15 @@ $out | Sort-Object size -Descending | ConvertTo-Json -Depth 2 -Compress
 // -- Exported run function ----------------------------------------------------
 
 export async function run({ path: inputPath = os.homedir() }: { path?: string }) {
-  const scanPath = nodePath.resolve(inputPath);
+  // Expand ~ / ~/ before resolve(), since nodePath.resolve treats "~" as a
+  // literal path segment relative to cwd. The planner sometimes emits "~" as
+  // a stand-in for the home directory; without this, the path resolves to
+  // <cwd>/~ and fs.access throws "Path not accessible".
+  let normalised = inputPath;
+  if (normalised === "~" || normalised.startsWith("~/")) {
+    normalised = nodePath.join(os.homedir(), normalised.slice(1));
+  }
+  const scanPath = nodePath.resolve(normalised);
 
   // Security: restrict scanning to within the user home directory.
   // Prevents Claude from being directed to scan /etc, /var, or other

@@ -23,6 +23,7 @@ import * as os       from "os";
 import * as nodePath from "path";
 
 import { execAsync, isDarwin, isWin32 } from "./_shared/platform";
+import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -39,6 +40,10 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  // Walks every subdir of ~/Library/Caches; on a populated home this exceeds
+  // the default 60 s ceiling. Tool honours ctx.deadlineMs internally and
+  // returns partial results before this hard timeout fires.
+  timeoutMs:       180_000,
   schema:          {},
 } as const;
 
@@ -59,30 +64,6 @@ export interface GetAppCacheInfoResult {
 
 // -- Helpers ------------------------------------------------------------------
 
-async function getDirSizeBytes(dirPath: string): Promise<number> {
-  try {
-    const entries = await fs.readdir(dirPath, { recursive: true, withFileTypes: true });
-    let totalBytes = 0;
-    await Promise.all(
-      entries
-        .filter((e) => !e.isDirectory())
-        .map(async (e) => {
-          try {
-            const fullPath = nodePath.join(
-              e.parentPath ?? (e as unknown as { path: string }).path ?? dirPath,
-              e.name,
-            );
-            const stat = await fs.stat(fullPath);
-            totalBytes += stat.size;
-          } catch { /* skip inaccessible */ }
-        }),
-    );
-    return totalBytes;
-  } catch {
-    return 0;
-  }
-}
-
 async function getDirSizeBytesWin32(dirPath: string): Promise<number> {
   try {
     const encoded = Buffer.from(
@@ -102,7 +83,7 @@ async function getDirSizeBytesWin32(dirPath: string): Promise<number> {
 
 // -- darwin -------------------------------------------------------------------
 
-async function getAppCacheInfoDarwin(): Promise<GetAppCacheInfoResult> {
+async function getAppCacheInfoDarwin(deadlineMs: number): Promise<GetAppCacheInfoResult> {
   const cacheRoot = nodePath.join(os.homedir(), "Library", "Caches");
   const errors: GetAppCacheInfoResult["errors"] = [];
 
@@ -115,16 +96,25 @@ async function getAppCacheInfoDarwin(): Promise<GetAppCacheInfoResult> {
   }
 
   const subdirs = dirents.filter((d) => d.isDirectory());
+  let anyPartial = false;
   const caches: AppCacheEntry[] = await Promise.all(
     subdirs.map(async (d) => {
-      const full      = nodePath.join(cacheRoot, d.name);
-      const sizeBytes = await getDirSizeBytes(full);
+      const full = nodePath.join(cacheRoot, d.name);
+      const { sizeBytes, partial } = await getDirSizeBytesShared(full, deadlineMs);
+      if (partial) anyPartial = true;
       return { name: d.name, path: full, sizeBytes };
     }),
   );
 
   caches.sort((a, b) => b.sizeBytes - a.sizeBytes);
   const totalBytes = caches.reduce((s, c) => s + c.sizeBytes, 0);
+
+  if (anyPartial) {
+    errors.push({
+      scope:   "deadline",
+      message: "Cache scan exceeded the per-tool deadline; sizes are partial.",
+    });
+  }
 
   return {
     platform: "darwin",
@@ -181,8 +171,20 @@ async function getAppCacheInfoWin32(): Promise<GetAppCacheInfoResult> {
 
 // -- Exported run -------------------------------------------------------------
 
-export async function run(_args: Record<string, never> = {}): Promise<GetAppCacheInfoResult> {
-  if (isDarwin()) return getAppCacheInfoDarwin();
+interface RunCtx { deadlineMs?: number }
+
+export async function run(
+  _args: Record<string, never> = {},
+  ctx?:  RunCtx,
+): Promise<GetAppCacheInfoResult> {
+  // Internal budget = 90% of the G4 deadline, leaving 10% headroom to
+  // serialize the partial result and return through G4 before its
+  // Promise.race rejects.
+  const ceilingMs    = ctx?.deadlineMs ?? (Date.now() + 60_000);
+  const remainingMs  = Math.max(0, ceilingMs - Date.now());
+  const internalDeadlineMs = Date.now() + Math.floor(remainingMs * 0.9);
+
+  if (isDarwin()) return getAppCacheInfoDarwin(internalDeadlineMs);
   if (isWin32())  return getAppCacheInfoWin32();
   return {
     platform: os.platform(),

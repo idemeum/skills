@@ -69,7 +69,7 @@ function parseSizeToBytes(s: string): number {
 
 async function checkDockerInstalled(): Promise<boolean> {
   try {
-    await execAsync("docker --version", { maxBuffer: 1 * 1024 * 1024 });
+    await execAsync("docker --version", { maxBuffer: 1 * 1024 * 1024, timeout: 5_000 });
     return true;
   } catch {
     return false;
@@ -77,8 +77,11 @@ async function checkDockerInstalled(): Promise<boolean> {
 }
 
 async function checkDockerRunning(): Promise<boolean> {
+  // 5 s timeout: when Docker Desktop is installed but not running, `docker info`
+  // can hang ~50 s before erroring out, eating most of the G4 ceiling. Treat a
+  // hang as "daemon down" — same outcome as a non-zero exit.
   try {
-    await execAsync("docker info 2>/dev/null", { maxBuffer: 2 * 1024 * 1024 });
+    await execAsync("docker info 2>/dev/null", { maxBuffer: 2 * 1024 * 1024, timeout: 5_000 });
     return true;
   } catch {
     return false;

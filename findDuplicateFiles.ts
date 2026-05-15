@@ -36,6 +36,11 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  // Walks the entire home directory and MD5-hashes size-collision candidates;
+  // the default 60 s ceiling isn't enough on populated homes. Tool honours
+  // ctx.deadlineMs internally and returns partial results before this
+  // hard timeout fires.
+  timeoutMs:       180_000,
   schema: {
     path: z
       .string()
@@ -73,7 +78,12 @@ const SKIP_DIRS = new Set([
   "node_modules", ".git", ".npm", ".yarn", ".cache",
   "__pycache__", ".venv", "venv",
   "$Recycle.Bin", "System Volume Information",
+  // macOS app sandbox roots — not user-meaningful "duplicates", and they
+  // dominate ~/Library walk time. Same set used by the cache scanners.
+  "Containers", "Group Containers", "Caches",
 ]);
+
+const HASH_CONCURRENCY = 16;
 
 // -- Helpers ------------------------------------------------------------------
 
@@ -90,6 +100,8 @@ function hashFile(filePath: string): Promise<string> {
 interface WalkStats {
   dirsVisited:          number;
   dirsPermissionDenied: number;
+  /** Set true when the walk aborted because the wall-clock deadline elapsed. */
+  deadlineHit:          boolean;
 }
 
 /** True if a Node fs error looks like a TCC / OS permission denial. */
@@ -105,8 +117,10 @@ async function walk(
   acc:        { path: string; size: number }[],
   depth:      number,
   stats:      WalkStats,
+  deadlineMs: number,
 ): Promise<void> {
   if (depth > MAX_DEPTH) return;
+  if (Date.now() >= deadlineMs) { stats.deadlineHit = true; return; }
   stats.dirsVisited++;
 
   let entries: import("fs").Dirent[];
@@ -122,12 +136,13 @@ async function walk(
 
   await Promise.allSettled(
     entries.map(async (e) => {
+      if (stats.deadlineHit) return;
       if (e.name.startsWith(".") && depth > 0) return;
       const full = nodePath.join(dir, e.name);
 
       if (e.isDirectory()) {
         if (SKIP_DIRS.has(e.name)) return;
-        await walk(full, minBytes, extensions, acc, depth + 1, stats);
+        await walk(full, minBytes, extensions, acc, depth + 1, stats, deadlineMs);
       } else if (e.isFile()) {
         if (extensions && !extensions.has(nodePath.extname(e.name).toLowerCase())) return;
         try {
@@ -145,17 +160,29 @@ async function walk(
 
 // -- Exported run function ----------------------------------------------------
 
-export async function run({
-  path: inputPath,
-  minSizeMb  = 1,
-  extensions,
-}: {
-  path?:       string;
-  minSizeMb?:  number;
-  extensions?: string[];
-} = {}) {
-  const home     = os.homedir();
-  const scanPath = nodePath.resolve(inputPath ?? home);
+interface RunCtx { deadlineMs?: number }
+
+export async function run(
+  {
+    path: inputPath,
+    minSizeMb  = 1,
+    extensions,
+  }: {
+    path?:       string;
+    minSizeMb?:  number;
+    extensions?: string[];
+  } = {},
+  ctx?: RunCtx,
+) {
+  const home = os.homedir();
+
+  // Expand ~ / ~/ — same gotcha as disk_scan: nodePath.resolve treats "~" as
+  // a literal path segment relative to cwd.
+  let normalised = inputPath ?? home;
+  if (normalised === "~" || normalised.startsWith("~/")) {
+    normalised = nodePath.join(home, normalised.slice(1));
+  }
+  const scanPath = nodePath.resolve(normalised);
 
   // Security: restrict scan to within home directory
   const rel = nodePath.relative(home, scanPath);
@@ -171,14 +198,20 @@ export async function run({
     throw new Error(`[find_duplicate_files] Path not accessible: ${scanPath}`);
   }
 
-  const minBytes   = Math.max(0, minSizeMb * 1024 * 1024);
-  const extSet     = extensions && extensions.length > 0
+  const minBytes = Math.max(0, minSizeMb * 1024 * 1024);
+  const extSet   = extensions && extensions.length > 0
     ? new Set(extensions.map((e) => (e.startsWith(".") ? e : `.${e}`).toLowerCase()))
     : null;
 
+  // Internal deadline = 90% of the G4 ceiling. Headroom lets us serialize
+  // and return partial results before the Promise.race rejects.
+  const ceilingMs    = ctx?.deadlineMs ?? (Date.now() + 60_000);
+  const remainingMs  = Math.max(0, ceilingMs - Date.now());
+  const internalDeadlineMs = Date.now() + Math.floor(remainingMs * 0.9);
+
   const files: { path: string; size: number }[] = [];
-  const walkStats: WalkStats = { dirsVisited: 0, dirsPermissionDenied: 0 };
-  await walk(scanPath, minBytes, extSet, files, 0, walkStats);
+  const walkStats: WalkStats = { dirsVisited: 0, dirsPermissionDenied: 0, deadlineHit: false };
+  await walk(scanPath, minBytes, extSet, files, 0, walkStats, internalDeadlineMs);
 
   // Group by size first (cheap pre-filter before hashing)
   const bySize = new Map<number, typeof files>();
@@ -191,10 +224,18 @@ export async function run({
   // Only hash files that share a size with at least one other file
   const candidates = [...bySize.values()].filter((g) => g.length > 1).flat();
 
-  // Hash candidates and group by hash
+  // Hash candidates with bounded concurrency so a directory with thousands
+  // of size-collision candidates can't saturate the libuv thread pool.
+  // Stops queueing fresh work once the deadline elapses; in-flight hashes
+  // are still awaited so they can record their result.
   const byHash = new Map<string, typeof files>();
-  await Promise.allSettled(
-    candidates.map(async (f) => {
+  let hashDeadlineHit = false;
+  let cursor = 0;
+  const workers: Promise<void>[] = [];
+  const worker = async () => {
+    while (cursor < candidates.length) {
+      if (Date.now() >= internalDeadlineMs) { hashDeadlineHit = true; return; }
+      const f = candidates[cursor++];
       try {
         const h     = await hashFile(f.path);
         const group = byHash.get(h) ?? [];
@@ -203,8 +244,10 @@ export async function run({
       } catch {
         // skip unreadable files
       }
-    }),
-  );
+    }
+  };
+  for (let i = 0; i < HASH_CONCURRENCY; i++) workers.push(worker());
+  await Promise.all(workers);
 
   // Build duplicate groups (2+ files with same hash)
   const duplicateGroups: DuplicateGroup[] = [];
@@ -237,7 +280,11 @@ export async function run({
   // necessarily incomplete. Surface so the user knows there may be more
   // duplicates in unscanned subtrees.
   let warning: string | undefined;
-  if (
+  if (walkStats.deadlineHit || hashDeadlineHit) {
+    warning =
+      "Duplicate scan stopped at the per-tool deadline. Results cover only the " +
+      "files scanned so far — there may be more duplicates in untraversed subtrees.";
+  } else if (
     walkStats.dirsVisited > 0 &&
     walkStats.dirsPermissionDenied / walkStats.dirsVisited > 0.2
   ) {
@@ -253,6 +300,7 @@ export async function run({
     scannedFiles:    files.length,
     duplicateGroups,
     totalWastedMb,
+    partial:         walkStats.deadlineHit || hashDeadlineHit,
     ...(warning ? { warning } : {}),
   };
 }

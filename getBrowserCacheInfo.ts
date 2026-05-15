@@ -23,6 +23,7 @@ import * as os       from "os";
 import * as nodePath from "path";
 
 import { isDarwin, isWin32 } from "./_shared/platform";
+import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -38,6 +39,11 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  // Browser caches can be many GB and millions of small files; the default
+  // 60 s ceiling isn't enough on populated home directories. Tool honours
+  // ctx.deadlineMs internally and returns partial results before this
+  // hard timeout fires.
+  timeoutMs:       180_000,
   schema:          {},
 } as const;
 
@@ -59,43 +65,24 @@ export interface GetBrowserCacheInfoResult {
 
 // -- Helpers ------------------------------------------------------------------
 
-async function getDirSizeBytes(dirPath: string): Promise<number> {
-  try {
-    const entries = await fs.readdir(dirPath, { recursive: true, withFileTypes: true });
-    let totalBytes = 0;
-    await Promise.all(
-      entries
-        .filter((e) => !e.isDirectory())
-        .map(async (e) => {
-          try {
-            const fullPath = nodePath.join(
-              e.parentPath ?? (e as unknown as { path: string }).path ?? dirPath,
-              e.name,
-            );
-            const stat = await fs.stat(fullPath);
-            totalBytes += stat.size;
-          } catch { /* skip inaccessible */ }
-        }),
-    );
-    return totalBytes;
-  } catch {
-    return 0;
-  }
-}
-
-async function measureIfExists(browser: string, profile: string, path: string): Promise<BrowserCacheEntry | null> {
+async function measureIfExists(
+  browser:    string,
+  profile:    string,
+  path:       string,
+  deadlineMs: number,
+): Promise<{ entry: BrowserCacheEntry; partial: boolean } | null> {
   try {
     await fs.access(path);
   } catch {
     return null;
   }
-  const sizeBytes = await getDirSizeBytes(path);
-  return { browser, profile, path, sizeBytes };
+  const { sizeBytes, partial } = await getDirSizeBytesShared(path, deadlineMs);
+  return { entry: { browser, profile, path, sizeBytes }, partial };
 }
 
 // -- darwin -------------------------------------------------------------------
 
-async function getBrowserCacheInfoDarwin(): Promise<GetBrowserCacheInfoResult> {
+async function getBrowserCacheInfoDarwin(deadlineMs: number): Promise<GetBrowserCacheInfoResult> {
   const cacheRoot = nodePath.join(os.homedir(), "Library", "Caches");
   const defs: Array<{ browser: string; path: string }> = [
     { browser: "Chrome",  path: nodePath.join(cacheRoot, "Google", "Chrome") },
@@ -105,18 +92,27 @@ async function getBrowserCacheInfoDarwin(): Promise<GetBrowserCacheInfoResult> {
   ];
 
   const measured = await Promise.all(
-    defs.map((d) => measureIfExists(d.browser, "default", d.path)),
+    defs.map((d) => measureIfExists(d.browser, "default", d.path, deadlineMs)),
   );
-  const browsers = measured.filter((b): b is BrowserCacheEntry => b !== null);
+  const present  = measured.filter((m): m is { entry: BrowserCacheEntry; partial: boolean } => m !== null);
+  const browsers = present.map((m) => m.entry);
   browsers.sort((a, b) => b.sizeBytes - a.sizeBytes);
   const totalBytes = browsers.reduce((s, b) => s + b.sizeBytes, 0);
+  const anyPartial = present.some((m) => m.partial);
 
-  return { platform: "darwin", browsers, totalBytes };
+  return {
+    platform: "darwin",
+    browsers,
+    totalBytes,
+    ...(anyPartial
+      ? { errors: [{ scope: "deadline", message: "Browser cache scan exceeded the per-tool deadline; sizes are partial." }] }
+      : {}),
+  };
 }
 
 // -- win32 --------------------------------------------------------------------
 
-async function getBrowserCacheInfoWin32(): Promise<GetBrowserCacheInfoResult> {
+async function getBrowserCacheInfoWin32(deadlineMs: number): Promise<GetBrowserCacheInfoResult> {
   const localAppData = process.env["LOCALAPPDATA"]
     ?? nodePath.join(os.homedir(), "AppData", "Local");
 
@@ -127,20 +123,39 @@ async function getBrowserCacheInfoWin32(): Promise<GetBrowserCacheInfoResult> {
   ];
 
   const measured = await Promise.all(
-    defs.map((d) => measureIfExists(d.browser, "default", d.path)),
+    defs.map((d) => measureIfExists(d.browser, "default", d.path, deadlineMs)),
   );
-  const browsers = measured.filter((b): b is BrowserCacheEntry => b !== null);
+  const present  = measured.filter((m): m is { entry: BrowserCacheEntry; partial: boolean } => m !== null);
+  const browsers = present.map((m) => m.entry);
   browsers.sort((a, b) => b.sizeBytes - a.sizeBytes);
   const totalBytes = browsers.reduce((s, b) => s + b.sizeBytes, 0);
+  const anyPartial = present.some((m) => m.partial);
 
-  return { platform: "win32", browsers, totalBytes };
+  return {
+    platform: "win32",
+    browsers,
+    totalBytes,
+    ...(anyPartial
+      ? { errors: [{ scope: "deadline", message: "Browser cache scan exceeded the per-tool deadline; sizes are partial." }] }
+      : {}),
+  };
 }
 
 // -- Exported run -------------------------------------------------------------
 
-export async function run(_args: Record<string, never> = {}): Promise<GetBrowserCacheInfoResult> {
-  if (isDarwin()) return getBrowserCacheInfoDarwin();
-  if (isWin32())  return getBrowserCacheInfoWin32();
+interface RunCtx { deadlineMs?: number }
+
+export async function run(
+  _args: Record<string, never> = {},
+  ctx?:  RunCtx,
+): Promise<GetBrowserCacheInfoResult> {
+  // Internal budget = 90% of the G4 deadline.
+  const ceilingMs    = ctx?.deadlineMs ?? (Date.now() + 60_000);
+  const remainingMs  = Math.max(0, ceilingMs - Date.now());
+  const internalDeadlineMs = Date.now() + Math.floor(remainingMs * 0.9);
+
+  if (isDarwin()) return getBrowserCacheInfoDarwin(internalDeadlineMs);
+  if (isWin32())  return getBrowserCacheInfoWin32(internalDeadlineMs);
   return {
     platform:   os.platform(),
     browsers:   [],

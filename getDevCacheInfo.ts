@@ -25,6 +25,7 @@ import * as os       from "os";
 import * as nodePath from "path";
 
 import { execAsync } from "./_shared/platform";
+import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -40,6 +41,10 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   [],
+  // Gradle/maven/npm caches can be tens of GB; the default 60 s ceiling
+  // isn't enough on developer machines. Tool honours ctx.deadlineMs
+  // internally and returns partial results before this hard timeout fires.
+  timeoutMs:       180_000,
   schema:          {},
 } as const;
 
@@ -80,104 +85,110 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
-async function getDirSizeBytes(dirPath: string): Promise<number> {
-  try {
-    const entries = await fs.readdir(dirPath, { recursive: true, withFileTypes: true });
-    let totalBytes = 0;
-    await Promise.all(
-      entries
-        .filter((e) => !e.isDirectory())
-        .map(async (e) => {
-          try {
-            const fullPath = nodePath.join(
-              e.parentPath ?? (e as unknown as { path: string }).path ?? dirPath,
-              e.name,
-            );
-            const stat = await fs.stat(fullPath);
-            totalBytes += stat.size;
-          } catch { /* skip */ }
-        }),
-    );
-    return totalBytes;
-  } catch {
-    return 0;
-  }
+async function sizeOf(path: string, deadlineMs: number): Promise<{ sizeBytes: number; partial: boolean }> {
+  return getDirSizeBytesShared(path, deadlineMs);
 }
 
 // -- Tool-specific cache resolvers --------------------------------------------
 
-async function probeNpm(): Promise<DevCacheEntry> {
-  if (!(await commandExists("npm"))) return { tool: "npm", path: null, sizeBytes: 0, available: false };
+type ProbeResult = { entry: DevCacheEntry; partial: boolean };
+
+async function probeNpm(deadlineMs: number): Promise<ProbeResult> {
+  if (!(await commandExists("npm"))) return { entry: { tool: "npm", path: null, sizeBytes: 0, available: false }, partial: false };
   let cachePath: string | null = null;
   try {
     const { stdout } = await execAsync("npm config get cache");
     cachePath = stdout.trim();
   } catch { /* ignore */ }
-  const sizeBytes = cachePath ? await getDirSizeBytes(cachePath) : 0;
-  return { tool: "npm", path: cachePath, sizeBytes, available: true };
+  const { sizeBytes, partial } = cachePath ? await sizeOf(cachePath, deadlineMs) : { sizeBytes: 0, partial: false };
+  return { entry: { tool: "npm", path: cachePath, sizeBytes, available: true }, partial };
 }
 
-async function probeYarn(): Promise<DevCacheEntry> {
-  if (!(await commandExists("yarn"))) return { tool: "yarn", path: null, sizeBytes: 0, available: false };
+async function probeYarn(deadlineMs: number): Promise<ProbeResult> {
+  if (!(await commandExists("yarn"))) return { entry: { tool: "yarn", path: null, sizeBytes: 0, available: false }, partial: false };
   let cachePath: string | null = null;
   try {
     const { stdout } = await execAsync("yarn cache dir");
     cachePath = stdout.trim();
   } catch { /* ignore */ }
-  const sizeBytes = cachePath ? await getDirSizeBytes(cachePath) : 0;
-  return { tool: "yarn", path: cachePath, sizeBytes, available: true };
+  const { sizeBytes, partial } = cachePath ? await sizeOf(cachePath, deadlineMs) : { sizeBytes: 0, partial: false };
+  return { entry: { tool: "yarn", path: cachePath, sizeBytes, available: true }, partial };
 }
 
-async function probePnpm(): Promise<DevCacheEntry> {
-  if (!(await commandExists("pnpm"))) return { tool: "pnpm", path: null, sizeBytes: 0, available: false };
+async function probePnpm(deadlineMs: number): Promise<ProbeResult> {
+  if (!(await commandExists("pnpm"))) return { entry: { tool: "pnpm", path: null, sizeBytes: 0, available: false }, partial: false };
   let cachePath: string | null = null;
   try {
     const { stdout } = await execAsync("pnpm store path");
     cachePath = stdout.trim();
   } catch { /* ignore */ }
-  const sizeBytes = cachePath ? await getDirSizeBytes(cachePath) : 0;
-  return { tool: "pnpm", path: cachePath, sizeBytes, available: true };
+  const { sizeBytes, partial } = cachePath ? await sizeOf(cachePath, deadlineMs) : { sizeBytes: 0, partial: false };
+  return { entry: { tool: "pnpm", path: cachePath, sizeBytes, available: true }, partial };
 }
 
-async function probePip(): Promise<DevCacheEntry> {
+async function probePip(deadlineMs: number): Promise<ProbeResult> {
   const home = os.homedir();
   const cachePath = os.platform() === "win32"
     ? nodePath.join(process.env["LOCALAPPDATA"] ?? nodePath.join(home, "AppData", "Local"), "pip", "Cache")
     : nodePath.join(home, "Library", "Caches", "pip");
   const available = await pathExists(cachePath);
-  const sizeBytes = available ? await getDirSizeBytes(cachePath) : 0;
-  return { tool: "pip", path: cachePath, sizeBytes, available };
+  const { sizeBytes, partial } = available ? await sizeOf(cachePath, deadlineMs) : { sizeBytes: 0, partial: false };
+  return { entry: { tool: "pip", path: cachePath, sizeBytes, available }, partial };
 }
 
-async function probeGradle(): Promise<DevCacheEntry> {
+async function probeGradle(deadlineMs: number): Promise<ProbeResult> {
   const home = os.homedir();
   const cachePath = os.platform() === "win32"
     ? nodePath.join(process.env["USERPROFILE"] ?? home, ".gradle", "caches")
     : nodePath.join(home, ".gradle", "caches");
   const available = await pathExists(cachePath);
-  const sizeBytes = available ? await getDirSizeBytes(cachePath) : 0;
-  return { tool: "gradle", path: cachePath, sizeBytes, available };
+  const { sizeBytes, partial } = available ? await sizeOf(cachePath, deadlineMs) : { sizeBytes: 0, partial: false };
+  return { entry: { tool: "gradle", path: cachePath, sizeBytes, available }, partial };
 }
 
-async function probeMaven(): Promise<DevCacheEntry> {
+async function probeMaven(deadlineMs: number): Promise<ProbeResult> {
   const home = os.homedir();
   const cachePath = os.platform() === "win32"
     ? nodePath.join(process.env["USERPROFILE"] ?? home, ".m2", "repository")
     : nodePath.join(home, ".m2", "repository");
   const available = await pathExists(cachePath);
-  const sizeBytes = available ? await getDirSizeBytes(cachePath) : 0;
-  return { tool: "maven", path: cachePath, sizeBytes, available };
+  const { sizeBytes, partial } = available ? await sizeOf(cachePath, deadlineMs) : { sizeBytes: 0, partial: false };
+  return { entry: { tool: "maven", path: cachePath, sizeBytes, available }, partial };
 }
 
 // -- Exported run -------------------------------------------------------------
 
-export async function run(_args: Record<string, never> = {}): Promise<GetDevCacheInfoResult> {
-  const caches = await Promise.all([
-    probeNpm(), probeYarn(), probePnpm(), probePip(), probeGradle(), probeMaven(),
+interface RunCtx { deadlineMs?: number }
+
+export async function run(
+  _args: Record<string, never> = {},
+  ctx?:  RunCtx,
+): Promise<GetDevCacheInfoResult> {
+  const ceilingMs    = ctx?.deadlineMs ?? (Date.now() + 60_000);
+  const remainingMs  = Math.max(0, ceilingMs - Date.now());
+  const internalDeadlineMs = Date.now() + Math.floor(remainingMs * 0.9);
+
+  const probes = await Promise.all([
+    probeNpm(internalDeadlineMs),
+    probeYarn(internalDeadlineMs),
+    probePnpm(internalDeadlineMs),
+    probePip(internalDeadlineMs),
+    probeGradle(internalDeadlineMs),
+    probeMaven(internalDeadlineMs),
   ]);
+  const caches = probes.map((p) => p.entry);
   caches.sort((a, b) => b.sizeBytes - a.sizeBytes);
   const totalBytes = caches.reduce((s, c) => s + c.sizeBytes, 0);
-  return { platform: os.platform(), caches, totalBytes };
+  const anyPartial = probes.some((p) => p.partial);
+
+  return {
+    platform: os.platform(),
+    caches,
+    totalBytes,
+    ...(anyPartial
+      ? { errors: [{ scope: "deadline", message: "Dev cache scan exceeded the per-tool deadline; sizes are partial." }] }
+      : {}),
+  };
 }
 
 // -- CLI smoke test -----------------------------------------------------------
