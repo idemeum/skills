@@ -231,7 +231,12 @@ export async function run({ path: inputPath = os.homedir() }: { path?: string })
   // partial sizes for cleanup decisions.
   let warning: string | undefined;
   try {
-    const expected = (await fs.readdir(scanPath)).filter((n) => n !== ".DS_Store");
+    // Exclude dotfiles: `du -sk <path>/*` shell-globs to non-hidden children
+    // only (bash default), so comparing against a readdir that includes
+    // dotfiles would treat every dotfile as "skipped" and falsely fire the
+    // warning on any developer home dir with .npm / .m2 / .ssh / etc.
+    const expected = (await fs.readdir(scanPath))
+      .filter((n) => n !== ".DS_Store" && !n.startsWith("."));
     if (expected.length > 0) {
       const skipped = Math.max(0, expected.length - entries.length);
       const ratio   = skipped / expected.length;
