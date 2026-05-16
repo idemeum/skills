@@ -41,7 +41,7 @@ export const meta = {
     appName: z
       .string()
       .optional()
-      .describe("App name to target (e.g. 'Slack', 'Chrome'). Omit to list available caches without deleting"),
+      .describe("App name to target (e.g. 'Slack', 'Chrome'). Omit + dryRun:false to clear every app cache (used by the disk-cleanup present_preview flow)."),
     dryRun: z
       .boolean()
       .optional()
@@ -122,11 +122,15 @@ async function clearAppCacheDarwin(
 
   const totalSizeMb = Math.round(caches.reduce((s, c) => s + c.sizeMb, 0) * 100) / 100;
 
-  if (!appName || dryRun || caches.length === 0) {
+  if (dryRun || caches.length === 0) {
     return { caches, totalSizeMb, deleted: false, freedMb: 0 };
   }
 
-  // Only delete when appName is specified and dryRun is false
+  // dryRun:false → delete every cache in `caches`. When appName is set,
+  // `caches` is already filtered to the matching subset; when appName is
+  // omitted it spans every subdir under ~/Library/Caches (used by the
+  // disk-cleanup present_preview flow, where the user already confirmed
+  // the bulk-clear via the consolidated category card).
   let freedMb = 0;
   for (const cache of caches) {
     if (!isSafePath(cache.path, cacheRoot)) continue;
@@ -202,10 +206,12 @@ async function clearAppCacheWin32(
   caches.sort((a, b) => b.sizeMb - a.sizeMb);
   const totalSizeMb = Math.round(caches.reduce((s, c) => s + c.sizeMb, 0) * 100) / 100;
 
-  if (!appName || dryRun || caches.length === 0) {
+  if (dryRun || caches.length === 0) {
     return { caches, totalSizeMb, deleted: false, freedMb: 0 };
   }
 
+  // dryRun:false → delete every cache in `caches`. Same semantics as the
+  // darwin branch: appName-filtered when set, every cache subdir when omitted.
   let freedMb = 0;
   for (const cache of caches) {
     const root = roots.find((r) => cache.path.startsWith(r));
