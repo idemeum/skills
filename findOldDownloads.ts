@@ -50,6 +50,7 @@ export const meta = {
 interface OldFile {
   name:              string;
   path:              string;
+  sizeBytes:         number;
   sizeMb:            number;
   lastModified:      string; // ISO 8601
   daysSinceModified: number;
@@ -76,7 +77,7 @@ export async function run({
       downloadsPath,
       totalFiles:  0,
       oldFiles:    [] as OldFile[],
-      totalSizeMb: 0,
+      totalBytes:  0,
       message:     `Downloads folder not found at: ${downloadsPath}`,
     };
   }
@@ -98,7 +99,7 @@ export async function run({
         downloadsPath,
         totalFiles:  0,
         oldFiles:    [] as OldFile[],
-        totalSizeMb: 0,
+        totalBytes:  0,
         error:
           "Cannot read Downloads folder — macOS denied access. " +
           "Open System Settings → Privacy & Security → Files and Folders, " +
@@ -125,6 +126,7 @@ export async function run({
         return {
           name:              d.name,
           path:              full,
+          sizeBytes:         stat.size,
           sizeMb:            Math.round((stat.size / (1024 * 1024)) * 100) / 100,
           lastModified:      stat.mtime.toISOString(),
           daysSinceModified: daysSinceMod,
@@ -141,16 +143,16 @@ export async function run({
     .filter((f): f is OldFile => f !== null)
     .sort((a, b) => b.sizeMb - a.sizeMb);
 
-  const totalSizeMb = Math.round(
-    oldFiles.reduce((s, f) => s + f.sizeMb, 0) * 100,
-  ) / 100;
+  // Aggregate in bytes (uniform with other disk-cleanup tools) for the
+  // disk-cleanup SKILL.md > Data lineage present_preview summary.
+  const totalBytes = oldFiles.reduce((s, f) => s + f.sizeBytes, 0);
 
   return {
     platform,
     downloadsPath,
     totalFiles,
     oldFiles,
-    totalSizeMb,
+    totalBytes,
   };
 }
 

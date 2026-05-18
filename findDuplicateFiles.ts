@@ -272,8 +272,6 @@ export async function run(
     return wastedB - wastedA;
   });
 
-  const totalWastedMb = Math.round((totalWastedBytes / (1024 * 1024)) * 100) / 100;
-
   // ── Partial-result detection ────────────────────────────────────────────────
   // Same logic as get_large_files: when the walk skipped a meaningful share
   // of directories due to OS permission errors, the duplicate set is
@@ -299,7 +297,10 @@ export async function run(
     scannedPath:     scanPath,
     scannedFiles:    files.length,
     duplicateGroups,
-    totalWastedMb,
+    // Aggregate in bytes for uniformity with other disk-cleanup tools
+    // (get_app_cache_info, get_browser_cache_info, get_trash_info, etc.) and
+    // for the disk-cleanup SKILL.md > Data lineage present_preview summary.
+    totalWastedBytes,
     partial:         walkStats.deadlineHit || hashDeadlineHit,
     ...(warning ? { warning } : {}),
   };

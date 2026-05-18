@@ -153,13 +153,13 @@ Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from pr
 
 - top-level `{totalSize}` — sum of every category's size, formatted human-readable
 - inside large-files.summary:
-  - `{N}` — `output.fileCount` from the `get_large_files` step
+  - `{N}` — `output.totalFound` from the `get_large_files` step
   - `{size}` — `output.totalBytes` from the `get_large_files` step, formatted human-readable
 - inside duplicates.summary:
-  - `{N}` — `output.duplicateGroupCount` from the `find_duplicate_files` step
+  - `{N}` — length of `output.duplicateGroups` from the `find_duplicate_files` step
   - `{size}` — `output.totalWastedBytes` from the `find_duplicate_files` step, formatted human-readable
 - inside old-downloads.summary:
-  - `{N}` — `output.fileCount` from the `find_old_downloads` step
+  - `{N}` — length of `output.oldFiles` from the `find_old_downloads` step
   - `{size}` — `output.totalBytes` from the `find_old_downloads` step, formatted human-readable
 - inside app-cache.summary:
   - `{size}` — `output.totalBytes` from the `get_app_cache_info` step, formatted human-readable

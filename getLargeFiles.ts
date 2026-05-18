@@ -219,6 +219,10 @@ export async function run({
     minSizeHuman: formatBytes(minSizeBytes),
     totalFound:   results.length,
     returned:     files.length,
+    // Sum across ALL matching files (results), not just the returned slice,
+    // so this aggregates pairs with totalFound for the present_preview
+    // summary card. disk-cleanup SKILL.md > Data lineage reads this field.
+    totalBytes:   results.reduce((s, f) => s + f.size, 0),
     files,
     ...(warning ? { warning } : {}),
   };
