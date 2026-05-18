@@ -32,7 +32,7 @@ export const meta = {
   destructive:     false,
   requiresConsent: false,
   supportsDryRun:  true,
-  affectedScope:   ["network", "system"],
+  affectedScope:   ["network"],
   auditRequired:   true,
   schema: {
     profileName: z

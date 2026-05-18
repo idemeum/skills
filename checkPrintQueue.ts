@@ -32,7 +32,7 @@ export const meta = {
   destructive:     false,
   requiresConsent: false,
   supportsDryRun:  false,
-  affectedScope:   ["system"],
+  affectedScope:   ["user"],
   auditRequired:   false,
   schema: {
     printerName: z
