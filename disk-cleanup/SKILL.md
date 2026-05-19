@@ -74,29 +74,31 @@ Do NOT use this skill for process or memory issues — use the `process-manager`
 **Step 1 — Identify large top-level folders**
 Call `disk_scan` on the user home directory to list every immediate child folder and file sorted largest first.
 
-**Step 2 — Present findings**
-Show the top 10 results with human-friendly sizes (e.g. 12.4 GB, 850 MB). Call out unexpectedly large entries and well-known cache locations.
+**Step 2 — Find large files**
+Call `get_large_files` **once** on the home directory with `minSizeBytes: 104857600` (100 MB) and `limit: 5`. The tool returns `output.files: [{ path, size, sizeHuman, modified }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
 
-**Step 3 — Drill into large folders**
-For any unusually large folder (Downloads, Desktop, Documents, Movies, a project directory), call `get_large_files` with `minSizeBytes: 52428800` (50 MB) to surface the specific files inside. Repeat for each large folder of interest.
+**Step 3 — Find duplicate files**
+Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` and `topDeletableLimit: 5`. The tool returns `output.topDeletables: [{ path, sizeBytes }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
 
-**Step 4 — Check for duplicate files**
-Call `find_duplicate_files` on the home directory with `minSizeMb: 10` to find identical files wasting space. Present duplicate groups sorted by wasted space — photo and video duplicates are often the largest wins.
+**Step 4 — Check old downloads**
+Call `find_old_downloads` with `olderThanDays: 90` and `minSizeMb: 50` to list stale downloads ≥50 MB. Installers (.dmg, .pkg, .exe) older than 90 days are almost always safe to remove.
 
-**Step 5 — Check old downloads**
-Call `find_old_downloads` with `olderThanDays: 90` to list stale downloads. Installers (.dmg, .pkg, .exe) older than 90 days are almost always safe to remove.
-
-**Step 6 — Check application caches**
+**Step 5 — Check application caches**
 Call `get_app_cache_info` to list all app cache directories and their sizes. Present the largest caches. Ask the user if they want to clear specific ones or all. This is a read-only probe — nothing is deleted at this step.
 
-**Step 7 — Check browser caches**
+**Step 6 — Check browser caches**
 Call `get_browser_cache_info` to report browser cache sizes (Chrome, Safari, Firefox, Edge). Browser caches are always safe to clear — they rebuild automatically on next use. This is a read-only probe.
 
-**Step 8 — Check developer caches (if applicable)**
+**Step 7 — Check developer caches (if applicable)**
 If the user is a developer or has large ~/Library entries:
 - Call `get_dev_cache_info` to report npm/yarn/pnpm/pip/gradle/maven cache sizes (read-only)
 - Call `get_docker_disk_usage` if relevant — reports reclaimable bytes via `docker system df` without modifying anything; returns `dockerInstalled:false` when Docker is unavailable so the caller can branch
 - Call `get_xcode_derived_data_info` on macOS to report DerivedData / Archives / DeviceSupport sizes (read-only; returns `supported:false` on non-darwin)
+
+**Step 8 — Check Trash contents (always include)**
+This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space, and the consolidated `present_preview` card lets the user opt in or out of emptying it. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
+
+Call `get_trash_info` to report Trash item count and total size. This is a read-only probe — nothing is deleted. The corrective `empty_trash` invocation in Step 10 (gated on `'trash'` being in the user's `present_preview` selection) is the single user-facing surface that actually empties the Trash, fronted by the G4 consent gate.
 
 **Step 9 — Present consolidated cleanup plan**
 
@@ -107,13 +109,13 @@ title: "Cleanup Plan"
 summary: "You can recover {totalSize} by cleaning the following:"
 categories:
   - id: large-files
-    label: "Large files in Downloads & Desktop"
-    summary: "{N} files over 50 MB ({size})"
+    label: "Large files"
+    summary: "{N} files over 100 MB ({size})"
     defaultSelected: true
 
   - id: duplicates
     label: "Duplicate files"
-    summary: "{N} duplicate groups sorted by wasted space ({size})"
+    summary: "{N} duplicate files ({size})"
     defaultSelected: true
 
   - id: old-downloads
@@ -153,11 +155,11 @@ Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from pr
 
 - top-level `{totalSize}` — sum of every category's size, formatted human-readable
 - inside large-files.summary:
-  - `{N}` — `output.totalFound` from the `get_large_files` step
-  - `{size}` — `output.totalBytes` from the `get_large_files` step, formatted human-readable
+  - `{N}` — `output.returned` from the Step 2 `get_large_files` call.
+  - `{size}` — sum of `file.size` across every entry in `output.files` from Step 2, formatted human-readable.
 - inside duplicates.summary:
-  - `{N}` — length of `output.duplicateGroups` from the `find_duplicate_files` step
-  - `{size}` — `output.totalWastedBytes` from the `find_duplicate_files` step, formatted human-readable
+  - `{N}` — `output.topDeletables.length` from the Step 3 `find_duplicate_files` call (bounded to ≤5 by `topDeletableLimit: 5`).
+  - `{size}` — sum of `sizeBytes` across every entry in `output.topDeletables` from Step 3, formatted human-readable. (Note: `find_duplicate_files` omits `duplicateGroups` and `totalWastedBytes` from its output whenever `topDeletableLimit` is set, so those scan-wide aggregates aren't available to mistakenly pick.)
 - inside old-downloads.summary:
   - `{N}` — length of `output.oldFiles` from the `find_old_downloads` step
   - `{size}` — `output.totalBytes` from the `find_old_downloads` step, formatted human-readable
@@ -179,23 +181,18 @@ The card stays visible until the user submits; the gate returns `{ selected: str
 
 For each category id in Step 9's `selected` output, re-call the relevant tool with `dryRun: false`:
 
-- `"large-files"`    → call `delete_files` once per file in the `get_large_files` output
-- `"duplicates"`     → call `delete_files` once per file in the `find_duplicate_files` output
-- `"old-downloads"`  → call `delete_files` once per file in the `find_old_downloads` output
+- `"large-files"`    → call `delete_files` **once** with `paths: [<every file.path from Step 2's output.files>]`. Step 2 already returns at most 5 files via `limit: 5`, so this is naturally bounded. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
+- `"duplicates"`     → call `delete_files` **once** with `paths: [<every entry.path from Step 3's output.topDeletables>]`. Step 3 already returned at most 5 pre-sorted deletables via `topDeletableLimit: 5`, so no per-group selection logic is needed at this step. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
+- `"old-downloads"`  → collect every `oldFiles[].path` from the `find_old_downloads` output and call `delete_files` **once** with `paths: [<all old-download paths>]`. A single batched call produces one dry-run preview (listing every stale download) and one consent prompt — never iterate per file.
 - `"app-cache"`      → call `clear_app_cache` with `dryRun: false`
 - `"browser-cache"`  → call `clear_browser_cache` with `browser: "all"`, `dryRun: false`
 - `"dev-cache"`      → call `clear_dev_cache` with `dryRun: false`; on macOS also call `clear_xcode_derived_data` with `dryRun: false`
 - `"docker"`         → call `prune_docker` with `dryRun: false`
 - `"trash"`          → call `empty_trash` with `dryRun: false`
 
-Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `When:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Iterative steps additionally use `forEach` against the relevant prior diagnostic output. Skip silently when the category id is not in `selected`.
+Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `When:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
 
-**Step 11 — Check Trash contents (always include)**
-This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space, and the consolidated `present_preview` card lets the user opt in or out of emptying it. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
-
-Call `get_trash_info` to report Trash item count and total size. This is a read-only probe — nothing is deleted. The corrective `empty_trash` invocation in Step 10 (gated on `'trash'` being in the user's `present_preview` selection) is the single user-facing surface that actually empties the Trash, fronted by the G4 consent gate.
-
-**Step 12 — Final report**
+**Step 11 — Final report**
 Summarise total space recovered across all operations. Optionally call `disk_scan` again on the home directory to show the updated sizes.
 
 ---

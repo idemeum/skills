@@ -153,12 +153,22 @@ async function walk(
 export async function run({
   path: inputPath   = os.homedir(),
   minSizeBytes      = DEFAULT_MIN_BYTES,
-  limit             = DEFAULT_LIMIT,
+  limit,
 }: {
   path?:         string;
   minSizeBytes?: number;
   limit?:        number;
 } = {}) {
+  // Caller-set vs default-applied distinction matters for the output shape:
+  // when the caller explicitly passes `limit`, they're asking for a bounded
+  // slice and the executor LLM downstream should NOT see aggregate fields
+  // (totalFound, totalBytes) that span the full match set — those mislead
+  // the cleanup-card substitution into showing "50 files" when only 5 are
+  // actionable. With no explicit limit, callers get the aggregates as
+  // before for back-compat with diagnostic-only consumers.
+  const limitWasSet  = limit !== undefined;
+  const effectiveLimit = limit ?? DEFAULT_LIMIT;
+
   const scanPath = nodePath.resolve(inputPath);
 
   // Security: restrict scanning to within the user home directory.
@@ -193,7 +203,7 @@ export async function run({
   await walk(realScanPath, minSizeBytes, results, 0, stats);
   results.sort((a, b) => b.size - a.size);
 
-  const files = results.slice(0, limit);
+  const files = results.slice(0, effectiveLimit);
 
   // ── Partial-result detection ────────────────────────────────────────────────
   // If a meaningful share of directories couldn't be read because of OS
@@ -217,13 +227,17 @@ export async function run({
     scannedPath:  scanPath,
     minSizeBytes,
     minSizeHuman: formatBytes(minSizeBytes),
-    totalFound:   results.length,
     returned:     files.length,
-    // Sum across ALL matching files (results), not just the returned slice,
-    // so this aggregates pairs with totalFound for the present_preview
-    // summary card. disk-cleanup SKILL.md > Data lineage reads this field.
-    totalBytes:   results.reduce((s, f) => s + f.size, 0),
     files,
+    // Aggregates spanning the full match set (not the returned slice) are
+    // only included when the caller did NOT specify `limit`. With limit set,
+    // the caller already declared they want a bounded view; surfacing the
+    // wider counts misleads downstream substitution. See the run() header
+    // comment for the rationale.
+    ...(limitWasSet ? {} : {
+      totalFound: results.length,
+      totalBytes: results.reduce((s, f) => s + f.size, 0),
+    }),
     ...(warning ? { warning } : {}),
   };
 }
@@ -240,7 +254,7 @@ if (require.main === module) {
 
   run({ path: scanPath, minSizeBytes, limit })
     .then((r) => {
-      console.log(`Found ${r.totalFound} file(s) >= ${r.minSizeHuman} — showing ${r.returned}\n`);
+      console.log(`Returned ${r.returned} file(s) >= ${r.minSizeHuman}\n`);
       r.files.forEach((f) =>
         console.log(`  ${f.sizeHuman.padStart(10)}  ${f.path}`),
       );

@@ -54,6 +54,21 @@ export const meta = {
       .array(z.string())
       .optional()
       .describe("File extensions to check e.g. ['.jpg','.pdf']. Omit for all files"),
+    topDeletableLimit: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        "When set, the tool returns ONLY a pre-computed `topDeletables: " +
+        "[{path, sizeBytes}]` array of the N largest deletable duplicate " +
+        "files (one keeper per group is preserved; the rest are deletable, " +
+        "ranked by per-file size descending). `duplicateGroups` and " +
+        "`totalWastedBytes` are omitted to prevent downstream substitution " +
+        "from accidentally surfacing scan-wide aggregates as if they were " +
+        "the actionable slice. Use this when the caller wants a bounded " +
+        "view ready to feed into delete_files (e.g. disk-cleanup's 5-cap).",
+      ),
   },
 } as const;
 
@@ -167,10 +182,12 @@ export async function run(
     path: inputPath,
     minSizeMb  = 1,
     extensions,
+    topDeletableLimit,
   }: {
-    path?:       string;
-    minSizeMb?:  number;
-    extensions?: string[];
+    path?:              string;
+    minSizeMb?:         number;
+    extensions?:        string[];
+    topDeletableLimit?: number;
   } = {},
   ctx?: RunCtx,
 ) {
@@ -291,6 +308,37 @@ export async function run(
       `${walkStats.dirsVisited} directories could not be read (likely missing ` +
       `Full Disk Access). Open System Settings → Privacy & Security → ` +
       `Full Disk Access, enable AI Support Agent, then quit and relaunch.`;
+  }
+
+  // When the caller asked for a bounded actionable slice (topDeletableLimit),
+  // return ONLY the pre-computed top-N deletables and omit `duplicateGroups`
+  // and `totalWastedBytes`. The aggregates would mislead downstream
+  // substitution into showing scan-wide counts instead of the actionable
+  // top-N (e.g. cleanup-card showing "100 groups (2.9 GB)" when only 5
+  // files will actually be deleted). Symmetric to get_large_files's `limit`
+  // contract.
+  if (topDeletableLimit !== undefined) {
+    // Pool deletables across all groups: skip files[0] (the keeper) from
+    // each group, tag each remaining file with its group's per-file size.
+    // All files in a duplicate group are byte-identical, so per-file size
+    // equals the group's size.
+    const pool: { path: string; sizeBytes: number }[] = [];
+    for (const group of duplicateGroups) {
+      const sizeBytes = Math.round(group.sizeMb * 1024 * 1024);
+      for (let i = 1; i < group.files.length; i++) {
+        pool.push({ path: group.files[i].path, sizeBytes });
+      }
+    }
+    pool.sort((a, b) => b.sizeBytes - a.sizeBytes);
+    const topDeletables = pool.slice(0, topDeletableLimit);
+
+    return {
+      scannedPath:   scanPath,
+      scannedFiles:  files.length,
+      topDeletables,
+      partial:       walkStats.deadlineHit || hashDeadlineHit,
+      ...(warning ? { warning } : {}),
+    };
   }
 
   return {
