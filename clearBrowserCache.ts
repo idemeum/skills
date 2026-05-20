@@ -83,7 +83,8 @@ async function getDirSizeMb(dirPath: string): Promise<number> {
           }
         }),
     );
-    return Math.round((totalBytes / (1024 * 1024)) * 100) / 100;
+    // SI/decimal MB to match _shared/formatBytes.ts + Finder.
+    return Math.round((totalBytes / 1_000_000) * 100) / 100;
   } catch {
     return 0;
   }
