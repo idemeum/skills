@@ -84,7 +84,9 @@ export async function run({
 
   const now        = Date.now();
   const cutoffMs   = olderThanDays * 24 * 60 * 60 * 1000;
-  const minBytes   = minSizeMb * 1024 * 1024;
+  // SI/decimal MB (1 MB = 10^6 bytes) to match formatBytes output and
+  // Finder's display.  See mcp/skills/_shared/formatBytes.ts.
+  const minBytes   = minSizeMb * 1_000_000;
 
   let dirents: import("fs").Dirent[];
   try {

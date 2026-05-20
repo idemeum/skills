@@ -19,6 +19,7 @@ import * as nodePath from "path";
 import { z }         from "zod";
 
 import { expandTilde } from "./_shared/expandTilde";
+import { formatBytes } from "./_shared/formatBytes";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -61,7 +62,7 @@ export const meta = {
 
 // -- Constants ----------------------------------------------------------------
 
-const DEFAULT_MIN_BYTES = 100 * 1024 * 1024; // 100 MB
+const DEFAULT_MIN_BYTES = 100 * 1_000_000; // 100 MB (decimal/SI; matches formatBytes + Finder)
 const DEFAULT_LIMIT     = 20;
 const MAX_DEPTH         = 12; // prevent stack overflow on deep trees
 
@@ -80,14 +81,7 @@ const SKIP_DIRS = new Set([
   "Program Files", "Program Files (x86)",
 ]);
 
-// -- Helpers ------------------------------------------------------------------
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`;
-}
+// formatBytes is imported from _shared/formatBytes.
 
 interface FileEntry {
   path:      string;

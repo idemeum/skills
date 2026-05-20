@@ -20,6 +20,12 @@ import { z }         from "zod";
 
 import { loggedExec } from "./_shared/platform";
 import { expandTilde } from "./_shared/expandTilde";
+import { formatBytes } from "./_shared/formatBytes";
+
+// Re-export so existing test imports (`import { formatBytes } from "./diskScan"`)
+// continue to resolve.  No production consumer imports formatBytes from this
+// module — kept purely for test back-compat.
+export { formatBytes };
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -47,14 +53,8 @@ export const meta = {
   },
 } as const;
 
-// -- Shared helpers -----------------------------------------------------------
-
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`;
-}
+// formatBytes is imported from _shared/formatBytes (and re-exported above
+// for test back-compat).
 
 interface Entry {
   name:      string;
@@ -172,10 +172,13 @@ $out = foreach ($item in $items) {
     name      = $item.Name
     path      = $item.FullName
     size      = [long]$bytes
-    sizeHuman = if ($bytes -ge 1GB)     { '{0:N1} GB' -f ($bytes / 1GB)   }
-                elseif ($bytes -ge 1MB) { '{0:N1} MB' -f ($bytes / 1MB)   }
-                elseif ($bytes -ge 1KB) { '{0:N1} KB' -f ($bytes / 1KB)   }
-                else                    { "$bytes B" }
+    # SI / decimal units to match _shared/formatBytes.ts (and Windows
+    # Explorer modern display). PowerShell 1GB / 1MB / 1KB literals are
+    # BINARY (1024-based), so we use explicit decimal constants instead.
+    sizeHuman = if ($bytes -ge 1000000000)   { '{0:N1} GB' -f ($bytes / 1000000000) }
+                elseif ($bytes -ge 1000000)  { '{0:N1} MB' -f ($bytes / 1000000)    }
+                elseif ($bytes -ge 1000)     { '{0:N1} KB' -f ($bytes / 1000)       }
+                else                          { "$bytes B" }
     type      = if ($item.PSIsContainer) { 'directory' } else { 'file' }
   }
 }

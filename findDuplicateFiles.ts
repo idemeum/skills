@@ -216,7 +216,9 @@ export async function run(
     throw new Error(`[find_duplicate_files] Path not accessible: ${scanPath}`);
   }
 
-  const minBytes = Math.max(0, minSizeMb * 1024 * 1024);
+  // SI/decimal MB (1 MB = 10^6 bytes) to match formatBytes output and
+  // Finder's display.  See mcp/skills/_shared/formatBytes.ts.
+  const minBytes = Math.max(0, minSizeMb * 1_000_000);
   const extSet   = extensions && extensions.length > 0
     ? new Set(extensions.map((e) => (e.startsWith(".") ? e : `.${e}`).toLowerCase()))
     : null;
@@ -273,7 +275,8 @@ export async function run(
 
   for (const [hash, group] of byHash.entries()) {
     if (group.length < 2) continue;
-    const sizeMb = Math.round((group[0].size / (1024 * 1024)) * 100) / 100;
+    // SI/decimal MB to match formatBytes + Finder.
+    const sizeMb = Math.round((group[0].size / 1_000_000) * 100) / 100;
     // Wasted space = (n-1) copies * size
     totalWastedBytes += (group.length - 1) * group[0].size;
     duplicateGroups.push({
@@ -325,7 +328,7 @@ export async function run(
     // equals the group's size.
     const pool: { path: string; sizeBytes: number }[] = [];
     for (const group of duplicateGroups) {
-      const sizeBytes = Math.round(group.sizeMb * 1024 * 1024);
+      const sizeBytes = Math.round(group.sizeMb * 1_000_000);
       for (let i = 1; i < group.files.length; i++) {
         pool.push({ path: group.files[i].path, sizeBytes });
       }

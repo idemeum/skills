@@ -27,6 +27,7 @@ import { promisify }     from "util";
 import { z }             from "zod";
 
 import { loggedExec } from "./_shared/platform";
+import { formatBytes } from "./_shared/formatBytes";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,12 +58,7 @@ export const meta = {
 
 // -- Helpers ------------------------------------------------------------------
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`;
-}
+// formatBytes is imported from _shared/formatBytes.
 
 async function runPS(script: string, tag: string): Promise<string> {
   const encoded = Buffer.from(script, "utf16le").toString("base64");

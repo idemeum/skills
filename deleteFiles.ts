@@ -21,6 +21,7 @@ import * as nodePath from "path";
 import { z }         from "zod";
 
 import { expandTilde } from "./_shared/expandTilde";
+import { formatBytes } from "./_shared/formatBytes";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -106,12 +107,7 @@ function assertSafe(target: string): void {
 
 // -- Helpers ------------------------------------------------------------------
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`;
-}
+// formatBytes is imported from _shared/formatBytes.
 
 /** Recursively calculate the size of a directory or return file size. */
 async function treeSize(target: string): Promise<number> {
