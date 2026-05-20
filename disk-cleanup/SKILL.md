@@ -75,10 +75,10 @@ Do NOT use this skill for process or memory issues — use the `process-manager`
 Call `disk_scan` on the user home directory to list every immediate child folder and file sorted largest first.
 
 **Step 2 — Find large files**
-Call `get_large_files` **once** on the home directory with `minSizeBytes: 104857600` (100 MB) and `limit: 5`. The tool returns `output.files: [{ path, size, sizeHuman, modified }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
+Call `get_large_files` **once** on the home directory with `minSizeBytes: 104857600` (100 MB) and `limit: 10`. The tool returns `output.files: [{ path, size, sizeHuman, modified }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
 
 **Step 3 — Find duplicate files**
-Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` and `topDeletableLimit: 5`. The tool returns `output.topDeletables: [{ path, sizeBytes }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
+Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` and `topDeletableLimit: 10`. The tool returns `output.topDeletables: [{ path, sizeBytes }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
 
 **Step 4 — Check old downloads**
 Call `find_old_downloads` with `olderThanDays: 90` and `minSizeMb: 50` to list stale downloads ≥50 MB. Installers (.dmg, .pkg, .exe) older than 90 days are almost always safe to remove.
@@ -158,7 +158,7 @@ Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from pr
   - `{N}` — `output.returned` from the Step 2 `get_large_files` call.
   - `{size}` — sum of `file.size` across every entry in `output.files` from Step 2, formatted human-readable.
 - inside duplicates.summary:
-  - `{N}` — `output.topDeletables.length` from the Step 3 `find_duplicate_files` call (bounded to ≤5 by `topDeletableLimit: 5`).
+  - `{N}` — `output.topDeletables.length` from the Step 3 `find_duplicate_files` call (bounded to ≤10 by `topDeletableLimit: 10`).
   - `{size}` — sum of `sizeBytes` across every entry in `output.topDeletables` from Step 3, formatted human-readable. (Note: `find_duplicate_files` omits `duplicateGroups` and `totalWastedBytes` from its output whenever `topDeletableLimit` is set, so those scan-wide aggregates aren't available to mistakenly pick.)
 - inside old-downloads.summary:
   - `{N}` — length of `output.oldFiles` from the `find_old_downloads` step
@@ -181,8 +181,8 @@ The card stays visible until the user submits; the gate returns `{ selected: str
 
 For each category id in Step 9's `selected` output, re-call the relevant tool with `dryRun: false`:
 
-- `"large-files"`    → call `delete_files` **once** with `paths: [<every file.path from Step 2's output.files>]`. Step 2 already returns at most 5 files via `limit: 5`, so this is naturally bounded. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
-- `"duplicates"`     → call `delete_files` **once** with `paths: [<every entry.path from Step 3's output.topDeletables>]`. Step 3 already returned at most 5 pre-sorted deletables via `topDeletableLimit: 5`, so no per-group selection logic is needed at this step. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
+- `"large-files"`    → call `delete_files` **once** with `paths: [<every file.path from Step 2's output.files>]`. Step 2 already returns at most 10 files via `limit: 10`, so this is naturally bounded. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
+- `"duplicates"`     → call `delete_files` **once** with `paths: [<every entry.path from Step 3's output.topDeletables>]`. Step 3 already returned at most 10 pre-sorted deletables via `topDeletableLimit: 10`, so no per-group selection logic is needed at this step. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
 - `"old-downloads"`  → collect every `oldFiles[].path` from the `find_old_downloads` output and call `delete_files` **once** with `paths: [<all old-download paths>]`. A single batched call produces one dry-run preview (listing every stale download) and one consent prompt — never iterate per file.
 - `"app-cache"`      → call `clear_app_cache` with `dryRun: false`
 - `"browser-cache"`  → call `clear_browser_cache` with `browser: "all"`, `dryRun: false`
