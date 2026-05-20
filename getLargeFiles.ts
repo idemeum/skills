@@ -66,9 +66,16 @@ const DEFAULT_LIMIT     = 20;
 const MAX_DEPTH         = 12; // prevent stack overflow on deep trees
 
 // Directories unlikely to contain user-owned deletable files.
+// Trash directories are excluded explicitly: get_trash_info handles them
+// (disk-cleanup Step 8) and empty_trash is the destructive surface
+// (disk-cleanup Step 11).  Without this exclusion, large items in the
+// Trash double-count under both the "large-files" and "trash" categories
+// on the cleanup card, and a "large-files" deletion would race against
+// the user's "trash" empty.
 const SKIP_DIRS = new Set([
   "node_modules", ".git", ".npm", ".yarn", ".cache",
   "Library", "__pycache__", ".venv", "venv",
+  ".Trash", ".Trashes",                      // macOS trash (user + per-volume)
   "$Recycle.Bin", "System Volume Information", "Windows",
   "Program Files", "Program Files (x86)",
 ]);

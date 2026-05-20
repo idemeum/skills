@@ -94,6 +94,10 @@ const MAX_DEPTH = 10;
 const SKIP_DIRS = new Set([
   "node_modules", ".git", ".npm", ".yarn", ".cache",
   "__pycache__", ".venv", "venv",
+  // Trash directories are excluded explicitly so dupes in the Trash don't
+  // double-count against the dedicated "trash" cleanup category — see the
+  // matching comment in getLargeFiles.ts SKIP_DIRS.
+  ".Trash", ".Trashes",                  // macOS trash (user + per-volume)
   "$Recycle.Bin", "System Volume Information",
   // macOS app sandbox roots — not user-meaningful "duplicates", and they
   // dominate ~/Library walk time. Same set used by the cache scanners.
