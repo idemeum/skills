@@ -179,16 +179,16 @@ The card stays visible until the user submits; the gate returns `{ selected: str
 
 **Step 10 — Execute confirmed cleanups**
 
-For each category id in Step 9's `selected` output, re-call the relevant tool with `dryRun: false`:
+For each category id in Step 9's `selected` output, call the relevant tool. G4 manages the dry-run preview + consent flow automatically for every destructive tool (`supportsDryRun: true` on the tool meta); the executor does NOT need to pass `dryRun` — G4 substitutes `dryRun: true` for the preview call and `dryRun: false` for the post-consent real call. See `docs/architecture/GUARDRAIL-ARCHITECTURE.md` "Author-authored dryRun override" for the binding contract.
 
 - `"large-files"`    → call `delete_files` **once** with `paths: [<every file.path from Step 2's output.files>]`. Step 2 already returns at most 10 files via `limit: 10`, so this is naturally bounded. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
 - `"duplicates"`     → call `delete_files` **once** with `paths: [<every entry.path from Step 3's output.topDeletables>]`. Step 3 already returned at most 10 pre-sorted deletables via `topDeletableLimit: 10`, so no per-group selection logic is needed at this step. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
 - `"old-downloads"`  → collect every `oldFiles[].path` from the `find_old_downloads` output and call `delete_files` **once** with `paths: [<all old-download paths>]`. A single batched call produces one dry-run preview (listing every stale download) and one consent prompt — never iterate per file.
-- `"app-cache"`      → call `clear_app_cache` with `dryRun: false`
-- `"browser-cache"`  → call `clear_browser_cache` with `browser: "all"`, `dryRun: false`
-- `"dev-cache"`      → call `clear_dev_cache` with `dryRun: false`; on macOS also call `clear_xcode_derived_data` with `dryRun: false`
-- `"docker"`         → call `prune_docker` with `dryRun: false`
-- `"trash"`          → call `empty_trash` with `dryRun: false`
+- `"app-cache"`      → call `clear_app_cache`
+- `"browser-cache"`  → call `clear_browser_cache` with `browser: "all"`
+- `"dev-cache"`      → call `clear_dev_cache`; on macOS also call `clear_xcode_derived_data`
+- `"docker"`         → call `prune_docker`
+- `"trash"`          → call `empty_trash`
 
 Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `When:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
 
