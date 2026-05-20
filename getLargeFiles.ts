@@ -18,6 +18,8 @@ import * as os       from "os";
 import * as nodePath from "path";
 import { z }         from "zod";
 
+import { expandTilde } from "./_shared/expandTilde";
+
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
@@ -169,7 +171,10 @@ export async function run({
   const limitWasSet  = limit !== undefined;
   const effectiveLimit = limit ?? DEFAULT_LIMIT;
 
-  const scanPath = nodePath.resolve(inputPath);
+  // Expand ~ / ~/ — nodePath.resolve treats "~" as a literal segment
+  // relative to cwd, producing a non-existent path the executor LLM has
+  // to spot and retry around.  See mcp/skills/_shared/expandTilde.ts.
+  const scanPath = nodePath.resolve(expandTilde(inputPath) ?? inputPath);
 
   // Security: restrict scanning to within the user home directory.
   // Prevents Claude from being directed to scan /etc, /var, or other

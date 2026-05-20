@@ -19,6 +19,7 @@ import * as nodePath from "path";
 import { z }         from "zod";
 
 import { loggedExec } from "./_shared/platform";
+import { expandTilde } from "./_shared/expandTilde";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -190,15 +191,9 @@ $out | Sort-Object size -Descending | ConvertTo-Json -Depth 2 -Compress
 // -- Exported run function ----------------------------------------------------
 
 export async function run({ path: inputPath = os.homedir() }: { path?: string }) {
-  // Expand ~ / ~/ before resolve(), since nodePath.resolve treats "~" as a
-  // literal path segment relative to cwd. The planner sometimes emits "~" as
-  // a stand-in for the home directory; without this, the path resolves to
-  // <cwd>/~ and fs.access throws "Path not accessible".
-  let normalised = inputPath;
-  if (normalised === "~" || normalised.startsWith("~/")) {
-    normalised = nodePath.join(os.homedir(), normalised.slice(1));
-  }
-  const scanPath = nodePath.resolve(normalised);
+  // Expand ~ / ~/ before resolve() — see _shared/expandTilde.ts for the
+  // background on why this is necessary across every path-accepting tool.
+  const scanPath = nodePath.resolve(expandTilde(inputPath) ?? inputPath);
 
   // Security: restrict scanning to within the user home directory.
   // Prevents Claude from being directed to scan /etc, /var, or other

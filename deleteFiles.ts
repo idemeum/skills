@@ -20,6 +20,8 @@ import * as os       from "os";
 import * as nodePath from "path";
 import { z }         from "zod";
 
+import { expandTilde } from "./_shared/expandTilde";
+
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
@@ -139,7 +141,9 @@ export async function run({
 }) {
   const items = await Promise.all(
     paths.map(async (p) => {
-      const target = nodePath.resolve(p);
+      // Expand ~ / ~/ before resolve(): the executor LLM sometimes emits
+      // shorthand like "~/Downloads/foo.dmg".  See _shared/expandTilde.ts.
+      const target = nodePath.resolve(expandTilde(p) ?? p);
 
       // Safety check first
       try {

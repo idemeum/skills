@@ -21,6 +21,8 @@ import * as nodePath from "path";
 import * as crypto   from "crypto";
 import { z }         from "zod";
 
+import { expandTilde } from "./_shared/expandTilde";
+
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
@@ -193,13 +195,8 @@ export async function run(
 ) {
   const home = os.homedir();
 
-  // Expand ~ / ~/ — same gotcha as disk_scan: nodePath.resolve treats "~" as
-  // a literal path segment relative to cwd.
-  let normalised = inputPath ?? home;
-  if (normalised === "~" || normalised.startsWith("~/")) {
-    normalised = nodePath.join(home, normalised.slice(1));
-  }
-  const scanPath = nodePath.resolve(normalised);
+  // Expand ~ / ~/ before resolve() — see _shared/expandTilde.ts.
+  const scanPath = nodePath.resolve(expandTilde(inputPath) ?? home);
 
   // Security: restrict scan to within home directory
   const rel = nodePath.relative(home, scanPath);
