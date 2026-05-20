@@ -19,6 +19,8 @@ import * as os       from "os";
 import * as nodePath from "path";
 import { z }         from "zod";
 
+import { formatBytes } from "./_shared/formatBytes";
+
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
@@ -78,6 +80,7 @@ export async function run({
       totalFiles:  0,
       oldFiles:    [] as OldFile[],
       totalBytes:  0,
+      totalHuman:  formatBytes(0),
       message:     `Downloads folder not found at: ${downloadsPath}`,
     };
   }
@@ -102,6 +105,7 @@ export async function run({
         totalFiles:  0,
         oldFiles:    [] as OldFile[],
         totalBytes:  0,
+        totalHuman:  formatBytes(0),
         error:
           "Cannot read Downloads folder — macOS denied access. " +
           "Open System Settings → Privacy & Security → Files and Folders, " +
@@ -129,7 +133,9 @@ export async function run({
           name:              d.name,
           path:              full,
           sizeBytes:         stat.size,
-          sizeMb:            Math.round((stat.size / (1024 * 1024)) * 100) / 100,
+          // SI/decimal MB (1 MB = 10^6 bytes) to match formatBytes + Finder.
+          // See mcp/skills/_shared/formatBytes.ts.
+          sizeMb:            Math.round((stat.size / 1_000_000) * 100) / 100,
           lastModified:      stat.mtime.toISOString(),
           daysSinceModified: daysSinceMod,
         };
@@ -155,6 +161,7 @@ export async function run({
     totalFiles,
     oldFiles,
     totalBytes,
+    totalHuman: formatBytes(totalBytes),
   };
 }
 

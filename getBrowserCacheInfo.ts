@@ -24,6 +24,7 @@ import * as nodePath from "path";
 
 import { isDarwin, isWin32 } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
+import { formatBytes } from "./_shared/formatBytes";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -60,6 +61,8 @@ export interface GetBrowserCacheInfoResult {
   platform:   NodeJS.Platform;
   browsers:   BrowserCacheEntry[];
   totalBytes: number;
+  /** Pre-formatted size of `totalBytes` — see getAppCacheInfo.ts for rationale. */
+  totalHuman: string;
   errors?:    Array<{ scope: string; message: string }>;
 }
 
@@ -104,6 +107,7 @@ async function getBrowserCacheInfoDarwin(deadlineMs: number): Promise<GetBrowser
     platform: "darwin",
     browsers,
     totalBytes,
+    totalHuman: formatBytes(totalBytes),
     ...(anyPartial
       ? { errors: [{ scope: "deadline", message: "Browser cache scan exceeded the per-tool deadline; sizes are partial." }] }
       : {}),
@@ -135,6 +139,7 @@ async function getBrowserCacheInfoWin32(deadlineMs: number): Promise<GetBrowserC
     platform: "win32",
     browsers,
     totalBytes,
+    totalHuman: formatBytes(totalBytes),
     ...(anyPartial
       ? { errors: [{ scope: "deadline", message: "Browser cache scan exceeded the per-tool deadline; sizes are partial." }] }
       : {}),
@@ -160,6 +165,7 @@ export async function run(
     platform:   os.platform(),
     browsers:   [],
     totalBytes: 0,
+    totalHuman: formatBytes(0),
     errors:     [{ scope: "platform", message: `unsupported platform: ${os.platform()}` }],
   };
 }

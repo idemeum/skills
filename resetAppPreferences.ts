@@ -76,7 +76,8 @@ function isSafePath(target: string, allowedRoot: string): boolean {
 async function getFileSizeMb(filePath: string): Promise<number> {
   try {
     const stat = await fs.stat(filePath);
-    return Math.round((stat.size / (1024 * 1024)) * 1000) / 1000;
+    // SI/decimal MB to match _shared/formatBytes.ts + Finder.
+    return Math.round((stat.size / 1_000_000) * 1000) / 1000;
   } catch {
     return 0;
   }

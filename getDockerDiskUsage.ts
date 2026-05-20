@@ -14,6 +14,7 @@
 import * as os from "os";
 
 import { execAsync } from "./_shared/platform";
+import { formatBytes } from "./_shared/formatBytes";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -49,6 +50,8 @@ export interface GetDockerDiskUsageResult {
   dockerInstalled:        boolean;
   dockerRunning:          boolean;
   totalReclaimableBytes:  number;
+  /** Pre-formatted size of `totalReclaimableBytes` — see getAppCacheInfo.ts for rationale. */
+  totalReclaimableHuman:  string;
   breakdown:              DockerBreakdownEntry[];
   errors?:                Array<{ scope: string; message: string }>;
 }
@@ -100,6 +103,7 @@ export async function run(_args: Record<string, never> = {}): Promise<GetDockerD
       dockerInstalled: false,
       dockerRunning:   false,
       totalReclaimableBytes: 0,
+      totalReclaimableHuman: formatBytes(0),
       breakdown: [],
     };
   }
@@ -111,6 +115,7 @@ export async function run(_args: Record<string, never> = {}): Promise<GetDockerD
       dockerInstalled: true,
       dockerRunning:   false,
       totalReclaimableBytes: 0,
+      totalReclaimableHuman: formatBytes(0),
       breakdown: [],
       errors: [{ scope: "docker-daemon", message: "Docker is installed but the daemon is not running." }],
     };
@@ -132,6 +137,7 @@ export async function run(_args: Record<string, never> = {}): Promise<GetDockerD
       dockerInstalled: true,
       dockerRunning:   true,
       totalReclaimableBytes: 0,
+      totalReclaimableHuman: formatBytes(0),
       breakdown: [],
       errors: [{ scope: "docker-system-df", message: (err as Error).message }],
     };
@@ -167,6 +173,7 @@ export async function run(_args: Record<string, never> = {}): Promise<GetDockerD
     dockerInstalled: true,
     dockerRunning:   true,
     totalReclaimableBytes,
+    totalReclaimableHuman: formatBytes(totalReclaimableBytes),
     breakdown,
   };
 }

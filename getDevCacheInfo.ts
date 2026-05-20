@@ -26,6 +26,7 @@ import * as nodePath from "path";
 
 import { execAsync } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
+import { formatBytes } from "./_shared/formatBytes";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -61,6 +62,8 @@ export interface GetDevCacheInfoResult {
   platform:   NodeJS.Platform;
   caches:     DevCacheEntry[];
   totalBytes: number;
+  /** Pre-formatted size of `totalBytes` — see getAppCacheInfo.ts for rationale. */
+  totalHuman: string;
   errors?:    Array<{ scope: string; message: string }>;
 }
 
@@ -185,6 +188,7 @@ export async function run(
     platform: os.platform(),
     caches,
     totalBytes,
+    totalHuman: formatBytes(totalBytes),
     ...(anyPartial
       ? { errors: [{ scope: "deadline", message: "Dev cache scan exceeded the per-tool deadline; sizes are partial." }] }
       : {}),

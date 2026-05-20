@@ -24,6 +24,7 @@ import * as nodePath from "path";
 
 import { execAsync, isDarwin, isWin32 } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
+import { formatBytes } from "./_shared/formatBytes";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -59,6 +60,14 @@ export interface GetAppCacheInfoResult {
   platform:   NodeJS.Platform;
   caches:     AppCacheEntry[];
   totalBytes: number;
+  /**
+   * Pre-formatted human-readable size of `totalBytes`, computed via the
+   * shared formatBytes helper (decimal/SI units — matches Finder + Explorer).
+   * disk-cleanup SKILL.md substitutes this verbatim into the cleanup card's
+   * `{size}` placeholder for the app-cache row, so the LLM doesn't have to
+   * do byte math itself (and pick binary-vs-decimal inconsistently).
+   */
+  totalHuman: string;
   errors?:    Array<{ scope: string; message: string }>;
 }
 
@@ -92,7 +101,7 @@ async function getAppCacheInfoDarwin(deadlineMs: number): Promise<GetAppCacheInf
     dirents = await fs.readdir(cacheRoot, { withFileTypes: true });
   } catch (err) {
     errors.push({ scope: "cache-root", message: (err as Error).message });
-    return { platform: "darwin", caches: [], totalBytes: 0, errors };
+    return { platform: "darwin", caches: [], totalBytes: 0, totalHuman: formatBytes(0), errors };
   }
 
   const subdirs = dirents.filter((d) => d.isDirectory());
@@ -120,6 +129,7 @@ async function getAppCacheInfoDarwin(deadlineMs: number): Promise<GetAppCacheInf
     platform: "darwin",
     caches,
     totalBytes,
+    totalHuman: formatBytes(totalBytes),
     ...(errors.length > 0 ? { errors } : {}),
   };
 }
@@ -165,6 +175,7 @@ async function getAppCacheInfoWin32(): Promise<GetAppCacheInfoResult> {
     platform: "win32",
     caches,
     totalBytes,
+    totalHuman: formatBytes(totalBytes),
     ...(errors.length > 0 ? { errors } : {}),
   };
 }
@@ -190,6 +201,7 @@ export async function run(
     platform: os.platform(),
     caches:   [],
     totalBytes: 0,
+    totalHuman: formatBytes(0),
     errors:   [{ scope: "platform", message: `unsupported platform: ${os.platform()}` }],
   };
 }

@@ -86,7 +86,8 @@ async function getDirSizeMb(dirPath: string): Promise<number> {
         { maxBuffer: 10 * 1024 * 1024 },
       );
       const bytes = parseInt(stdout.trim(), 10);
-      return isNaN(bytes) ? 0 : Math.round((bytes / (1024 * 1024)) * 10) / 10;
+      // SI/decimal MB to match _shared/formatBytes.ts + Explorer.
+      return isNaN(bytes) ? 0 : Math.round((bytes / 1_000_000) * 10) / 10;
     } else {
       const safePath = dirPath.replace(/'/g, "'\\''");
       const { stdout } = await execAsync(

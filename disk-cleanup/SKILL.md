@@ -75,7 +75,7 @@ Do NOT use this skill for process or memory issues — use the `process-manager`
 Call `disk_scan` on the user home directory to list every immediate child folder and file sorted largest first.
 
 **Step 2 — Find large files**
-Call `get_large_files` **once** on the home directory with `minSizeBytes: 104857600` (100 MB) and `limit: 10`. The tool returns `output.files: [{ path, size, sizeHuman, modified }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
+Call `get_large_files` **once** on the home directory with `minSizeBytes: 100000000` (100 MB) and `limit: 10`. The tool returns `output.files: [{ path, size, sizeHuman, modified }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
 
 **Step 3 — Find duplicate files**
 Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` and `topDeletableLimit: 10`. The tool returns `output.topDeletables: [{ path, sizeBytes }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
@@ -162,18 +162,18 @@ Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from pr
   - `{size}` — sum of `sizeBytes` across every entry in `output.topDeletables` from Step 3, formatted human-readable. (Note: `find_duplicate_files` omits `duplicateGroups` and `totalWastedBytes` from its output whenever `topDeletableLimit` is set, so those scan-wide aggregates aren't available to mistakenly pick.)
 - inside old-downloads.summary:
   - `{N}` — length of `output.oldFiles` from the `find_old_downloads` step
-  - `{size}` — `output.totalBytes` from the `find_old_downloads` step, formatted human-readable
+  - `{size}` — `output.totalHuman` from the `find_old_downloads` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
 - inside app-cache.summary:
-  - `{size}` — `output.totalBytes` from the `get_app_cache_info` step, formatted human-readable
+  - `{size}` — `output.totalHuman` from the `get_app_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
 - inside browser-cache.summary:
-  - `{size}` — `output.totalBytes` from the `get_browser_cache_info` step, formatted human-readable
+  - `{size}` — `output.totalHuman` from the `get_browser_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
 - inside dev-cache.summary:
-  - `{size}` — `output.totalBytes` from the `get_dev_cache_info` step, formatted human-readable
+  - `{size}` — `output.totalHuman` from the `get_dev_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
 - inside docker.summary:
-  - `{size}` — `output.totalReclaimableBytes` from the `get_docker_disk_usage` step, formatted human-readable (when `dockerInstalled` is true; omit the category entirely otherwise)
+  - `{size}` — `output.totalReclaimableHuman` from the `get_docker_disk_usage` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute). Omit the category entirely when `dockerInstalled` is false.
 - inside trash.summary:
   - `{N}` — `output.itemCount` from the `get_trash_info` step
-  - `{size}` — `output.totalBytes` from the `get_trash_info` step, formatted human-readable
+  - `{size}` — `output.totalHuman` from the `get_trash_info` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute from `totalBytes`)
 
 The card stays visible until the user submits; the gate returns `{ selected: string[] }` carrying the category ids the user kept checked. Empty selection = cancel; downstream corrective steps no-op.
 

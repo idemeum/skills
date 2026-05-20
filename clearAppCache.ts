@@ -76,7 +76,8 @@ async function getDirSizeMb(dirPath: string): Promise<number> {
           }
         }),
     );
-    return Math.round((totalBytes / (1024 * 1024)) * 100) / 100;
+    // SI/decimal MB to match _shared/formatBytes.ts + Finder.
+    return Math.round((totalBytes / 1_000_000) * 100) / 100;
   } catch {
     return 0;
   }
@@ -163,7 +164,8 @@ async function getDirSizeMbWin32(dirPath: string): Promise<number> {
       { maxBuffer: 5 * 1024 * 1024 },
     );
     const bytes = parseFloat(stdout.trim());
-    return isNaN(bytes) ? 0 : Math.round((bytes / (1024 * 1024)) * 100) / 100;
+    // SI/decimal MB to match _shared/formatBytes.ts + Explorer.
+    return isNaN(bytes) ? 0 : Math.round((bytes / 1_000_000) * 100) / 100;
   } catch {
     return 0;
   }
