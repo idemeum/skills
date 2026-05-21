@@ -6,7 +6,13 @@
  *
  * Platform strategy
  * -----------------
- * darwin  sudo powermetrics --samplers smc; fallback osx-cpu-temp
+ * darwin  osx-cpu-temp (Homebrew). Returns null with install instructions
+ *         when the binary isn't on PATH. We do NOT shell out to `sudo
+ *         powermetrics` — it requires interactive password entry, hangs
+ *         the 8-second timeout in a TTY-less context, and almost never
+ *         actually returns a temperature for non-admin users. Better to
+ *         honestly report "unavailable" than waste 8 seconds per
+ *         diagnostic run.
  * win32   PowerShell MSAcpi_ThermalZoneTemperature via WMI (root/wmi namespace)
  *
  * Smoke test
@@ -27,7 +33,7 @@ export const meta = {
   description:
     "Reports CPU temperature and checks for thermal throttling. High " +
     "temperatures (>90°C) indicate cooling issues that degrade performance. " +
-    "macOS uses powermetrics; Windows uses WMI.",
+    "macOS reads via osx-cpu-temp (Homebrew); Windows uses WMI.",
   riskLevel:       "low",
   destructive:     false,
   requiresConsent: false,
@@ -60,30 +66,9 @@ async function runPS(script: string): Promise<string> {
 // -- darwin implementation ----------------------------------------------------
 
 async function getCpuTemperatureDarwin(): Promise<CpuTemperatureResult> {
-  // Attempt 1: powermetrics (requires sudo or already running as root)
-  try {
-    const { stdout } = await execAsync(
-      "sudo powermetrics --samplers smc --sample-count 1 --sample-rate 1000 -n 1 2>/dev/null",
-      { maxBuffer: 2 * 1024 * 1024, timeout: 8000 },
-    );
-
-    // Parse "CPU die temperature: 52.34 °C" or "CPU die temperature: 52.34 C"
-    const match = stdout.match(/CPU die temperature:\s*([\d.]+)\s*[°]?C/i);
-    if (match) {
-      const cpuTempC   = Math.round(parseFloat(match[1]) * 10) / 10;
-      const isThrottling = cpuTempC > 90;
-      return {
-        cpuTempC,
-        isThrottling,
-        message:     isThrottling ? `CPU is thermal throttling at ${cpuTempC}°C.` : `CPU temperature is ${cpuTempC}°C.`,
-        note:        "Temperature sourced from powermetrics SMC sampler.",
-      };
-    }
-  } catch {
-    // sudo not available or powermetrics failed
-  }
-
-  // Attempt 2: osx-cpu-temp (third-party, may be installed via Homebrew)
+  // osx-cpu-temp (Homebrew) — the only viable user-space CPU temp source on
+  // macOS without admin. `sudo powermetrics` is intentionally NOT attempted;
+  // see file-header "Platform strategy" for the rationale.
   try {
     const { stdout } = await execAsync("osx-cpu-temp 2>/dev/null", { timeout: 4000 });
     const match = stdout.match(/([\d.]+)\s*[°]?C/i);
@@ -94,7 +79,7 @@ async function getCpuTemperatureDarwin(): Promise<CpuTemperatureResult> {
         cpuTempC,
         isThrottling,
         message:     isThrottling ? `CPU is thermal throttling at ${cpuTempC}°C.` : `CPU temperature is ${cpuTempC}°C.`,
-        note:        "Temperature sourced from osx-cpu-temp (Homebrew). Install with: brew install osx-cpu-temp",
+        note:        "Temperature sourced from osx-cpu-temp (Homebrew).",
       };
     }
   } catch {
@@ -106,8 +91,7 @@ async function getCpuTemperatureDarwin(): Promise<CpuTemperatureResult> {
     isThrottling: null,
     message:     "CPU temperature could not be read.",
     note:
-      "Elevated access is required to read CPU temperature on macOS. " +
-      "Run with sudo, or install osx-cpu-temp via Homebrew: brew install osx-cpu-temp",
+      "Install osx-cpu-temp via Homebrew to enable: brew install osx-cpu-temp",
   };
 }
 

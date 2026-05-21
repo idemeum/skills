@@ -13,10 +13,11 @@
  *   npx tsx -r dotenv/config mcp/skills/getTopConsumers.ts
  */
 
-import * as os       from "os";
-import { exec }      from "child_process";
-import { promisify } from "util";
-import { z }         from "zod";
+import * as os                from "os";
+import { exec }               from "child_process";
+import { promisify }          from "util";
+import { z }                  from "zod";
+import { formatBytesBinary }  from "./_shared/formatBytes";
 
 const execAsync = promisify(exec);
 
@@ -53,6 +54,8 @@ interface ConsumerEntry {
   name:          string;
   cpuPercent:    number;
   memoryMb:      number;
+  /** Pre-formatted memory string (binary units — matches Activity Monitor / Task Manager). */
+  memoryHuman:   string;
   combinedScore: number;
 }
 
@@ -91,8 +94,9 @@ async function getTopConsumersDarwin(
       const fullComm = parts.slice(3).join(" ");
       const name     = fullComm.split("/").at(-1) ?? fullComm;
       if (isNaN(pid)) return [];
-      const memoryMb = Math.round((rssKb / 1024) * 10) / 10;
-      return [{ pid, name, cpuPercent: cpu, memoryMb, combinedScore: 0 }];
+      const memoryMb    = Math.round((rssKb / 1024) * 10) / 10;
+      const memoryHuman = formatBytesBinary(rssKb * 1024);
+      return [{ pid, name, cpuPercent: cpu, memoryMb, memoryHuman, combinedScore: 0 }];
     });
 
   // Normalise and compute combined score
@@ -142,6 +146,7 @@ Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit
 
   return arr.map(r => ({
     ...r,
+    memoryHuman:   formatBytesBinary(r.memoryMb * 1024 * 1024),
     combinedScore: Math.round(
       ((r.cpuPercent / maxCpu) * 50 + (r.memoryMb / maxMem) * 50) * 100,
     ) / 100,

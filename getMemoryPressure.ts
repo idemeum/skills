@@ -13,10 +13,11 @@
  *   npx tsx -r dotenv/config mcp/skills/getMemoryPressure.ts
  */
 
-import * as os       from "os";
-import { exec }      from "child_process";
-import { promisify } from "util";
-import { z }         from "zod";
+import * as os                from "os";
+import { exec }               from "child_process";
+import { promisify }          from "util";
+import { z }                  from "zod";
+import { formatBytesBinary }  from "./_shared/formatBytes";
 
 const execAsync = promisify(exec);
 
@@ -41,13 +42,29 @@ export const meta = {
 type PressureLevel = "normal" | "warn" | "critical";
 
 interface MemoryPressureResult {
-  totalRamMb:    number;
-  usedRamMb:     number;
-  freeRamMb:     number;
-  swapUsedMb:    number;
-  pressureLevel: PressureLevel;
-  pageIns:       number;
-  pageOuts:      number;
+  totalRamMb:     number;
+  usedRamMb:      number;
+  freeRamMb:      number;
+  swapUsedMb:     number;
+  /** Pre-formatted total RAM (binary units — matches Activity Monitor / Task Manager). */
+  totalRamHuman:  string;
+  /** Pre-formatted used RAM (binary units). */
+  usedRamHuman:   string;
+  /** Pre-formatted swap in use (binary units). Empty string when zero. */
+  swapUsedHuman:  string;
+  pressureLevel:  PressureLevel;
+  pageIns:        number;
+  pageOuts:       number;
+}
+
+/** Render the three `*Human` fields from the binary MB values, consistently. */
+function formatMemoryHumanFields(totalMb: number, usedMb: number, swapMb: number) {
+  const toBytes = (mb: number) => mb * 1024 * 1024; // *Mb fields are binary MiB
+  return {
+    totalRamHuman: formatBytesBinary(toBytes(totalMb)),
+    usedRamHuman:  formatBytesBinary(toBytes(usedMb)),
+    swapUsedHuman: swapMb > 0 ? formatBytesBinary(toBytes(swapMb)) : "0 B",
+  };
 }
 
 // -- PowerShell helper --------------------------------------------------------
@@ -120,7 +137,11 @@ async function getMemoryPressureDarwin(): Promise<MemoryPressureResult> {
 
   const usedRamMb = Math.max(0, totalRamMb - freeRamMb);
 
-  return { totalRamMb, usedRamMb, freeRamMb, swapUsedMb, pressureLevel, pageIns, pageOuts };
+  return {
+    totalRamMb, usedRamMb, freeRamMb, swapUsedMb,
+    ...formatMemoryHumanFields(totalRamMb, usedRamMb, swapUsedMb),
+    pressureLevel, pageIns, pageOuts,
+  };
 }
 
 // -- win32 implementation -----------------------------------------------------
@@ -166,6 +187,7 @@ try {
     usedRamMb,
     freeRamMb,
     swapUsedMb,
+    ...formatMemoryHumanFields(totalRamMb, usedRamMb, swapUsedMb),
     pressureLevel,
     pageIns:  data.pagesSec,
     pageOuts: 0,
