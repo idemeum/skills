@@ -13,10 +13,11 @@
  *   npx tsx -r dotenv/config mcp/skills/checkPrintQueue.ts
  */
 
-import * as os       from "os";
-import { exec }      from "child_process";
-import { promisify } from "util";
-import { z }         from "zod";
+import * as os          from "os";
+import { exec }         from "child_process";
+import { promisify }    from "util";
+import { z }            from "zod";
+import { formatBytes }  from "./_shared/formatBytes";
 
 const execAsync = promisify(exec);
 
@@ -51,6 +52,8 @@ interface PrintJob {
   document:    string;
   status:      string;
   sizeKb:      number;
+  /** Pre-formatted size (decimal/SI — matches Finder + Explorer). */
+  sizeHuman:   string;
   submittedAt: string;
 }
 
@@ -95,16 +98,18 @@ async function checkPrintQueueDarwin(printerName?: string): Promise<PrintJob[]> 
 
     const owner       = parts[1] ?? "unknown";
     const sizeStr     = parts[2] ?? "0";
-    const sizeKb      = Math.round(parseInt(sizeStr, 10) / 1024) || 0;
+    const sizeBytes   = parseInt(sizeStr, 10) || 0;
+    const sizeKb      = Math.round(sizeBytes / 1024);
     const dateStr     = parts.slice(3).join(" ");
 
     return {
       id,
       printer,
       owner,
-      document: jobId,
-      status:   "queued",
+      document:  jobId,
+      status:    "queued",
       sizeKb,
+      sizeHuman: formatBytes(sizeBytes),
       submittedAt: dateStr,
     };
   });
@@ -140,15 +145,19 @@ $jobs | ConvertTo-Json -Depth 2 -Compress`.trim();
   }
 
   const items: any[] = Array.isArray(parsed) ? parsed : [parsed];
-  return items.map((item) => ({
-    id:          String(item.Id ?? ""),
-    printer:     String(item.PrinterName ?? printerName ?? ""),
-    owner:       String(item.UserName ?? "unknown"),
-    document:    String(item.DocumentName ?? ""),
-    status:      String(item.JobStatus ?? "unknown"),
-    sizeKb:      Math.round((Number(item.Size) || 0) / 1024),
-    submittedAt: item.SubmittedTime ? String(item.SubmittedTime) : "",
-  }));
+  return items.map((item) => {
+    const sizeBytes = Number(item.Size) || 0;
+    return {
+      id:          String(item.Id ?? ""),
+      printer:     String(item.PrinterName ?? printerName ?? ""),
+      owner:       String(item.UserName ?? "unknown"),
+      document:    String(item.DocumentName ?? ""),
+      status:      String(item.JobStatus ?? "unknown"),
+      sizeKb:      Math.round(sizeBytes / 1024),
+      sizeHuman:   formatBytes(sizeBytes),
+      submittedAt: item.SubmittedTime ? String(item.SubmittedTime) : "",
+    };
+  });
 }
 
 // -- Exported run function ----------------------------------------------------

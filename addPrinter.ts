@@ -15,10 +15,11 @@
  *   npx tsx -r dotenv/config mcp/skills/addPrinter.ts
  */
 
-import * as os       from "os";
-import { exec }      from "child_process";
-import { promisify } from "util";
-import { z }         from "zod";
+import * as os         from "os";
+import { exec }        from "child_process";
+import { promisify }   from "util";
+import { z }           from "zod";
+import { expandTilde } from "./_shared/expandTilde";
 
 const execAsync = promisify(exec);
 
@@ -171,10 +172,15 @@ export async function run({
   protocol?:  "ipp" | "lpd" | "socket";
   driverPpd?: string;
 }) {
+  // Expand ~ in driverPpd so the LLM can pass "~/Downloads/HP.ppd" naturally.
+  // lpadmin -P treats the path literally; without expansion the call would
+  // fail with "PPD file not found" on a path like "<cwd>/~/Downloads/HP.ppd".
+  const resolvedPpd = expandTilde(driverPpd);
+
   const platform = os.platform();
   return platform === "win32"
-    ? addPrinterWin32(name, host, protocol, driverPpd)
-    : addPrinterDarwin(name, host, protocol, driverPpd);
+    ? addPrinterWin32(name, host, protocol, resolvedPpd)
+    : addPrinterDarwin(name, host, protocol, resolvedPpd);
 }
 
 // -- Smoke test ---------------------------------------------------------------

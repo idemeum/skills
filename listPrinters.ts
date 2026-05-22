@@ -44,7 +44,6 @@ interface PrinterEntry {
   status:     string;
   isDefault:  boolean;
   type:       string;
-  location:   string | null;
   queueDepth: number;
 }
 
@@ -122,12 +121,11 @@ async function listPrintersDarwin(): Promise<ListPrintersResult> {
     const name   = nameMatch[1];
     const status = statusMatch ? statusMatch[1] : "unknown";
 
-    // Determine type from acceptance output (location not reliably available via lpstat)
-    // We look for "IPP" or "LPD" or socket patterns in lpinfo (optional, skip if slow)
-    let type     = "unknown";
-    let location: string | null = null;
-
-    // Try to get device-uri for this printer to determine type
+    // Determine type from the device URI (USB / network / virtual).
+    // The URI itself isn't returned — it contains printer serial numbers
+    // which (a) aren't useful to the user, (b) trip the sanitiser's Layer 4
+    // entropy heuristic, and (c) overlap entirely with the `type` field.
+    let type = "unknown";
     try {
       const { stdout: uriOut } = await execAsync(
         `lpstat -v "${name.replace(/"/g, '\\"')}" 2>/dev/null`,
@@ -146,8 +144,6 @@ async function listPrintersDarwin(): Promise<ListPrintersResult> {
       } else {
         type = "local";
       }
-      const locMatch = uriOut.match(/device for [^:]+:\s+(\S+)/);
-      if (locMatch) location = locMatch[1];
     } catch { /* skip */ }
 
     printers.push({
@@ -155,7 +151,6 @@ async function listPrintersDarwin(): Promise<ListPrintersResult> {
       status,
       isDefault:  name === defaultPrinter,
       type,
-      location,
       queueDepth: queueDepths.get(name) ?? 0,
     });
   }
@@ -166,9 +161,11 @@ async function listPrintersDarwin(): Promise<ListPrintersResult> {
 // -- win32 implementation -----------------------------------------------------
 
 async function listPrintersWin32(): Promise<ListPrintersResult> {
+  // Location dropped — see darwin path comment above. Type alone conveys
+  // USB / network / shared which is what callers need.
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
-$printers = Get-Printer | Select-Object Name,DriverName,PortName,PrinterStatus,JobCount,Location,Shared,Type
+$printers = Get-Printer | Select-Object Name,DriverName,PortName,PrinterStatus,JobCount,Shared,Type
 $default  = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows' -Name 'Device' -ErrorAction SilentlyContinue).Device
 [PSCustomObject]@{
   printers = $printers | ConvertTo-Json -Depth 2 -Compress
@@ -197,7 +194,6 @@ $default  = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows NT\\Cur
         status:     String(p.PrinterStatus ?? "Unknown"),
         isDefault:  String(p.Name) === defaultPrinter,
         type:       p.Shared ? "network (shared)" : String(p.Type ?? "local"),
-        location:   p.Location ? String(p.Location) : null,
         queueDepth: typeof p.JobCount === "number" ? p.JobCount : 0,
       }));
     } catch { /* ignore */ }
