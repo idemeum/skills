@@ -11,7 +11,6 @@ allowed-tools:
   - check_mail_permissions
   - rebuild_mail_index
   - repair_outlook_database
-  - clear_app_cache
   - reset_app_preferences
 metadata:
   prerequisites:
@@ -49,6 +48,8 @@ Use this skill when the user:
 
 Do NOT use this skill for general internet connectivity issues — use the `network-reset` skill first if the user has no internet access at all.
 
+This skill follows a **diagnostic-driven escalation** pattern. The agent runs all read-only diagnostics first (Steps 1–4), then escalates corrective actions from lightest (rebuild index) to most destructive (reset preferences) — invoking a corrective only when prior diagnostic output proves the lighter fix isn't relevant. G4's per-tool dry-run preview + consent gates fire before every destructive action; the user can abort mid-escalation.
+
 ---
 
 ## Steps
@@ -62,36 +63,44 @@ Call `check_smtp_connectivity` for the user's outgoing mail server. If the user 
 Call `check_certificate_expiry` on the same hostname to rule out an expired TLS certificate as the cause.
 
 **Step 2 — Check account configuration**
-Call `check_mail_account_config` with `client: "auto"` to read the configured IMAP/SMTP settings from the installed email client. Compare server hostnames, ports, and SSL settings against known-good values for the provider. Flag any mismatches.
+Call `check_mail_account_config` with `client: "auto"` to read the configured IMAP/SMTP settings from the installed email client. Returns `output.client` (detected client: `"mail"` | `"outlook"` | `"unknown"`) and `output.accounts: [{ email, imapServer, smtpServer, port, ssl }]`. Compare server hostnames, ports, and SSL settings against known-good values for the provider. Flag any mismatches in the response.
 
 **Step 3 — Check client process**
-Verify the email client is not hung. If Mail or Outlook appears in `get_top_consumers` output consuming high CPU or memory, that indicates a hung process rather than a configuration issue — address the process first using the `process-manager` skill.
+Call `get_top_consumers` with `metric: "combined"` and `limit: 10`. Verify the email client is not hung — check if `output.processes` contains a process named `Mail`, `Microsoft Outlook`, or `Outlook` with `cpuPercent > 20` OR `memoryMb > 500`. If so, the hung process is the root cause, not a configuration issue — surface this in the response and direct the user to the `process-manager` skill instead of continuing with email-repair correctives.
 
-**Step 4 — Check file permissions (macOS Mail)**
-If the client is Apple Mail, call `check_mail_permissions` to verify the ~/Library/Mail directory has correct ownership and read/write access. Permission errors silently prevent Mail from syncing or writing its index.
+**Step 4 — Check file permissions (macOS Mail only)**
+**Condition:** only if Step 2 returned `output.client === "mail"` (Apple Mail).
 
-If the tool reports permission errors, ask the user for confirmation and then re-call `check_mail_permissions` with `fix: true` to automatically restore correct ownership and read/write permissions on the affected paths. Explain that this only modifies the user's own Mail directory — it does not touch system files.
+Call `check_mail_permissions` (read-only mode). Returns `output.errors[]` listing any paths in `~/Library/Mail` with wrong ownership or missing read/write access. Permission errors silently prevent Mail from syncing or writing its index.
 
-**Step 5 — Rebuild mail index (macOS Mail)**
-If Mail is slow, showing incorrect message counts, or missing messages, call `rebuild_mail_index` with `dryRun: true` to show which index files would be removed. Explain to the user that Mail will quit and rebuild its index on next launch (this is safe and non-destructive — no messages are deleted). If the user confirms, call `rebuild_mail_index` with `dryRun: false`.
+**Step 4b — Fix mail permissions**
+**Condition:** only if Step 4 ran AND `output.errors.length > 0`.
+
+Re-call `check_mail_permissions` with `fix: true` to restore correct ownership and read/write permissions on the affected paths. Explain in the response that this only modifies the user's own Mail directory — it does not touch system files.
+
+**Step 5 — Rebuild mail index**
+**Condition:** only if (a) Step 2 returned `output.client === "mail"` (Apple Mail) AND (b) the user reports Mail is slow, showing wrong message counts, or missing messages, OR Step 4b ran (permission fix often warrants an index rebuild).
+
+Call `rebuild_mail_index`. G4 auto-triggers a dry-run preview gate (showing which envelope index files would be removed) followed by the consent gate. Explain in the response that Mail will quit and rebuild its index on next launch — this is safe and non-destructive in user terms (no messages are deleted; the index regenerates from the message store on next launch).
 
 **Step 6 — Repair Outlook database**
-If the client is Microsoft Outlook and it is crashing or showing data errors, call `repair_outlook_database` with `dryRun: true` to locate the repair tool and database files. Instruct the user to quit Outlook first. If the tool is found and the user confirms, call `repair_outlook_database` with `dryRun: false` to launch the repair utility.
+**Condition:** only if (a) Step 2 returned `output.client === "outlook"` (Microsoft Outlook) AND (b) the user reports Outlook crashing or showing data errors.
 
-**Step 7 — Clear mail cache**
-If the client remains slow after index rebuild or database repair, call `clear_app_cache` with the client name (e.g. `appName: "Mail"` or `appName: "Microsoft Outlook"`) and `dryRun: true`. Show the cache size. If significant (>500 MB) and the user confirms, clear it with `dryRun: false`.
+Call `repair_outlook_database`. G4 auto-triggers the dry-run preview gate (locating the repair tool + database files) followed by the consent gate. Instruct the user in the response to quit Outlook before confirming.
 
-**Step 8 — Reset preferences (last resort)**
-If all other steps fail and the client still misbehaves, call `reset_app_preferences` with `appName` set to the email client name (`appName: "Mail"` for Apple Mail, `appName: "Microsoft Outlook"` for Outlook) and `dryRun: true` to show which preference files would be removed. The `appName` parameter is required — the planner must infer it from the client in play. Warn the user that this resets all client settings — they will need to re-add their accounts. The G4 consent gate will fire automatically before the actual reset (`requiresConsent: true`, `destructive: true`, `riskLevel: high`). Only proceed with `dryRun: false` if the user explicitly agrees.
+**Step 7 — Reset preferences (last resort)**
+**Condition:** only if (a) Steps 5 or 6 ran AND the user reports the client still misbehaves after those repairs, OR (b) the user explicitly asked to reset client preferences.
 
-**Step 9 — Final verification**
-After repairs, ask the user to relaunch the email client and test sending and receiving. If SMTP connectivity was the root cause and it is now reachable, the issue should be resolved. Report a summary of all steps taken and their outcomes.
+Call `reset_app_preferences` with `appName` set to the email client name (`appName: "Mail"` for Apple Mail, `appName: "Microsoft Outlook"` for Outlook — `appName` is required, infer it from Step 2's `output.client`). G4 auto-triggers the dry-run preview gate (listing which preference files would be removed) followed by the consent gate. Warn the user clearly in the response: this resets all client settings and they will need to re-add their accounts.
+
+**Step 8 — Final verification**
+After any corrective step ran, ask the user to relaunch the email client and test sending and receiving. If SMTP connectivity was the root cause (Step 1) and the server is now reachable, the issue should already be resolved without corrective steps. Report a summary of all steps taken and their outcomes.
 
 ---
 
 ## Graceful degradation when account or mailbox repair requires IT
 
-Every tool in this skill operates in user space — `rebuild_mail_index`, `repair_outlook_database`, `clear_app_cache`, `reset_app_preferences`, and `check_mail_permissions` (even with `fix: true`) all touch only the user's own `~/Library/Mail` / `%LOCALAPPDATA%\Microsoft\Outlook` directories and never need admin privileges. The privileged-helper-daemon routing does not apply to this skill.
+Every tool in this skill operates in user space — `rebuild_mail_index`, `repair_outlook_database`, `reset_app_preferences`, and `check_mail_permissions` (even with `fix: true`) all touch only the user's own `~/Library/Mail` / `%LOCALAPPDATA%\Microsoft\Outlook` directories and never need admin privileges. The privileged-helper-daemon routing does not apply to this skill.
 
 The agent still hits failure modes it cannot resolve directly when the root cause sits outside the user's own mail data:
 
@@ -108,6 +117,6 @@ The agent still hits failure modes it cannot resolve directly when the root caus
 - **Authentication failures vs connectivity failures** — `check_smtp_connectivity` tests TCP only; a successful TCP connection does not mean credentials are valid. If connectivity is fine but send/receive still fails, the issue is likely credentials or 2FA/app password configuration — guide the user through their provider's account settings
 - **OAuth / modern auth** — many providers (Gmail, Microsoft 365) now require OAuth tokens rather than passwords. If the user's client was set up with a plain password, it may have stopped working due to the provider disabling basic auth. Advise them to remove and re-add the account using the client's "Sign in with Google/Microsoft" flow
 - **Exchange / EWS accounts** — Outlook on macOS uses Exchange Web Services (EWS) not IMAP/SMTP. `check_mail_account_config` may not parse EWS profiles. `check_smtp_connectivity` is irrelevant for Exchange — use `check_connectivity` to the Exchange server on port 443 instead
-- **Large mailbox index rebuild** — a large mailbox (100k+ messages) can take 10–60 minutes to rebuild. Warn the user before triggering `rebuild_mail_index`
+- **Large mailbox index rebuild** — a large mailbox (100k+ messages) can take 10–60 minutes to rebuild. Warn the user before triggering Step 5 / `rebuild_mail_index`
 - **Keychain conflicts after password change** — if the user recently changed their email password, the old credentials may be cached in the macOS Keychain causing repeated auth failures. Suggest using `repair_keychain` (from the password-reset skill) if credential prompts persist after updating the password in the email client
 - **VPN required for corporate mail** — if the user's mail server is an internal Exchange server, they may need VPN connected before mail will work. Check with `check_vpn_status` if the mail server hostname is an internal address

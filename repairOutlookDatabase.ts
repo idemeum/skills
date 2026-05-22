@@ -35,7 +35,12 @@ export const meta = {
     "On Windows, locates scanpst.exe. " +
     "Use when Outlook crashes, hangs, or shows data corruption errors.",
   riskLevel:       "medium",
-  destructive:     false,
+  // destructive: true so G4 auto-triggers the dry-run preview gate before
+  // the consent prompt. The repair utility rewrites the Outlook database
+  // in place; even though Outlook will recover from a server-side mailbox,
+  // the user deserves a preview-and-confirm UI showing which database file
+  // is about to be modified.
+  destructive:     true,
   requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["user"],

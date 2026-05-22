@@ -14,12 +14,13 @@
  *   npx tsx -r dotenv/config mcp/skills/resetAppPreferences.ts Mail
  */
 
-import * as fs       from "fs/promises";
-import * as os       from "os";
-import * as nodePath from "path";
-import { exec }      from "child_process";
-import { promisify } from "util";
-import { z }         from "zod";
+import * as fs        from "fs/promises";
+import * as os        from "os";
+import * as nodePath  from "path";
+import { exec }       from "child_process";
+import { promisify }  from "util";
+import { z }          from "zod";
+import { formatBytes } from "./_shared/formatBytes";
 
 const execAsync = promisify(exec);
 
@@ -52,17 +53,21 @@ export const meta = {
 // -- Types --------------------------------------------------------------------
 
 interface PrefEntry {
-  path:   string;
-  sizeMb: number;
+  path:      string;
+  sizeMb:    number;
+  /** Pre-formatted size (decimal/SI — matches Finder + Explorer). */
+  sizeHuman: string;
 }
 
 interface PrefsResult {
-  platform: string;
-  appName:  string;
-  dryRun:   boolean;
-  found:    PrefEntry[];
-  deleted:  boolean;
-  message:  string;
+  platform:       string;
+  appName:        string;
+  dryRun:         boolean;
+  found:          PrefEntry[];
+  /** Pre-formatted total across all found entries. Empty string when 0 bytes. */
+  totalSizeHuman: string;
+  deleted:        boolean;
+  message:        string;
 }
 
 // -- Helpers ------------------------------------------------------------------
@@ -73,14 +78,18 @@ function isSafePath(target: string, allowedRoot: string): boolean {
   return !rel.startsWith("..") && !nodePath.isAbsolute(rel);
 }
 
-async function getFileSizeMb(filePath: string): Promise<number> {
+async function getFileSizeBytes(filePath: string): Promise<number> {
   try {
     const stat = await fs.stat(filePath);
-    // SI/decimal MB to match _shared/formatBytes.ts + Finder.
-    return Math.round((stat.size / 1_000_000) * 1000) / 1000;
+    return stat.size;
   } catch {
     return 0;
   }
+}
+
+/** Decimal/SI MB rounded to 3 decimals — matches Finder + Explorer. */
+function bytesToMb(bytes: number): number {
+  return Math.round((bytes / 1_000_000) * 1000) / 1000;
 }
 
 // -- PowerShell helper --------------------------------------------------------
@@ -112,7 +121,7 @@ async function resetAppPreferencesDarwin(
   try {
     dirents = await fs.readdir(prefsDir, { withFileTypes: true });
   } catch {
-    return { platform: "darwin", appName, dryRun, found: [], deleted: false, message: "Could not read ~/Library/Preferences" };
+    return { platform: "darwin", appName, dryRun, found: [], totalSizeHuman: "0 B", deleted: false, message: "Could not read ~/Library/Preferences" };
   }
 
   // Match patterns: com.{appName}.*, {appName}.*, or files containing the app name
@@ -127,12 +136,25 @@ async function resetAppPreferencesDarwin(
       ) && lower.endsWith(".plist");
     });
 
-  const found: PrefEntry[] = await Promise.all(
+  // Build entries while keeping a parallel byte total — sizeMb is rounded to
+  // 3 decimals, which truncates sub-kilobyte files to 0 MB and would make
+  // sum(sizeMb) lossy for small plists. Reduce on raw bytes for accuracy.
+  const entries = await Promise.all(
     matchingFiles.map(async (d) => {
-      const full = nodePath.join(prefsDir, d.name);
-      return { path: full, sizeMb: await getFileSizeMb(full) };
+      const full  = nodePath.join(prefsDir, d.name);
+      const bytes = await getFileSizeBytes(full);
+      return { full, bytes };
     }),
   );
+
+  const found: PrefEntry[] = entries.map((e) => ({
+    path:      e.full,
+    sizeMb:    bytesToMb(e.bytes),
+    sizeHuman: formatBytes(e.bytes),
+  }));
+
+  const totalBytes     = entries.reduce((s, e) => s + e.bytes, 0);
+  const totalSizeHuman = formatBytes(totalBytes);
 
   if (found.length === 0) {
     return {
@@ -140,6 +162,7 @@ async function resetAppPreferencesDarwin(
       appName,
       dryRun,
       found,
+      totalSizeHuman,
       deleted: false,
       message: `No preference files found for '${appName}' in ~/Library/Preferences`,
     };
@@ -151,8 +174,9 @@ async function resetAppPreferencesDarwin(
       appName,
       dryRun,
       found,
+      totalSizeHuman,
       deleted: false,
-      message: `Found ${found.length} preference file(s). Set dryRun=false to remove them.`,
+      message: `Found ${found.length} preference file(s) (${totalSizeHuman}). Set dryRun=false to remove them.`,
     };
   }
 
@@ -173,8 +197,9 @@ async function resetAppPreferencesDarwin(
     appName,
     dryRun,
     found,
+    totalSizeHuman,
     deleted: deletedCount > 0,
-    message: `Deleted ${deletedCount} of ${found.length} preference file(s) for '${appName}'.`,
+    message: `Deleted ${deletedCount} of ${found.length} preference file(s) for '${appName}' (${totalSizeHuman}).`,
   };
 }
 
@@ -209,7 +234,11 @@ $matches | ConvertTo-Json -Compress`.trim();
     // fallback: empty
   }
 
-  const found: PrefEntry[] = registryKeys.map((k) => ({ path: k, sizeMb: 0 }));
+  // Registry keys have no size on Windows; sizeMb is always 0 and sizeHuman
+  // reflects that. The totalSizeHuman at the result level is still emitted
+  // for consistency with the darwin path.
+  const found: PrefEntry[] = registryKeys.map((k) => ({ path: k, sizeMb: 0, sizeHuman: "0 B" }));
+  const totalSizeHuman = "0 B";
 
   if (found.length === 0) {
     return {
@@ -217,6 +246,7 @@ $matches | ConvertTo-Json -Compress`.trim();
       appName,
       dryRun,
       found,
+      totalSizeHuman,
       deleted: false,
       message: `No registry keys found for '${appName}' under HKCU:\\Software`,
     };
@@ -228,6 +258,7 @@ $matches | ConvertTo-Json -Compress`.trim();
       appName,
       dryRun,
       found,
+      totalSizeHuman,
       deleted: false,
       message: `Found ${found.length} registry key(s). Set dryRun=false to remove them.`,
     };
@@ -244,6 +275,7 @@ $matches | ConvertTo-Json -Compress`.trim();
       appName,
       dryRun,
       found,
+      totalSizeHuman,
       deleted: true,
       message: `Removed ${found.length} registry key(s) for '${appName}'.`,
     };
@@ -253,6 +285,7 @@ $matches | ConvertTo-Json -Compress`.trim();
       appName,
       dryRun,
       found,
+      totalSizeHuman,
       deleted: false,
       message: `Failed to remove registry keys: ${(err as Error).message}`,
     };

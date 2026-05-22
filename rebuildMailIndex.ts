@@ -34,7 +34,13 @@ export const meta = {
     "Use when Mail is slow, showing wrong message counts, or missing messages. " +
     "macOS only.",
   riskLevel:       "medium",
-  destructive:     false,
+  // destructive: true so G4 auto-triggers the dry-run preview gate before
+  // the consent prompt. Mail rebuilds the index on next launch (data is
+  // recoverable) but the operation DOES delete files from disk; the user
+  // deserves a preview-and-confirm UI before that happens. Without this,
+  // the consent gate would fire with rationale text only — no preview of
+  // which files would be removed.
+  destructive:     true,
   requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["user"],
