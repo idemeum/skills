@@ -50,12 +50,31 @@ Do NOT use for local account password issues — use `password-reset` instead. D
 ## Steps
 
 **Step 1 — Detect the IDP**
-Call `detect_identity_provider`. Returns `output.primary` (one of `okta | entra | google | unknown`) plus `output.evidence`. If `primary === "unknown"`, tell the user no supported IDP was detected and end the run — the end-of-run ticket captures the outcome for IT.
+Call `detect_identity_provider`. Returns `output.primary` (one of `okta | entra | google | unknown`) plus `output.evidence`. Used as the working IDP for all subsequent steps. When `primary !== "unknown"` Step 1a is skipped.
+
+**Step 1a — User-selected IDP fallback**
+**Condition:** only if Step 1 returned `output.primary === "unknown"` (the device isn't joined to a recognised IDP — common on personal Macs, MDM-stripped devices, fresh installs, or devices where IT manages IDP enrolment via a different agent).
+
+Call `wait_for_user_ack` to ask the user which IDP they want to reset:
+
+```
+prompt: "Your device isn't joined to a recognised IDP. Which one do you use for your work account?"
+options:
+  - { id: "okta",   label: "Okta",              kind: "primary"   }
+  - { id: "entra",  label: "Microsoft Entra",   kind: "secondary" }
+  - { id: "google", label: "Google Workspace",  kind: "secondary" }
+  - { id: "cancel", label: "Cancel",            kind: "cancel"    }
+```
+
+On `okta` / `entra` / `google` → use that value as the working IDP for all subsequent steps (substitute the user's choice for what would otherwise come from Step 1's `primary`).
+On `cancel` / `timeout` → end the run cleanly; the end-of-run ticket captures the unknown-IDP outcome for IT.
+
+**Why this exists:** the auto-detection probe is conservative (signals must be unambiguous) and returns `unknown` on devices that legitimately have an IDP-managed workforce account but no companion-app footprint. Bailing here would leave the user stuck. The user knows which IDP their org uses; one wait_for_user_ack click is cheap and recoverable.
 
 **Step 1b — Auto-detect the IDP username**
-**Condition:** only if Step 1 returned `output.primary !== "unknown"`.
+**Condition:** only if the working IDP (from Step 1 or Step 1a) is `okta | entra | google`.
 
-Call `detect_idp_username` with `idp` from Step 1's `output.primary`. Returns `{ primaryUsername: string | null, candidates: [{ username, source, confidence, tenant? }], reason? }`. Phase 1 supports Windows + Entra (via `dsregcmd /status`) and Windows + Okta (via registry). macOS / Google / and unsupported combinations return `primaryUsername: null` with a structured `reason` — never throws. This step is read-only and silent: no UI surfaces if it succeeds. Step 1c branches on the result.
+Call `detect_idp_username` with `idp` = the working IDP. Returns `{ primaryUsername: string | null, candidates: [{ username, source, confidence, tenant? }], reason? }`. Phase 1 supports Windows + Entra (via `dsregcmd /status`) and Windows + Okta (via registry). macOS / Google / and unsupported combinations return `primaryUsername: null` with a structured `reason` — never throws. This step is read-only and silent: no UI surfaces if it succeeds. Step 1c branches on the result.
 
 **Step 1c — Confirm or capture the IDP username**
 **Condition:** only if Step 1b ran.
