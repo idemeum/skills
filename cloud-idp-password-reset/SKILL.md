@@ -88,13 +88,20 @@ Three branches based on `detect_idp_username`'s output:
   On `different` → fall through to the "no candidates" branch below.
   On `cancel` / `timeout` → end the run.
 
-- **`candidates.length === 0` OR the user picked "different" in either branch above** — call `request_user_input` to capture the username:
+- **`candidates.length === 0` OR the user picked "different" in either branch above** — call `request_user_input` to capture the username. **The prompt MUST be IDP-specific** because what the cloud needs differs per IDP — Entra's Graph API needs the UPN (which may not match the email in larger orgs), Okta accepts the login string (usually email), Google accepts the primary email or alias. Substitute `{prompt}` based on Step 1's `output.primary`:
+
+  - **`okta`** → `prompt: "What's your Okta login? (usually your email address — e.g. alice@example.com)"`
+  - **`entra`** → `prompt: "What's your Microsoft sign-in address (UPN)? In most organizations this matches your email (e.g. alice@idemeum.com), but in some it ends in .onmicrosoft.com or a different work domain. If unsure, check Outlook's account settings or your IT helpdesk."`
+  - **`google`** → `prompt: "What's your Google Workspace email address?"`
+
+  Common args for all three:
   ```
-  prompt:    "What's your {idp} email address?"
   placeholder: "alice@example.com"
-  validator: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+  validator:   "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
   ```
   The text-input card pauses the plan; the user types and clicks Continue (or hits Enter). Returns `{ value: string }` — empty string on cancel / timeout. If `value.length === 0`, end the run. Otherwise, use `value` as the confirmed username and proceed to Step 2.
+
+  **Why per-IDP prompts:** Entra UPN ≠ email in 5-15% of enterprise tenants (hybrid AD setups, `.onmicrosoft.com` defaults, custom UPN suffixes). The cloud's Graph API lookup is strict on UPN — passing an email alias returns "user not found" and the reset fails. The longer Entra prompt sets expectations up front rather than discovering this via a failed POST round-trip.
 
 **Do NOT write prose like "ask the user via chat" for the username** — that pattern is functionally broken because `conversationIdRef` clears on run end (see `useAgent.ts:156`). `request_user_input` is the only mid-plan free-text mechanism that actually works.
 
