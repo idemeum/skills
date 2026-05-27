@@ -5,9 +5,11 @@ license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
   - detect_identity_provider
+  - detect_idp_username
   - open_idp_sspr_portal
   - request_idemeum_idp_reset
   - wait_for_user_ack
+  - request_user_input
   - present_preview
   - purge_cached_credentials
   - clear_browser_sso_cookies
@@ -17,6 +19,7 @@ metadata:
   prerequisites:
     before-corrective:
       - detect_identity_provider
+      - detect_idp_username
   maxAggregateRisk: high
   userLabel: "Reset my Okta/Entra/Google password"
   examples:
@@ -49,6 +52,52 @@ Do NOT use for local account password issues — use `password-reset` instead. D
 **Step 1 — Detect the IDP**
 Call `detect_identity_provider`. Returns `output.primary` (one of `okta | entra | google | unknown`) plus `output.evidence`. If `primary === "unknown"`, tell the user no supported IDP was detected and end the run — the end-of-run ticket captures the outcome for IT.
 
+**Step 1b — Auto-detect the IDP username**
+**Condition:** only if Step 1 returned `output.primary !== "unknown"`.
+
+Call `detect_idp_username` with `idp` from Step 1's `output.primary`. Returns `{ primaryUsername: string | null, candidates: [{ username, source, confidence, tenant? }], reason? }`. Phase 1 supports Windows + Entra (via `dsregcmd /status`) and Windows + Okta (via registry). macOS / Google / and unsupported combinations return `primaryUsername: null` with a structured `reason` — never throws. This step is read-only and silent: no UI surfaces if it succeeds. Step 1c branches on the result.
+
+**Step 1c — Confirm or capture the IDP username**
+**Condition:** only if Step 1b ran.
+
+Three branches based on `detect_idp_username`'s output:
+
+- **`candidates.length === 1` (single auto-detected account)** — call `wait_for_user_ack` to confirm:
+  ```
+  prompt:  "Reset the password for {primaryUsername} ({idp})?"
+  options:
+    - { id: "confirm",   label: "Yes, reset {primaryUsername}", kind: "primary"   }
+    - { id: "different", label: "No, a different account",       kind: "secondary" }
+    - { id: "cancel",    label: "Cancel",                        kind: "cancel"    }
+  ```
+  On `confirm` → use `primaryUsername` as the confirmed username; proceed to Step 2.
+  On `different` → fall through to the "no candidates" branch below.
+  On `cancel` / `timeout` → end the run.
+
+- **`candidates.length` is 2-4 (multi-account picker)** — call `wait_for_user_ack` with each candidate as a button:
+  ```
+  prompt: "Multiple {idp} accounts are configured. Which one do you want to reset?"
+  options:
+    - { id: "pick:{candidate[0].username}", label: "{candidate[0].username}", kind: "primary"   }
+    - { id: "pick:{candidate[1].username}", label: "{candidate[1].username}", kind: "secondary" }
+    - …  (one button per candidate, max 4)
+    - { id: "different",                    label: "None of these",            kind: "secondary" }
+    - { id: "cancel",                       label: "Cancel",                   kind: "cancel"    }
+  ```
+  On `pick:<username>` → extract the username from the id prefix; use as the confirmed username; proceed to Step 2.
+  On `different` → fall through to the "no candidates" branch below.
+  On `cancel` / `timeout` → end the run.
+
+- **`candidates.length === 0` OR the user picked "different" in either branch above** — call `request_user_input` to capture the username:
+  ```
+  prompt:    "What's your {idp} email address?"
+  placeholder: "alice@example.com"
+  validator: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+  ```
+  The text-input card pauses the plan; the user types and clicks Continue (or hits Enter). Returns `{ value: string }` — empty string on cancel / timeout. If `value.length === 0`, end the run. Otherwise, use `value` as the confirmed username and proceed to Step 2.
+
+**Do NOT write prose like "ask the user via chat" for the username** — that pattern is functionally broken because `conversationIdRef` clears on run end (see `useAgent.ts:156`). `request_user_input` is the only mid-plan free-text mechanism that actually works.
+
 **Step 2 — User picks reset path**
 Call `wait_for_user_ack` to let the user choose between the IDP's self-service portal and the idemeum cloud-mediated path:
 
@@ -72,7 +121,7 @@ Call `open_idp_sspr_portal` with `idp` from Step 1 and `tenant` if applicable (O
 **Step 4 — Cloud path: request the reset**
 **Condition:** only if Step 2 returned `choice === "cloud"`.
 
-Call `request_idemeum_idp_reset` with `idp`, `username` (the user's IDP login — ask if not known), and `tenant` if applicable. G4 auto-triggers a dry-run preview (showing the exact outbound payload, with API key redacted) and then the consent gate. Surface the cloud's response to the user:
+Call `request_idemeum_idp_reset` with `idp`, `username` (the confirmed username from Step 1c's scratchpad — already auto-detected or user-entered with email-format validation), and `tenant` if applicable. The tool's Zod schema enforces email/UPN format on `username`; G4 auto-triggers a dry-run preview (showing the exact outbound payload, with `username` redacted per the tool's `sensitiveParams` declaration) and then the consent gate. Surface the cloud's response to the user:
 - `status === "initiated"` — explain how the reset was delivered (e.g. "A temp password has been emailed to your recovery address"). Include `ticketId` if returned.
 - `status === "failed"` / `"not-eligible"` — surface what the cloud reported and end the run.
 - `status === "not-configured"` — tell the user idemeum cloud is not enabled on this device; contact their MSP administrator. End the run.

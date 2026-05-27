@@ -69,13 +69,30 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["network"],
   auditRequired:   true,
+  // `username` is the user's IDP login (email / UPN). Although it isn't a
+  // credential per se, exposing it across audit logs / response bubble /
+  // scratchpad replay broadens the attack surface for targeted phishing
+  // and account-enumeration. Declaring it sensitive lets the centralised
+  // sanitiser handle redaction at every downstream surface; skills that
+  // call this tool inherit the protection automatically — they do NOT
+  // need to repeat it in their own SKILL.md sensitiveParams.
+  sensitiveParams: ["username"],
   schema: {
     idp: z
       .enum(["okta", "entra", "google"])
       .describe("IDP identifier; JumpCloud/Ping deferred to Wave 2."),
+    // Email / UPN regex — rejects obvious typos at tool entry (e.g.
+    // "alice@" or "alice example.com") so we don't round-trip to cloud
+    // just to discover the format is wrong. The validator is intentionally
+    // permissive (no DNS lookup, no MX check) — the cloud's eligibility
+    // check is the authoritative "is this a real account" test.
     username: z
       .string()
       .min(1)
+      .regex(
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        "must be an email or UPN (e.g. alice@example.com)",
+      )
       .describe("The user's IDP login (email / UPN)."),
     tenant: z
       .string()
