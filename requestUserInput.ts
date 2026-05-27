@@ -36,6 +36,16 @@
  * `value.length > 0` before using it. Validator-rejected timeouts return
  * empty string, NOT the rejected value.
  *
+ * Returns
+ * -------
+ *   { value: string }
+ *
+ * SKILL.md authors reference this in `inputsFrom: [{ step: N, field: "value" }]`
+ * for downstream steps that consume the captured text. The string is the
+ * literal text the user typed, or an empty string on cancel / timeout /
+ * validator rejection / aborted run. Skill prose typically branches on
+ * `value.length > 0` before passing it to a downstream tool.
+ *
  * Sensitive input
  * ---------------
  * When `sensitive: true`, the renderer shows a password-style masked

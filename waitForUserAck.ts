@@ -37,6 +37,16 @@
  *   6. The choice flows back to the agent's scratchpad as the tool result;
  *      the skill prose branches on "done" vs other values.
  *
+ * Returns
+ * -------
+ *   { choice: string }
+ *
+ * SKILL.md authors reference this in `inputsFrom: [{ step: N, field: "choice" }]`
+ * for downstream steps that branch on the user's selection. The string is one
+ * of the option ids the author defined in params.options[], OR the sentinels
+ * "timeout" (USER_ACK_TIMEOUT_MS elapsed), "cancel" (abort signal), or
+ * "failed" (callback threw).
+ *
  * Safety net
  * ----------
  * If G4's routing is broken or a caller invokes run() directly, the stub

@@ -57,8 +57,19 @@
  * Per category (optional): detail, defaultSelected (defaults true),
  *   destructive (defaults false)
  *
- * Output: { selected: string[] } — the category ids the user kept checked.
+ * Returns
+ * -------
+ *   { selected: string[] }
+ *
+ * The string array contains the category ids the user kept checked.
  * Empty array means cancel / dismiss / timeout / no items checked.
+ *
+ * SKILL.md authors reference this in `inputsFrom: [{ step: N, field: "selected" }]`
+ * for downstream corrective steps, typically with `When:` clauses
+ * (`only if "<id>" is in <preview-step>'s selected`) or `forEach`
+ * (`source: "user-confirmation"`). The category ids on Step N are exactly
+ * the ones authored in params.categories[].id at plan time — stable
+ * kebab-case, NOT derived from labels.
  *
  * Category `id` convention: short kebab-case, stable across edits, domain-
  * meaningful (not slug-of-label), unique within one call. Subsequent steps
