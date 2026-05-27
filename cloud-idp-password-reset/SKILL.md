@@ -17,9 +17,15 @@ allowed-tools:
   - repair_keychain
 metadata:
   prerequisites:
+    # detect_identity_provider is the only strict prereq. detect_idp_username
+    # is conditional (skipped when IDP === "unknown") and Step 1a's
+    # wait_for_user_ack must legally come BETWEEN them when fallback fires —
+    # listing detect_idp_username here would force G2 to reject any plan
+    # that inserts the IDP-picker between the two diagnostics. See the
+    # cloud-idp Phase 1 (b) audit log + commit 1f08c7b for the regression
+    # this guards against.
     before-corrective:
       - detect_identity_provider
-      - detect_idp_username
   maxAggregateRisk: high
   userLabel: "Reset my Okta/Entra/Google password"
   examples:
