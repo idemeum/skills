@@ -154,12 +154,13 @@ Call `open_idp_sspr_portal` with `idp` from Step 1 and `tenant` if applicable (O
 **Condition:** only if Step 2 returned `choice === "cloud"`.
 
 Call `request_idemeum_idp_reset` with `idp`, `username` (the confirmed username from Step 1c's scratchpad — already auto-detected or user-entered with email-format validation), and `tenant` if applicable. The tool's Zod schema enforces email/UPN format on `username`; G4 auto-triggers a dry-run preview (showing the exact outbound payload, with `username` redacted per the tool's `sensitiveParams` declaration) and then the consent gate. Surface the cloud's response to the user:
-- `status === "initiated"` — explain how the reset was delivered (e.g. "A temp password has been emailed to your recovery address"). Include `ticketId` if returned.
-- `status === "failed"` / `"not-eligible"` — surface what the cloud reported and end the run.
-- `status === "not-configured"` — tell the user idemeum cloud is not enabled on this device; contact their MSP administrator. End the run.
 
-**Step 5 — Wait for the user to complete the reset**
-**Condition:** only if Step 3 or Step 4 ran.
+- **`status === "initiated"` with `deliveryMethod: "email"` or `"sms"`** — explain how the reset was delivered (e.g. "A temp password has been emailed to your recovery address"). Proceed directly to Step 6 (skip Step 5 — see below). The local cleanup steps are safe to run before the user retrieves the temp password; they just clear stale cached state.
+- **`status === "initiated"` with `deliveryMethod: "helpdesk-ticket"`** — the reset is queued for a human IT tech to process. The user does NOT have a new password yet. Surface the message + `ticketId` and **end the run** — cleanup would be premature.
+- **`status === "failed"` / `"not-eligible"` / `"not-configured"`** — surface what the cloud reported and **end the run**. **MUST NOT call `open_idp_sspr_portal` as a fallback** even though SSPR is technically in `allowed-tools`. The user's `"cloud"` choice at Step 2 was informative — they likely cannot complete SSPR (lost MFA second factor, conditional-access policy that gates SSPR on a managed device, no recovery email configured, etc.). Falling back to SSPR ignores that signal and dumps them at a portal they probably can't pass. The cloud's failure messages all point to the correct next action ("Contact your MSP administrator" for `not-configured` / `not-eligible`; surface the cloud's reason verbatim for `failed`). Do NOT fight the cloud's verdict with a second tool call.
+
+**Step 5 — Wait for the user to complete the reset (SSPR path only)**
+**Condition:** only if Step 3 ran (SSPR path). **Do NOT run after Step 4** — the cloud path doesn't need this gate (see rationale below).
 
 Call `wait_for_user_ack`:
 
@@ -171,12 +172,14 @@ options:
   - { id: "cancel", label: "Cancel",               kind: "cancel"    }
 ```
 
-If `failed`: advise the user to either try the other reset path (offer to re-run) or escalate via the ticket; end the run.
+If `failed`: advise the user to either try the cloud path (offer to re-run) or escalate via the ticket; end the run.
 If `cancel` / `timeout`: end the run.
 If `done`: proceed to Step 6.
 
+**Why this is SSPR-only:** the SSPR path opens a browser; the agent has no way to know whether the user completed the reset, hit an MFA wall, or just closed the tab. The user's `done` reply is the only signal. The cloud path is different — the admin API call already changed the password server-side; `status: "initiated"` is direct confirmation from the cloud. The local cleanup steps in Step 7 (purge cached creds, clear browser SSO cookies, resync IDP agent, repair Keychain) only clear **stale local state** — they don't need the user to have the new password in hand. Making the cloud-path user wait at a gate before cleanup runs is friction without value; they can do cleanup while waiting for the temp-password email.
+
 **Step 6 — Cleanup gate (present_preview card)**
-**Condition:** only if Step 5 returned `choice === "done"`.
+**Condition:** only if (a) Step 5 returned `choice === "done"` (SSPR happy path), OR (b) Step 4 returned `status === "initiated"` with `deliveryMethod` of `"email"` or `"sms"` (cloud happy path; Step 5 is skipped).
 
 Call `present_preview` so the user can pick which cleanup actions to run. **The category list is fixed across every run** — only the `summary` strings are filled in from prior scratchpad output.
 
