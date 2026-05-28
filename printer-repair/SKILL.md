@@ -12,6 +12,8 @@ allowed-tools:
   - remove_printer
   - add_printer
   - reset_printing_system
+  - request_user_input
+  - wait_for_user_ack
 metadata:
   prerequisites:
     before-corrective:
@@ -58,64 +60,98 @@ Call `list_printers`. Returns `output.printers: [{ name, status, queueDepth }]` 
 **Step 2 — Check ALL print queues**
 Call `check_print_queue` with **no `printerName` arg**. Returns `output.jobs: [{ id, printer, owner, document, status, sizeKb, sizeHuman, submittedAt }]`, `output.stuckCount`, `output.total`. The unfiltered call returns jobs for every configured printer in one pass — avoids the "which printer is affected?" ambiguity and gives the executor full queue state to drive escalation decisions. `sizeHuman` is pre-formatted (decimal/SI MB to match Finder / Explorer); substitute verbatim, do NOT recompute from `sizeKb`.
 
-**Step 3 — Check network connectivity for the printer the user cares about**
-Skip this step when the user's goal does NOT name a specific printer AND no printer in Step 1 is in `stopped` / `disabled` state (no signal of which printer to test). Otherwise, call `check_printer_connectivity` with `host` set to the printer's IP address or hostname. The `host` parameter is required — it does NOT come from `list_printers` (which only returns printer name, status, and queue depth, not the network address). Sources of `host`, in order of preference:
-1. If the user already mentioned the IP in their goal, use that.
-2. Otherwise ask the user for it — suggest they print a configuration page from the printer's control panel, or check their router's DHCP client list.
-3. Skip this step entirely for USB-connected printers (see Edge Cases — `check_printer_connectivity` tests network ports only and will report all-unreachable for USB).
+**Step 3 — Capture the target printer's IP address**
+Call `request_user_input` to obtain the network printer's IP address or hostname. `check_printer_connectivity` requires `host` and `list_printers` does NOT return network addresses — the IP is only knowable from the printer's control panel, the user's router DHCP table, or the user's prior knowledge.
+
+```yaml
+prompt: "What's the IP address or hostname of the printer that's not working? You can find it by printing a configuration page from the printer's control panel, or by checking your router's connected-devices list."
+placeholder: "192.168.1.50 or printer.local"
+validator: "^[A-Za-z0-9.\\-:]+$"
+```
+
+`Condition:` only run if (a) Step 1's `list_printers` returned at least one printer in `stopped` / `disabled` state OR the user's goal names a specific printer, AND (b) the user's goal does NOT already contain an IP/hostname (the planner can use the goal-provided value directly without invoking this step), AND (c) the target printer is network-attached (USB printers — see Edge Cases — skip this step entirely because `check_printer_connectivity` only tests network ports). Skip silently otherwise — Step 4 will also skip when no host is known.
+
+If the user submits an empty value (cancel / timeout), Step 4 will skip and the escalation continues without network reachability evidence. Surface that gap in the final summary.
+
+**Step 4 — Check network connectivity for the printer the user cares about**
+Call `check_printer_connectivity` with `host` set to the captured IP/hostname.
+
+`inputsFrom: [{ step: 3, field: "value" }]` — pass the Step 3 capture as `host`. If the user's goal already contained an IP and Step 3 was skipped, pass that goal-provided value directly.
+
+`Condition:` only run if a valid `host` value is available (either from Step 3's non-empty return or from the user's goal). Skip silently otherwise.
 
 The tool tests ports 9100 (raw printing), 631 (IPP), and 80 (HTTP admin interface). If all ports are unreachable, the printer is powered off, sleeping, or has a different IP than configured. If port 631 (IPP) is reachable, the printer is online and the issue is software-side.
 
-**Step 4 — Clear stuck print jobs (lightest corrective)**
+**Step 5 — Clear stuck print jobs (lightest corrective)**
 **Condition:** only if `check_print_queue` in Step 2 returned `output.stuckCount > 0` OR `output.total > 0` AND the user explicitly asked to clear the queue.
 
 Call `clear_print_queue`. G4's binding dry-run preview + consent gate fires automatically — the user sees which jobs would be cancelled before any destructive action.
 
-**Step 5 — Verify the queue cleared**
-**Condition:** only if Step 4 ran.
+**Step 6 — Verify the queue cleared**
+**Condition:** only if Step 5 ran.
 
-Call `check_print_queue` (no args) again. If `output.stuckCount` is now 0 and `output.total` is 0, the queue clear succeeded and the user can test printing — stop the escalation here unless the printer still won't print. If jobs remain or new ones are stuck immediately, the issue is service-side or driver-side; continue to Step 6.
+Call `check_print_queue` (no args) again. If `output.stuckCount` is now 0 and `output.total` is 0, the queue clear succeeded and the user can test printing — stop the escalation here unless the printer still won't print. If jobs remain or new ones are stuck immediately, the issue is service-side or driver-side; continue to Step 7.
 
-**Step 6 — Restart the print service (CUPS / Spooler)**
-**Condition:** only if Step 1 returned at least one printer with status `stopped` or `disabled`, OR Step 5 showed jobs persisting after a queue clear. Skip when Step 1 shows all printers `idle` AND Step 5 confirmed the queue is empty.
+**Step 7 — Restart the print service (CUPS / Spooler)**
+**Condition:** only if Step 1 returned at least one printer with status `stopped` or `disabled`, OR Step 6 showed jobs persisting after a queue clear. Skip when Step 1 shows all printers `idle` AND Step 6 confirmed the queue is empty.
 
 Call `restart_cups`. G4's binding dry-run preview + consent gate fires automatically. After the restart, call `list_printers` again to confirm printers are visible and their status has updated (this is handled by the next plan step's conditional re-check, not by repeating tools inside this step).
 
-**Step 7 — Re-check printer status after CUPS restart**
-**Condition:** only if Step 6 ran.
+**Step 8 — Re-check printer status after CUPS restart**
+**Condition:** only if Step 7 ran.
 
-Call `list_printers` again. If the previously-stopped printer is now `idle`, the restart resolved the service issue — stop escalating. If the printer remains `stopped` / `disabled` AND Step 3 confirmed the host is reachable on port 631, the printer's configuration or driver is likely corrupt; continue to Step 8.
+Call `list_printers` again. If the previously-stopped printer is now `idle`, the restart resolved the service issue — stop escalating. If the printer remains `stopped` / `disabled` AND Step 4 confirmed the host is reachable on port 631, the printer's configuration or driver is likely corrupt; continue to Step 9.
 
-**Step 8 — Remove and re-add the printer (driver / config likely corrupt)**
-**Condition:** only if (a) Step 7 showed the printer still in `stopped` / `disabled` state after CUPS restart AND (b) Step 3 confirmed port 631 (IPP) reachable, OR the user explicitly asked to re-add the printer.
+**Step 9 — Remove and re-add the printer (driver / config likely corrupt)**
+**Condition:** only if (a) Step 8 showed the printer still in `stopped` / `disabled` state after CUPS restart AND (b) Step 4 confirmed port 631 (IPP) reachable, OR the user explicitly asked to re-add the printer.
 
 Call `remove_printer` with `printerName` set to the exact name from Step 1's `list_printers` output. G4's binding dry-run + consent gate fires automatically.
 
 Then immediately call `add_printer` with:
 - `name` (required) — reuse the name from the just-removed printer so the user's existing workflows / shortcuts continue to work.
-- `host` (required) — the printer's IP address from Step 3 (or ask the user if not already captured).
+- `host` (required) — the printer's IP address captured in Step 3 (`inputsFrom: [{ step: 3, field: "value" }]`). If Step 3 was skipped because the goal supplied the value directly, reuse that goal-provided value. Do NOT chat-narrate "ask the user" — Step 3 is the authoritative capture point.
 - `protocol` (optional) — defaults to `"ipp"`, which is correct for IPP Everywhere (the modern auto-driver). Only override to `"lpd"` or `"socket"` if the printer explicitly requires a legacy protocol.
 - `driverPpd` (optional) — omit this to let IPP Everywhere auto-negotiate the driver. Supply a PPD path only if the user has a specific manufacturer driver they need to use. `~` in the path is expanded to the user's home directory.
 
 `add_printer` does not support dry-run (`supportsDryRun: false`); G4's consent gate fires automatically before it runs.
 
-**Step 9 — Reset entire printing system (last resort)**
+**Step 10 — Reset entire printing system (last resort)**
 **Condition:** only if (a) `list_printers` returned multiple printers all in `stopped` / `disabled` state AND prior corrective steps either failed or are inapplicable (no single printer to remove + re-add), OR (b) the user explicitly asked to reset everything.
 
 Call `reset_printing_system`. G4's binding dry-run + consent gate fires automatically — the dry-run preview lists every printer that will be removed, and consent requires explicit user approval. Warn the user clearly in the surrounding chat that all printer configurations will be deleted and must be re-added manually.
 
-After reset, re-add each affected printer using `add_printer` with `name` and `host` (ask the user for any IPs that weren't captured during diagnostics).
+**After the reset succeeds**, re-add each affected printer. For each printer in Step 1's `list_printers.printers[]` snapshot (captured before the reset wiped configurations), call `request_user_input` to capture that printer's IP, then call `add_printer`. Drive this as a `forEach` loop:
 
-**Step 10 — Final verification**
-**Condition:** only if any corrective step (4, 6, 8, or 9) ran.
+`forEach: { source: "step-1.printers" }` — iterate one entry per printer.
 
-Call `check_print_queue` (no args) one final time. If `output.stuckCount` is 0 and `output.total` is 0, the diagnostic loop is complete; ask the user to send a real print job to confirm the fix. Report a summary in chat of which corrective steps ran and the final state.
+Per-iteration calls:
+1. Call `request_user_input` with prompt: *"What's the IP address or hostname for printer {printerName}? Leave blank to skip re-adding this one."* `placeholder: "192.168.1.50"`, `validator: "^[A-Za-z0-9.\\-:]*$"` (note `*` not `+` — empty value is a valid skip signal). `inputsFrom: [{ step: 1, field: "printers" }]` for the iteration source.
+2. If the user submitted a non-empty value, call `add_printer` with `name: <printer.name>`, `host: <captured value>`, `protocol: "ipp"`. If the user submitted empty, skip this printer and continue the loop.
+
+Surface a summary of which printers were re-added and which were skipped in the Step 11 final report.
+
+**Step 11 — Final verification**
+**Condition:** only if any corrective step (5, 7, 9, or 10) ran.
+
+Call `check_print_queue` (no args) one final time. If `output.stuckCount` is 0 and `output.total` is 0, the diagnostic loop is complete. Report a summary in chat of which corrective steps ran and the final state.
+
+Then call `wait_for_user_ack` to wait for the user to actually test printing — the agent cannot observe a successful print job from the OS-side queue alone:
+
+```yaml
+prompt: "Send a real print job from any app to the printer that was broken. Let me know whether it printed successfully."
+options:
+  - { id: "worked",       label: "It printed",                kind: "primary" }
+  - { id: "still-broken", label: "Still not printing",        kind: "secondary" }
+  - { id: "skip",         label: "Skip — I'll test later",    kind: "cancel" }
+```
+
+On `worked`: report success and end the run. On `still-broken`: surface that all in-scope correctives have run without resolving the issue; escalate to IT with the diagnostic packet. On `skip`: close the run with "diagnostics complete; user will verify later".
 
 ---
 
 ## Privilege handling — helper-routed (default) vs. fallback
 
-Steps 4, 6, 8, and 9 require administrator privileges to execute the underlying OS commands. The agent handles this transparently in two modes:
+Steps 5, 7, 9, and 10 require administrator privileges to execute the underlying OS commands. The agent handles this transparently in two modes:
 
 **When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): the agent routes these steps through the helper daemon and they complete silently for **all users — admin and non-admin alike**. The user sees the step succeed end-to-end. No "this requires admin" messaging is needed in the response.
 
@@ -136,7 +172,7 @@ Steps 4, 6, 8, and 9 require administrator privileges to execute the underlying 
 ## Edge cases
 
 - **Printer shows online but jobs stuck immediately** — this often means the driver is sending a job format the printer does not understand. When re-adding via `add_printer`, use `protocol: "ipp"` with no custom PPD to use IPP Everywhere — this uses driverless printing with a format guaranteed to be compatible
-- **USB printers** — `check_printer_connectivity` tests network ports only. For a USB-connected printer, skip Step 3 entirely. If the USB printer is offline, unplug and replug the USB cable, then call `restart_cups` to force the OS to re-detect it
+- **USB printers** — `check_printer_connectivity` tests network ports only. For a USB-connected printer, skip Steps 3 and 4 entirely (Step 3's `request_user_input` is conditioned on network-attached printers; Step 4's connectivity check needs a network host). If the USB printer is offline, unplug and replug the USB cable, then call `restart_cups` to force the OS to re-detect it
 - **Shared network printer via another computer** — if the printer is shared from another computer (not a direct network printer), that computer must be on and the sharing must be enabled. `check_printer_connectivity` will show the host computer's IP as reachable but the printer port may still fail if sharing is disabled
 - **CUPS requires elevated privileges** — `restart_cups` and `reset_printing_system` on macOS need root to talk to `launchctl system/...`. With the privileged helper daemon installed (default), this is handled silently end-to-end. If the helper is unavailable or disabled, guide the user to open Terminal and run `sudo launchctl kickstart -k system/org.cups.cupsd` manually as the fallback.
 - **Printer IP address changes** — DHCP-assigned printer IPs can change after a router reboot. If the printer was working before and is now offline, the IP may have changed. Ask the user to print a configuration page directly from the printer's control panel to find its current IP, then remove and re-add with the new IP
