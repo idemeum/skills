@@ -30,7 +30,7 @@ export const meta = {
     "or after network changes.",
   riskLevel:       "medium",
   destructive:     false,
-  requiresConsent: false,
+  requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["network"],
   auditRequired:   true,

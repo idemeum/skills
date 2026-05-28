@@ -11,6 +11,8 @@ allowed-tools:
   - check_network_extension
   - reconnect_vpn
   - flush_dns_cache
+  - wait_for_user_ack
+  - request_user_input
 metadata:
   prerequisites:
     before-corrective:
@@ -60,7 +62,9 @@ Call `get_vpn_profiles` to enumerate all configured VPN profiles. Identify which
 Call `check_connectivity` with default targets (8.8.8.8, 1.1.1.1, google.com) to confirm the device has internet access. If the device cannot reach the internet at all, VPN cannot connect — switch to the `network-reset` skill.
 
 **Step 4 — Check VPN server connectivity**
-If internet is available but VPN fails to connect, test connectivity to the VPN server hostname directly. Call `check_connectivity` with the VPN server hostname as a target. A failure here indicates a network path issue to the VPN server specifically.
+Test connectivity to the VPN server hostname directly. Call `check_connectivity` with the VPN server hostname as a target. A failure here indicates a network path issue to the VPN server specifically.
+
+`Condition:` only run if Step 3's `check_connectivity` showed general internet is reachable AND Step 1's `check_vpn_status` showed the VPN is NOT connected. Skip if the VPN is already connected (Step 7's reconnect path handles "connected but not routing") or if general internet is down (the user has bigger problems — escalate to `network-reset`).
 
 **Step 5 — Check certificate expiry**
 Call `check_certificate_expiry` on the VPN server hostname (port 443 or 8443 depending on the VPN type). An expired server certificate causes TLS handshake failures that appear as generic "cannot connect" errors. Also check if the VPN uses client certificates — if so, the client cert may have expired separately (this cannot be checked automatically; ask the user if they received a certificate renewal notice).
@@ -70,22 +74,78 @@ Call `check_network_extension` to verify the VPN client's system extension is lo
 - Call with no parameter to list every network extension on the device (useful for the initial survey).
 - Call with `extensionName: "cisco"`, `extensionName: "paloaltonetworks"`, `extensionName: "anyconnect"`, or similar substring to target one vendor's extension when you already know which VPN client the user is trying to use (from Step 1's `check_vpn_status` output).
 
-On macOS, VPN clients (AnyConnect, GlobalProtect, etc.) require a user-approved network extension. If any extension shows "waiting for user" or is not activated, guide the user to System Settings → Privacy & Security and approve the listed extension. The VPN cannot function without this. On Windows, the tool falls back to inspecting VPN/TAP network adapters — the approval-flow guidance above doesn't apply.
+On macOS, VPN clients (AnyConnect, GlobalProtect, etc.) require a user-approved network extension. If any extension shows "waiting for user" or is not activated, Step 7's `wait_for_user_ack` will surface that to the user and wait for them to approve it in System Settings before continuing. On Windows, the tool falls back to inspecting VPN/TAP network adapters — the approval-flow gate (Step 7) skips on non-darwin platforms.
 
-**Step 7 — Reconnect VPN**
-If the VPN shows as connected but traffic is not routing (a "split tunnel" or stale session issue), call `reconnect_vpn` to force a clean disconnect/reconnect cycle. Required parameters:
-- `profileName` (required) — the VPN profile to reconnect. Source it from Step 2's `get_vpn_profiles` output (the `name` field of each profile) or from Step 1's `check_vpn_status` output (the `clientConnections[].name` field). If multiple profiles are configured, ask the user which one they're trying to use.
-- `dryRun` (optional, **defaults to `true`**) — first call without specifying (or with `dryRun: true`) returns a preview of which profile would be reconnected. After user confirmation, call again with `dryRun: false` to actually perform the disconnect + 2-second pause + reconnect sequence. The G4 auto-gate on high-risk destructive actions does not fire here (`riskLevel: medium`, `destructive: false`), so the dry-run → confirm → run pattern in this step MUST be driven explicitly by the workflow.
+**Step 7 — Wait for user to approve network extension (macOS only)**
+Approving a system extension in System Settings → Privacy & Security is out-of-band — the agent cannot observe the click. Call `wait_for_user_ack` to pause until the user confirms approval (or reports they couldn't):
 
-For MFA/SAML VPNs (GlobalProtect, Zscaler) — see Edge Cases; a reconnect will trigger a browser auth window.
+```yaml
+prompt: "Your VPN client's network extension needs approval in System Settings before the VPN can function. Open System Settings → Privacy & Security, find {extensionName} in the list, and click Allow. Let me know when you've done it."
+options:
+  - { id: "approved",  label: "I approved it",            kind: "primary" }
+  - { id: "blocked",   label: "It's blocked by MDM",      kind: "secondary" }
+  - { id: "not-there", label: "I don't see the extension", kind: "secondary" }
+```
 
-**Step 8 — Flush DNS after reconnect**
-After a successful reconnect, call `flush_dns_cache` to clear any stale DNS entries from before the VPN tunnel was established. DNS entries cached before VPN connect often point to external IPs instead of internal ones, making internal hostnames unreachable even when the tunnel is up.
+`Condition:` only run if (a) Step 6's `check_network_extension` returned at least one extension with `status === "waiting-for-user"` (or vendor-equivalent string indicating pending approval), AND (b) platform is `darwin`. Skip silently on Windows and when no extensions need approval. On `choice === "blocked"`, end the run with IT-escalation advice (MDM policy needed); on `choice === "not-there"`, end the run with VPN-client-reinstall advice (see software-reinstall skill). Only proceed to Step 8 on `choice === "approved"`.
 
-**Step 9 — Verify tunnel routing**
-After reconnect and DNS flush, call `check_connectivity` again — this time targeting an internal hostname or IP (ask the user for one). A successful ping to an internal resource confirms the tunnel is routing correctly.
+Substitute `{extensionName}` in the prompt with the first pending-approval extension's display name from Step 6's output.
 
-**Step 10 — Final report**
+**Step 8 — Pick VPN profile (if multiple configured)**
+If Step 2's `get_vpn_profiles` returned more than one profile, the user must choose which one to reconnect. Call `wait_for_user_ack` with one option per profile (clamped to the top 4 by most-recently-used, or alphabetical if no MRU signal):
+
+```yaml
+prompt: "You have multiple VPN profiles configured. Which one are you trying to use?"
+options:
+  - { id: "{profile-1-name}", label: "{profile-1-name}", kind: "primary" }
+  - { id: "{profile-2-name}", label: "{profile-2-name}", kind: "secondary" }
+  # … up to 4 total. If real count > 4, the 4th option becomes:
+  - { id: "other", label: "Other (tell me in chat)", kind: "secondary" }
+```
+
+`inputsFrom: [{ step: 2, field: "profiles" }]` — iterate `profiles[].name` to populate the options.
+
+`Condition:` only run if Step 2's `get_vpn_profiles` returned `profiles.length > 1`. Skip if there's only one profile (use it directly in Step 9) or zero profiles (escalate to IT — no profiles configured). On `choice === "other"`, fall back to `request_user_input` with `prompt: "Type the exact profile name"` before proceeding.
+
+**Step 9 — Reconnect VPN**
+Call `reconnect_vpn` to force a clean disconnect/reconnect cycle. The G4 consent gate fires automatically (`tool.meta.requiresConsent: true`) and surfaces the dry-run preview (`tool.meta.supportsDryRun: true`) inside the consent card so the user sees which profile would be reconnected before approving. On approval, the corrective call runs.
+
+`inputsFrom:`
+- If Step 8 ran: `[{ step: 8, field: "choice" }]` — pass `profileName` set to the user-picked profile id.
+- Else: `[{ step: 2, field: "profiles" }]` — pass `profileName` set to the single profile's `name`.
+
+Fallback source if Step 2 returned no profiles: Step 1's `check_vpn_status.clientConnections[].name`.
+
+`Condition:` only run if (a) Step 1's `check_vpn_status` shows the VPN is connected but routing is broken (a Step 12 internal-hostname check would fail), OR (b) Steps 4–6 surfaced a fixable issue (server reachable, cert valid, extension approved — and Step 7's ack returned `"approved"` if it ran) and a reconnect is the natural corrective. Skip if Steps 4–6 surfaced an unresolvable issue (server down, cert expired, extension blocked) — escalate to IT instead.
+
+Surface the MFA/SAML warning (see Edge Cases) in the rationale before the consent gate fires — a reconnect on those VPNs triggers a browser auth window the user needs to anticipate.
+
+**Step 10 — Flush DNS after reconnect**
+Call `flush_dns_cache` to clear any stale DNS entries from before the VPN tunnel was established. DNS entries cached before VPN connect often point to external IPs instead of internal ones, making internal hostnames unreachable even when the tunnel is up.
+
+`Condition:` only run if Step 9's `reconnect_vpn` ran AND returned success. Skip if Step 9 was skipped (no reconnect happened, so cache state is unchanged) or if Step 9 failed (no tunnel to flush DNS for).
+
+**Step 11 — Capture an internal hostname for verification**
+Step 12 needs an internal hostname or IP to ping in order to verify the VPN tunnel is routing correctly. The user is the only source for this — internal hostnames are organization-specific and not in scratchpad. Call `request_user_input`:
+
+```yaml
+prompt: "What's an internal hostname or IP I can ping to verify the VPN tunnel is routing? Something like an intranet site, an internal Jira/Confluence URL, or a server IP only reachable through the VPN."
+placeholder: "intranet.company.com or 10.0.0.5"
+validator: "^[\\w.\\-]+$"
+```
+
+`Condition:` only run if Step 9 ran (this is the verification setup for the reconnect). Skip if Step 9 was skipped — there's nothing new to verify.
+
+If the user submits an empty value (timeout / cancel), skip Step 12 and go straight to Step 13's final report with "tunnel-up status verified; routing not verified because user did not provide an internal hostname".
+
+**Step 12 — Verify tunnel routing**
+Call `check_connectivity` with `targets: [<hostname from Step 11>]`. A successful ping to an internal resource confirms the tunnel is routing correctly.
+
+`inputsFrom: [{ step: 11, field: "value" }]`
+
+`Condition:` only run if Step 11 returned a non-empty `value`. Skip otherwise.
+
+**Step 13 — Final report**
 Summarise what was found and what was fixed. If the issue persists after all steps, escalate recommendations:
 - If certificate expired: advise the user to contact IT for a certificate renewal
 - If network extension blocked: escalate to IT as MDM may need to push an approval policy
@@ -95,9 +155,9 @@ Summarise what was found and what was fixed. If the issue persists after all ste
 
 ## Privilege handling — helper-routed (default) vs. fallback
 
-Step 8 (`flush_dns_cache`) requires admin to execute the underlying OS command. Step 7 (`reconnect_vpn`) requires admin only on certain VPN clients that need to manipulate the network extension; some clients accept user-initiated disconnect/reconnect from the menu-bar UI without elevation.
+Step 10 (`flush_dns_cache`) requires admin to execute the underlying OS command. Step 9 (`reconnect_vpn`) requires admin only on certain VPN clients that need to manipulate the network extension; some clients accept user-initiated disconnect/reconnect from the menu-bar UI without elevation.
 
-**When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): `flush_dns_cache` routes through the helper and completes silently for **all users — admin and non-admin alike**. `reconnect_vpn` is NOT in the helper allowlist (VPN clients vary too much to handle uniformly); it still depends on the underlying client's design.
+**When the privileged helper daemon is available** (default — `HELPER_DAEMON_ENABLED=true` and helper installed): `flush_dns_cache` routes through the helper and completes silently for **all users — admin and non-admin alike**. `reconnect_vpn` is NOT in the helper allowlist (VPN clients vary too much to handle uniformly); it still depends on the underlying client's design, but it does fire through the G4 consent gate (`tool.meta.requiresConsent: true`) so the user explicitly approves the reconnect before it runs.
 
 **When the helper is unavailable for `flush_dns_cache`** (`denyCategory: "helper-unavailable"` / `"helper-error"` / `"scope-boundary"`) or for `reconnect_vpn`:
 
