@@ -32,7 +32,7 @@ export const meta = {
     "device no longer auto-connects to it. " +
     "Use when a network has changed credentials or causes connection problems.",
   riskLevel:       "medium",
-  destructive:     false,
+  destructive:     true,
   requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["network", "system"],
