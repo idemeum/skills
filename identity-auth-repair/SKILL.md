@@ -11,7 +11,8 @@ allowed-tools:
   - list_client_certificates
   - check_certificate_expiry
   - check_ad_binding
-  - check_connectivity
+  - wait_for_user_ack
+  - request_user_input
 metadata:
   prerequisites:
     before-corrective:
@@ -79,50 +80,103 @@ The big win of this skill is catching **NTP drift** as the root cause. A clock s
 ## Steps
 
 **Step 1 — Check NTP drift (root cause #1)**
-Call `check_ntp_status` (no parameters). The tool reports the endpoint's clock offset from a reference NTP source in milliseconds. An `absOffsetMs > 300000` (5 minutes) explains simultaneous Kerberos + SAML + TOTP failures — surface this to the user immediately as the likely root cause. If `status === "drifted"`, jump to Step 2 to fix it. If `status === "ok"` or `"error"`, continue to Step 3.
+Call `check_ntp_status` (no parameters). The tool reports the endpoint's clock offset from a reference NTP source in milliseconds. An `absOffsetMs > 300000` (5 minutes) explains simultaneous Kerberos + SAML + TOTP failures — surface this to the user immediately as the likely root cause.
 
 **Step 2 — Sync system time (if drifted)**
-Call `sync_system_time` with `dryRun: true` first so the G4 dry-run gate shows the user the exact command. The command requires admin privileges. After user confirmation, call again with `dryRun: false`. If the tool returns `success: false` with a message about sudo / admin rights, surface the guidance verbatim — the user will need to run the command themselves in an elevated terminal. Then re-run `check_ntp_status` to confirm the drift is resolved.
+Call `sync_system_time`. G4 fires the consent gate automatically (`tool.meta.requiresConsent: true`) with the dry-run preview inside (`tool.meta.supportsDryRun: true`) so the user sees the exact command before approving. The op needs admin and routes through the privileged helper daemon when available.
 
-**Step 3 — Check Kerberos tickets (root cause #2)**
+`Condition:` only run if Step 1's `check_ntp_status` returned `status === "drifted"`. Skip silently for `"ok"` or `"error"`.
+
+If the tool returns `success: false` with a sudo/admin-required message (helper unavailable on this device, or non-admin fallback), surface the guidance verbatim — the user must run the command themselves in an elevated terminal. Step 3 will then ack that work.
+
+**Step 3 — Wait for user to complete sudo time-sync (helper-unavailable fallback)**
+Call `wait_for_user_ack` to pause until the user finishes running the sudo command:
+
+```yaml
+prompt: "I couldn't run the time-sync command automatically — admin rights aren't available through the helper. Open a Terminal, run the command I just showed you with sudo, and let me know when it's done."
+options:
+  - { id: "done",    label: "I ran the command",       kind: "primary" }
+  - { id: "failed",  label: "Couldn't run / failed",   kind: "secondary" }
+  - { id: "skip",    label: "Skip — leave clock as-is", kind: "cancel" }
+```
+
+`Condition:` only run if Step 2 ran AND returned a needs-sudo error (i.e. helper-unavailable / scope-boundary deny on the sync_system_time call). Skip silently if Step 2 was skipped, succeeded silently via the helper, or wasn't needed at all.
+
+On `done`: re-run `check_ntp_status` (re-fire Step 1) to confirm the drift is resolved before continuing. Without this gate, the re-check fires while the user is still typing their sudo password.
+
+**Step 4 — Check Kerberos tickets (root cause #2)**
 Call `check_kerberos_ticket` with `expiryWarnMinutes: 60`. The tool lists active TGTs + service tickets and flags ones that are expired or expiring within the window.
-- `status === "ok"` → Kerberos is healthy; skip to Step 5.
-- `status === "expiring"` or `"expired"` → proceed to Step 4 to renew.
-- `status === "missing"` → the user has no Kerberos credentials at all. On macOS this is normal if they aren't AD-bound; on Windows it suggests a logon problem. Check `check_ad_binding` to see whether the machine expects AD credentials; if it does, escalate to helpdesk because interactive re-authentication is required and the agent will not handle passwords.
+- `status === "ok"` → Kerberos is healthy; skip to Step 7.
+- `status === "expiring"` or `"expired"` → proceed to Step 5 to renew.
+- `status === "missing"` → the user has no Kerberos credentials at all. On macOS this is normal if they aren't AD-bound; on Windows it suggests a logon problem. Step 10's `check_ad_binding` will clarify whether the machine expects AD credentials; if it does, escalate to helpdesk because interactive re-authentication is required and the agent will not handle passwords.
 
-**Step 4 — Renew Kerberos ticket (if expiring or expired)**
-Call `renew_kerberos_ticket` with `dryRun: true`. The tool's G4 gate fires the dry-run preview (showing `kinit -R` on macOS, `klist purge && gpupdate /force` on Windows). After user confirmation, call `dryRun: false`.
+**Step 5 — Renew Kerberos ticket (if expiring or expired)**
+Call `renew_kerberos_ticket`. G4 fires the consent gate automatically (`tool.meta.requiresConsent: true`) with the dry-run preview inside (`tool.meta.supportsDryRun: true`) — the preview shows `kinit -R` on macOS, `klist purge && gpupdate /force` on Windows.
 
-**On Windows** with the privileged helper daemon installed (default), the `renew_kerberos_ticket` op runs through the helper as `LocalSystem` and completes silently for **all users — admin and non-admin alike**. AD reissues a fresh TGT on next access. No "this requires admin" messaging is needed.
+`Condition:` only run if Step 4's `check_kerberos_ticket` returned `status === "expiring"` OR `"expired"`. Skip for `"ok"` (nothing to renew) and `"missing"` (no ticket to renew from — Step 10's AD check handles that case).
 
-**On macOS** the op is **not yet supported via the helper** in v1 fast-follow — Heimdal / MIT-KfM integration is deferred. The handler returns `helper-error` with `stderr: "Platform not supported"` on macOS; the user must renew interactively (`kinit <principal>` in Terminal). The agent will not handle the password.
+**On Windows** with the privileged helper daemon installed (default), the op runs through the helper as `LocalSystem` and completes silently for **all users — admin and non-admin alike**. AD reissues a fresh TGT on next access.
+
+**On macOS** the op is **not yet supported via the helper** in v1 fast-follow — Heimdal / MIT-KfM integration is deferred. The handler returns `helper-error` with `stderr: "Platform not supported"` on macOS; Step 6 will ack the user's interactive `kinit`.
 
 Status outcomes:
 - `status === "renewed"` → success; re-run `check_kerberos_ticket` to confirm a valid ticket is back in place.
-- `status === "interactive"` → the ticket is not renewable (macOS path; or Windows when the helper is unavailable / disabled). Surface the tool's message verbatim — the user must open a terminal and run `kinit <principal>` themselves; the agent will **not** handle the password.
-- `status === "failed"` → surface the tool's error message and continue to Step 5.
+- `status === "interactive"` → the ticket is not renewable (macOS path; or Windows when the helper is unavailable / disabled). Step 6's `wait_for_user_ack` will surface the `kinit <principal>` instruction and wait for the user's confirmation; the agent will **not** handle the password.
+- `status === "failed"` → surface the tool's error message and continue to Step 7.
 
-**Step 5 — Enumerate client certificates**
+**Step 6 — Wait for user to complete interactive kinit**
+Call `wait_for_user_ack` to pause until the user finishes the manual `kinit` step:
+
+```yaml
+prompt: "Your Kerberos ticket needs interactive renewal. Open a Terminal, run `kinit <your-principal>`, enter your password when prompted, and let me know when you're done. The agent never sees your password."
+options:
+  - { id: "done",    label: "I renewed the ticket",     kind: "primary" }
+  - { id: "failed",  label: "kinit failed / cancelled", kind: "secondary" }
+  - { id: "skip",    label: "Skip — leave ticket as-is", kind: "cancel" }
+```
+
+`Condition:` only run if Step 5 ran AND returned `status === "interactive"`. Skip silently if Step 5 completed via the helper (`"renewed"`) or failed for other reasons.
+
+On `done`: re-run `check_kerberos_ticket` (re-fire Step 4) so Step 11's summary reflects the post-`kinit` state, not the stale interactive state.
+
+**Step 7 — Enumerate client certificates**
 Call `list_client_certificates` with `expiryWarnDays: 30`. The tool reports every personal / machine client cert with its expiry status.
-- `status === "ok"` or `"empty"` → certs are not the problem; continue to Step 6.
-- `status === "expired"` or `"expiring"` → surface the specific subjects/thumbprints to the user. Client certs cannot be silently renewed — they must be re-issued by the user's MDM or certificate authority. Point the user to their IT team with the specific cert details so the renewal request is actionable. Continue to Step 6 to verify remaining components; do NOT end the run yet.
+- `status === "ok"` or `"empty"` → certs are not the problem; continue to Step 8.
+- `status === "expired"` or `"expiring"` → surface the specific subjects/thumbprints to the user. Client certs cannot be silently renewed — they must be re-issued by the user's MDM or certificate authority. Point the user to their IT team with the specific cert details so the renewal request is actionable. Continue to Step 8 to verify remaining components; do NOT end the run yet.
 
-**Step 6 — Spot-check VPN / SSO certificate expiry**
-If the user mentioned VPN or SSO-endpoint failures specifically, call `check_certificate_expiry` on the failing endpoint (ask the user for the hostname if you don't already know it). An expiring server cert on the far side looks identical to a local identity problem and is a common false positive — catching it here saves the user a pointless support round-trip.
+**Step 8 — Capture VPN/SSO endpoint hostname (if user mentioned one)**
+Call `request_user_input` to capture the failing VPN or SSO endpoint hostname when the user has reported endpoint-specific failures but the goal didn't include the hostname:
 
-**Step 7 — Verify AD / domain binding (Windows AD environments)**
-If the user's machine is domain-joined, call `check_ad_binding`. A broken binding causes symptoms that mimic every other auth failure at once, and cannot be repaired locally — escalate to helpdesk with the specific binding error.
+```yaml
+prompt: "Which VPN or SSO endpoint is failing? Step 9 will check its TLS certificate to rule out a far-side expiry — server certs on the IdP/VPN gateway expiring look identical to a local identity problem and are a common false positive."
+placeholder: "vpn.example.com or sso.example.com"
+validator: "^[A-Za-z0-9.\\-]+$"
+```
 
-**Step 8 — Verify basic network reachability**
-If all of the above look healthy but the user is still reporting failures, call `check_connectivity` to rule out network-layer issues (the endpoint can't reach the identity provider at all). An unreachable IdP looks indistinguishable from every other failure class.
+`Condition:` only run if (a) the user's goal mentions VPN or SSO-endpoint failures specifically AND (b) the goal does NOT already contain a hostname. Skip silently otherwise — Step 9 will use the goal-provided hostname directly or skip entirely if no endpoint was named.
 
-**Step 9 — Summarise + guide the user**
+If the user submits an empty value, Step 9 skips (no false positive to rule out). Surface that gap in the Step 12 summary.
+
+**Step 9 — Spot-check VPN/SSO certificate expiry**
+Call `check_certificate_expiry` with `host` set to the captured hostname. An expiring server cert on the far side looks identical to a local identity problem.
+
+`inputsFrom: [{ step: 8, field: "value" }]` (or use the goal-provided hostname if Step 8 was skipped).
+
+`Condition:` only run if a valid hostname is available (either from Step 8's non-empty return or from the user's goal). Skip silently otherwise.
+
+**Step 10 — Verify AD / domain binding (Windows AD environments)**
+Call `check_ad_binding`. A broken binding causes symptoms that mimic every other auth failure at once, and cannot be repaired locally — escalate to helpdesk with the specific binding error.
+
+`Condition:` always safe to run — on Entra-joined and non-domain-joined machines the tool cleanly returns "not domain-joined" without error. The result feeds Step 4's `missing` interpretation (does the machine expect Kerberos at all?).
+
+**Step 11 — Summarise + guide the user**
 Summarise what was found and what was fixed:
 - NTP drift corrected → apps should start working within a few minutes as auth retries succeed.
-- Kerberos TGT renewed → file shares + SSO should work immediately; VPN may need a reconnect.
+- Kerberos TGT renewed (helper path or post-`kinit` ack) → file shares + SSO should work immediately; VPN may need a reconnect.
 - Expired client cert → user must request re-issue from IT; no silent fix possible.
 - Broken AD binding → user must contact IT; this skill cannot rebind.
-- Nothing obvious found → advise the user to restart their session (lock screen + sign in, or reboot if possible) so the OS re-acquires fresh credentials; if that fails, escalate via the end-of-run ticket.
+- Failing endpoint cert (Step 9) → contact IT to renew the server cert; no client-side fix.
+- Nothing obvious found → advise the user to restart their session (lock screen + sign in, or reboot if possible) so the OS re-acquires fresh credentials. If the user suspects network-layer issues (the endpoint can't reach the identity provider at all), escalate to the `network-reset` skill — this skill does not embed network probes. If that fails, escalate via the end-of-run ticket.
 
 ---
 
