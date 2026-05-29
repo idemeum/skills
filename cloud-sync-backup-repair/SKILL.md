@@ -8,7 +8,7 @@ allowed-tools:
   - pause_resume_cloud_sync
   - check_timemachine_status
   - check_connectivity
-  - list_installed_apps
+  - wait_for_user_ack
 metadata:
   prerequisites:
     before-corrective:
@@ -77,23 +77,25 @@ Call `check_cloud_sync_status` and (on macOS) `check_timemachine_status` in para
 
 **Top-level fields on `check_cloud_sync_status`** are the most-stale installed client's summary (with `client: "auto"`, the default). The `clients[]` array under that has the per-client breakdown for the user-visible report.
 
-If neither tool surfaces an issue (`stale: false` everywhere), the user's complaint may be about a specific file rather than overall sync — suggest they describe the symptom in more detail before we proceed.
+If neither tool surfaces an issue (`stale: false` everywhere), the user's complaint may be about a specific file rather than overall sync — surface this and end the run with the suggestion to describe the symptom in more detail. All downstream Conditions skip cleanly.
 
-**Step 2 — Decide which client is the target**
+**Step 2 — Pick the target client (prose decision)**
 
-The user's report points to one of:
+This is a tool-less step — the executor LLM picks the target client from the user's goal, mapped to one of `onedrive | icloud | google-drive | dropbox` (cloud-sync path) or branches to the Time Machine path. Mapping:
 
-| Report | Target client |
+| User report | Target client |
 |---|---|
 | "OneDrive…" | onedrive |
-| "iCloud…" / "I have files on Mac and iPhone but they're not syncing" | icloud |
+| "iCloud…" / "files not syncing between Mac and iPhone" | icloud |
 | "Google Drive…" / "My Workspace files…" | google-drive |
 | "Dropbox…" | dropbox |
-| "Time Machine…" / "When was my last backup?" | (Time Machine — Step 6) |
+| "Time Machine…" / "When was my last backup?" | (Time Machine — Step 7) |
 
-If the user said "cloud files" generically, use the client `check_cloud_sync_status` flagged as `stale` (top-level `client` field) as the target.
+If the user said "cloud files" generically, use the client `check_cloud_sync_status` flagged as `stale` (top-level `client` field) as the target. Steps 3–6 then run against the cloud-sync target; Step 7 runs against Time Machine if that was the picked branch.
 
 **Step 3 — Verify network connectivity**
+
+`Condition:` only run if (a) Step 2 picked a cloud-sync target (not Time Machine) AND (b) Step 1's target client returned `stale` OR `error` status. Skip if Step 1 shows the client is healthy (network is fine if the client was recently syncing).
 
 Call `check_connectivity` against the appropriate cloud service hostname:
 - OneDrive: `graph.microsoft.com`
@@ -101,33 +103,54 @@ Call `check_connectivity` against the appropriate cloud service hostname:
 - Google Drive: `drive.google.com`
 - Dropbox: `client.dropbox.com`
 
-If the host is unreachable, sync isn't going to work — surface this to the user before any further repair. Common cause: the user is on a captive-portal Wi-Fi (hotel, airport) and hasn't completed the portal login. Less common but real: corporate firewall is blocking the cloud service.
+If the host is unreachable, sync isn't going to work — surface this to the user. Common cause: the user is on a captive-portal Wi-Fi (hotel, airport) and hasn't completed the portal login. Less common but real: corporate firewall is blocking the cloud service. For pure network failures (not captive portal), escalate to the `network-reset` skill rather than continuing here.
 
-**Step 4 — Check the sync state details**
+**Step 4 — Interpret the sync state**
 
-Re-inspect `check_cloud_sync_status` output for the target client:
+This is a tool-less interpretation step — re-read `check_cloud_sync_status` output from Step 1 for the target client and route the next steps:
 
-- **`status: "stale"` + `lastSyncMs` more than 24h old** → sync has stopped. Either: (a) the client process crashed and is no longer running, (b) credentials expired, (c) the client is paused, (d) network partition.
-- **`status: "idle"`** → sync is working and current. The user's symptom may be about a specific file rather than the engine. Suggest the user check whether the affected file is in the sync folder vs a different local-only folder.
-- **`status: "error"`** → the client surfaced an error. The current alpha tooling does not extract per-error detail; advise the user to open the client's UI to read the error message, then come back with the specifics.
-- **`status: "not-installed"`** → wrong target. Re-pick from Step 2.
+- **`status: "stale"` + `lastSyncMs` more than 24h old** → sync has stopped. Either (a) the client process crashed and is no longer running, (b) credentials expired (escalate to `cloud-idp-password-reset`), (c) the client is paused, (d) network partition. Step 5's pause-then-resume un-stick may help case (c) and sometimes case (a).
+- **`status: "idle"`** → sync is working and current. The user's symptom is likely about a specific file rather than the engine — surface this and skip to Step 9 final report.
+- **`status: "error"`** → the client surfaced an error. The current alpha tooling does not extract per-error detail; surface advice to open the client's UI to read the error message. End the run via Step 9 final report — Steps 5/6 (pause/resume) won't help an error state.
+- **`status: "not-installed"`** → wrong target. The user named a client that isn't installed; report this and end the run.
 
-**Step 5 — Pause/resume the target client (when warranted)**
+**Step 5 — Pause the target client**
 
-Call `pause_resume_cloud_sync` only when:
-- The user is on a slow network and wants to pause sync to free bandwidth — `action: "pause"`, then later `action: "resume"`
-- The sync is genuinely stuck (idle process not making progress) and a clean pause-then-resume might un-stick it — `action: "pause"`, wait 10s, `action: "resume"`
+`Condition:` only run if (a) Step 2 picked a cloud-sync target AND (b) the user's intent is either "pause for slow network" OR "un-stick a stuck sync engine" (per Step 4's `stale` interpretation).
 
-The G4 dry-run gate surfaces the exact command (`OneDrive --command pauseSyncing`, etc.) so the user knows what runs. The G4 consent gate confirms before execution. Pause is reversible — resume restores active syncing without data loss.
+Call `pause_resume_cloud_sync` with `client: <target>` and `action: "pause"`. The required `client` parameter is one of `"onedrive" | "google-drive" | "dropbox" | "icloud"`. iCloud is rejected programmatically — the tool returns `outcome: "not-supported"` with guidance to use System Settings (Apple Menu → System Settings → Apple ID → iCloud).
 
-The required parameters are `client` (one of `"onedrive" | "google-drive" | "dropbox" | "icloud"`) and `action` (`"pause" | "resume"`). iCloud is rejected programmatically — the tool returns `outcome: "not-supported"` with guidance to use System Settings.
+The G4 consent gate fires automatically (`requiresConsent: true`) with the dry-run preview surfaced inside the consent card (`supportsDryRun: true`) — the user sees the exact command (e.g. `OneDrive --command pauseSyncing`) before approving. Pause is reversible (Step 6's resume restores active syncing without data loss).
 
-**Step 6 — Time Machine specifics (macOS only)**
+**Slow-network use case**: if the user's intent is to free bandwidth and stay paused until they're back on a fast network, end the run after Step 5 succeeds — do NOT proceed to Step 5b. Surface in the response: *"Sync is paused. Run this skill again with 'resume sync' when you want it back on."*
 
-If the user's report is about backup rather than cloud sync, branch to `check_timemachine_status` output:
+**Stuck-sync use case**: if the user's intent is to un-stick a frozen sync engine, proceed to Step 5b's ack gate and then Step 6's resume call.
 
-- **`status: "running"`** → backup is in progress. Phase field tells the user what stage. Ask them to wait for completion.
-- **`status: "idle"` + `stale: false`** → backup is recent and healthy. Confirm to the user the last-backup time + destination.
+**Step 5b — Wait for the sync engine to settle (stuck-sync only)**
+
+`Condition:` only run if Step 5 ran AND the user's intent is "un-stick stuck sync" (NOT the slow-network pause-and-stay use case). Call `wait_for_user_ack`:
+
+```yaml
+prompt: "I've paused {client}. Wait ~10–30 seconds for the sync engine state to clear, then click below — I'll resume sync and verify it picked up."
+options:
+  - { id: "resume-now",    label: "Resume now",                kind: "primary" }
+  - { id: "leave-paused",  label: "Leave it paused (I'll resume later)", kind: "cancel" }
+```
+
+This gate makes the wait explicit. The agent has no sleep tool, so without this gate the executor would call `pause` then immediately call `resume` back-to-back — defeating the un-stick. On `resume-now` → Step 6 fires the resume. On `leave-paused` → end the run (slow-network use case mid-flight).
+
+**Step 6 — Resume the target client (stuck-sync only)**
+
+`Condition:` only run if Step 5b returned `resume-now`. Call `pause_resume_cloud_sync` with the same `client` and `action: "resume"`. G4 consent + dry-run-in-consent-card as in Step 5.
+
+**Step 7 — Time Machine specifics (macOS only)**
+
+`Condition:` only run if (a) Step 2 picked the Time Machine branch AND (b) platform is `darwin`. Skip silently on Windows (`check_timemachine_status` returns `status: "not-supported"` cleanly).
+
+Branch on Step 1's `check_timemachine_status` output:
+
+- **`status: "running"`** → backup is in progress. Phase field tells the user what stage. Surface this and end the run — nothing to fix.
+- **`status: "idle"` + `stale: false`** → backup is recent and healthy. Confirm the last-backup time + destination to the user.
 - **`status: "stale"` + `stale: true`** → most recent backup is older than 72h. Common causes:
   - Backup destination disconnected (external drive unplugged, network drive offline)
   - Backup paused via `tmutil disable`
@@ -135,20 +158,18 @@ If the user's report is about backup rather than cloud sync, branch to `check_ti
 - **`status: "no-destination"`** → no Time Machine destination is configured. Time Machine is not actually running. Advise the user to set up a destination via System Settings → General → Time Machine.
 - **`status: "failed"`** → last backup failed. Likely destination disk error or full destination. Advise the user to plug in the backup drive (or check it has free space) and trigger a manual backup from the menu bar.
 
-The current toolset does NOT trigger backups programmatically (`tmutil startbackup` requires admin and is invasive). Surface guidance for the user to run a manual backup from the menu bar / System Settings.
+The current toolset does NOT trigger backups programmatically (`tmutil startbackup` requires admin and is invasive). Surface guidance for the user to run a manual backup from the menu bar / System Settings — the verification window (1–2 hours for the next scheduled backup) is too long for a `wait_for_user_ack` gate, so Step 9's final report advises the user to verify on their own.
 
-**Step 7 — Verify after corrective action**
+**Step 8 — Verify after pause-then-resume**
 
-If Step 5 ran a pause→resume, re-call `check_cloud_sync_status` with the same `client` (not `auto`) after ~30s. Look for `status: "syncing"` or a fresher `lastSyncMs`. If still stale, the pause/resume did not fix it — escalate.
+`Condition:` only run if Step 6 ran (resume happened). After ~30 seconds, re-call `check_cloud_sync_status` with the same `client` (not `auto`) to verify the un-stick worked. Look for `status: "syncing"` or a fresher `lastSyncMs`. If still stale, the pause/resume did not fix it — surface this in Step 9 and escalate.
 
-If Step 6 reported a stale Time Machine and the user reconnected the destination drive, advise them to wait 1–2 hours for the next scheduled backup or run a manual one. We do not poll for completion in this skill.
-
-**Step 8 — Final report**
+**Step 9 — Final report**
 
 Summarise:
 - Which sync client(s) the user has installed and their per-client state
-- Time Machine state (if macOS)
-- What corrective action was taken (pause/resume)
+- Time Machine state (if macOS and Time Machine branch ran)
+- What corrective action was taken (pause-only / pause-then-resume / Time Machine guidance)
 - What the user should expect next (next sync window, manual action they need to take)
 
 Escalate to IT when:
