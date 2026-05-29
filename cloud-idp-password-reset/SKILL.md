@@ -40,7 +40,7 @@ metadata:
     goal: I need to reset my Okta, Microsoft Entra, or Google Workspace password — OR I just reset it and now my apps (Outlook, VPN, Mail, Teams) keep asking me for the old password
     icon: KeyRound
     iconClass: text-cyan-500
-    order: 10
+    order: 9
 ---
 
 ## When to use

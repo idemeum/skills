@@ -33,7 +33,7 @@ metadata:
     goal: My printer isn't working or the queue is stuck — diagnose what's wrong and either fix it, give me the self-service steps, or escalate to IT
     icon: Printer
     iconClass: text-orange-500
-    order: 5
+    order: 4
 ---
 
 ## When to use

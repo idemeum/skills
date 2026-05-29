@@ -31,7 +31,7 @@ metadata:
     goal: My Mac is running slow or an app is frozen and using too much CPU or memory, please diagnose and fix it
     icon: Activity
     iconClass: text-red-500
-    order: 6
+    order: 5
 ---
 
 ## When to use

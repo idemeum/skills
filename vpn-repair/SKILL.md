@@ -34,7 +34,7 @@ metadata:
     goal: My VPN is not connecting or traffic is not routing through it, please diagnose and fix it
     icon: Lock
     iconClass: text-teal-500
-    order: 9
+    order: 8
 ---
 
 ## When to use

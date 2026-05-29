@@ -31,7 +31,7 @@ metadata:
     goal: My external monitor, USB hub, dock, Bluetooth headphones, or other peripheral has stopped working — please diagnose and fix it
     icon: Cable
     iconClass: text-fuchsia-500
-    order: 13
+    order: 12
 ---
 
 ## When to use

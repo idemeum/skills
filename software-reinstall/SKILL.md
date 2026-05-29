@@ -37,7 +37,7 @@ metadata:
     goal: An app is crashing, won't launch, or is behaving incorrectly — check what's wrong, try non-destructive fixes (preferences, cache, permissions), and either guide me through a reinstall via Self Service / IT, or escalate
     icon: Download
     iconClass: text-cyan-500
-    order: 8
+    order: 7
 ---
 
 ## When to use

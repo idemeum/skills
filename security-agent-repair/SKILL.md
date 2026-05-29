@@ -37,7 +37,7 @@ metadata:
     goal: My endpoint security agent is not running or showing as unhealthy — diagnose what's wrong and either repair it or escalate to IT with the full diagnostic packet
     icon: Shield
     iconClass: text-indigo-500
-    order: 7
+    order: 6
   proactive-triggers:
     # Wave 2 Track B Phase 4 — Trigger 3 (MSP compliance-critical).
     # Direct customer-facing compliance alerts + SLA dollar impact for MSPs.

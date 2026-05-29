@@ -32,7 +32,7 @@ metadata:
     goal: My Teams, Slack, Zoom, or Webex app is misbehaving — mic, camera, search, or messages are not working — please diagnose and fix it without signing me out
     icon: Headphones
     iconClass: text-sky-500
-    order: 12
+    order: 11
 ---
 
 ## When to use

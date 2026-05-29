@@ -33,7 +33,7 @@ metadata:
     goal: I'm getting authentication failures across multiple apps (VPN, email, SSO, file shares). Please diagnose the root cause and repair it.
     icon: ShieldCheck
     iconClass: text-emerald-500
-    order: 11
+    order: 10
   proactive-triggers:
     # Wave 2 Track B Phase 4 — Trigger 2 (highest-blast-radius prevention).
     # One expired cert on Friday night = 50+ Monday tickets.
@@ -70,7 +70,7 @@ Use this skill when the user:
 
 Do NOT use this skill when:
 - The user says they need to reset a cloud IDP password — use `cloud-idp-password-reset`.
-- The user's local Mac / Windows password is not working — use `password-reset`.
+- The user's local Mac / Windows password is not working — this skill cannot help (the user cannot run the agent if they cannot log in to their machine). Direct them to IT helpdesk for an in-person / phone-based local password reset.
 - Only one app is failing and the rest work — use the app-specific skill (`email-repair`, `vpn-repair`, etc.).
 
 The big win of this skill is catching **NTP drift** as the root cause. A clock skew > 5 minutes silently breaks Kerberos, SAML, and TOTP simultaneously — users see "VPN and email and MFA are all broken" but the real fix is a single NTP resync.

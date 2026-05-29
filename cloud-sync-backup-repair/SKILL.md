@@ -28,7 +28,7 @@ metadata:
     goal: My cloud sync (OneDrive, iCloud, Google Drive, Dropbox) or Time Machine backup is stuck, stale, or showing errors — please diagnose and fix it
     icon: CloudUpload
     iconClass: text-blue-500
-    order: 14
+    order: 13
   proactive-triggers:
     # Wave 2 Track B Phase 4 — Trigger 4 (data-at-risk anxiety driver, QBR talking point).
     - name: cloud-sync-stale
