@@ -9,6 +9,7 @@ allowed-tools:
   - list_usb_devices
   - list_bluetooth_devices
   - reset_bluetooth_module
+  - wait_for_user_ack
 metadata:
   prerequisites:
     before-corrective:
@@ -64,17 +65,21 @@ If the user's report is unclear, run Steps 2 + 3 in parallel — both probes are
 
 **Step 2 — Enumerate USB devices**
 
+`Condition:` only run if Step 1 routed to USB / wired (external display, USB hub, dock, USB drive, USB camera) OR the user's symptom is unclear (in which case Steps 2 and 3 run in parallel).
+
 Call `list_usb_devices`. The result includes vendor/product IDs, manufacturer, and a per-device `status` field (`"ok" | "error" | "unknown"`). Look for:
-- A device the user expects (asked to confirm by name) that is NOT in the list → not enumerated, likely a hardware or cable issue
+- A device the user expects that is NOT in the list → not enumerated, likely a hardware or cable issue
 - A device with `status: "error"` → driver or power problem
 - USB hubs / docks with very few children → the hub might be enumerated but its downstream ports are not, indicating a power-delivery issue
 
-If the missing device is not in the list at all, advise:
+If the missing device is not in the list at all, advise (Step 7's final-test ack will verify whether these worked):
 - Try a different cable / USB port (USB-C cables that look identical can be wildly different — e.g. charging-only vs full data)
 - For USB-C hubs / docks: the host port must be a "full" USB-C port (Thunderbolt or USB 3.x with Power Delivery). Some MacBook ports and many laptop ports are USB 2.0 only — the hub will appear partially-working
 - Power-cycle the dock (unplug from host, count to 10, replug)
 
 **Step 3 — Enumerate Bluetooth devices**
+
+`Condition:` only run if Step 1 routed to Bluetooth (AirPods, Bluetooth keyboard / mouse / headset) OR the user's symptom is unclear (parallel-fire with Step 2).
 
 Call `list_bluetooth_devices`. The result reports per-device:
 - `connected: true | false` — paired AND currently connected vs paired-but-offline
@@ -82,14 +87,18 @@ Call `list_bluetooth_devices`. The result reports per-device:
 - `batteryPercent` — when reported (macOS surfaces this for AirPods + Magic Keyboard / Trackpad)
 - `poweredOn: true | false` — top-level controller state
 
-If the controller is `poweredOn: false`, the Bluetooth radio is off — guide the user to the menu bar (macOS) or Quick Settings (Windows) to toggle it on. Do not run Step 6 in this case.
+If the controller is `poweredOn: false`, the Bluetooth radio is off — guide the user to the menu bar (macOS) or Quick Settings (Windows) to toggle it on. Do NOT proceed to Step 6 in this case (the reset is pointless against a powered-off radio).
 
 If a device the user expects is present with `connected: false`, it is paired but offline. Most often the device is asleep (AirPods in case, keyboard powered off) — guide the user to:
 1. Wake / power on the device
 2. Check battery level (replace batteries if a flashing-low indicator is on)
 3. If still offline, unpair + re-pair via the OS UI
 
+Step 7's final-test ack will verify whether these worked.
+
 **Step 4 — Audio routing problems**
+
+`Condition:` only run if Step 1 routed to audio routing (audio device showing up but wrong — wrong mic / speaker default selection). Note: the OS-doesn't-see-the-device case for audio routes to Step 2 (USB audio device) or Step 3 (Bluetooth audio device) instead.
 
 Call `list_audio_devices`. The result enumerates input + output devices and flags the system default. Common patterns:
 - The expected device IS listed but is not the default → a setting issue, not a hardware issue. The user can change the default via System Settings → Sound (macOS) or Settings → System → Sound (Windows). For per-app overrides, use [collab-app-repair](../collab-app-repair/SKILL.md)
@@ -98,6 +107,8 @@ Call `list_audio_devices`. The result enumerates input + output devices and flag
 
 **Step 5 — Video / camera routing problems**
 
+`Condition:` only run if Step 1 routed to video (webcam not detected by any app).
+
 Call `list_video_devices`. Symptoms:
 - Camera not in list → return to Step 2 (most webcams are USB) or Step 3 (Continuity Camera over Bluetooth proximity)
 - Camera in list but not selected by an app → app-specific configuration; route to [collab-app-repair](../collab-app-repair/SKILL.md)
@@ -105,26 +116,45 @@ Call `list_video_devices`. Symptoms:
 
 **Step 6 — Reset the Bluetooth module (last resort)**
 
-Run this step only when:
-- The user has confirmed the Bluetooth controller is powered on (Step 3 output)
-- A specific paired device is listed as `connected: false` and waking / re-pairing has not helped
-- The user accepts that all currently-active Bluetooth connections (audio call, input devices) will drop briefly
+`Condition:` only run when ALL of the following hold:
+- Step 3's `list_bluetooth_devices` returned `poweredOn: true` (the radio is on; a reset against a powered-off radio is pointless)
+- Step 3 returned at least one paired device with `connected: false` (something to reconnect)
+- The user has confirmed acceptance of a brief 2–5s disruption to active Bluetooth connections (laptop users without a wired or built-in alternative input device should NOT consent — they'll be locked out during the window; see Edge cases)
 
-Call `reset_bluetooth_module`. The G4 dry-run gate surfaces the exact command (`launchctl kickstart` on macOS, `Restart-Service bthserv` on Windows) and warns about the brief connection drop. After consent, the tool runs the restart. Active connections re-establish automatically within 2–5 seconds.
+Call `reset_bluetooth_module`. G4 fires the consent gate automatically (`requiresConsent: true`) with the dry-run preview surfaced inside (`supportsDryRun: true`) — the user sees the exact command (`launchctl kickstart` on macOS, `Restart-Service bthserv` on Windows) and the brief-connection-drop warning before approving. Active connections re-establish automatically within 2–5 seconds.
 
-This tool requires admin privilege — `affectedScope: ["system"]` triggers the G4 scope-boundary check. If the agent is running without admin, the step is aborted by G4 and the run cleanly ends. Advise the user to escalate to IT in that case.
+This tool requires admin privilege — `affectedScope: ["system"]` triggers the G4 scope-boundary check. The privileged helper daemon (default `HELPER_DAEMON_ENABLED=true`) routes it transparently for non-admin users. If the helper is unavailable or the call is denied, the step aborts cleanly; surface IT-escalation advice in Step 8.
 
-After the reset, call `list_bluetooth_devices` again to verify the previously-disconnected device is now `connected: true`.
+After the reset, re-call `list_bluetooth_devices` to verify the previously-disconnected device is now `connected: true` (this inline verification feeds Step 7's ack and Step 8's final report).
 
-**Step 7 — Final report**
+**Step 7 — Wait for user to test the peripheral**
+
+`Condition:` only run if any of Steps 2–6 surfaced corrective advice OR Step 6's `reset_bluetooth_module` ran. Skip when Steps 2–5 returned cleanly with no advice (rare — usually means the user's report doesn't match any observable state, in which case Step 8 reports the discrepancy).
+
+Call `wait_for_user_ack`:
+
+```yaml
+prompt: "Try the steps I suggested (cable swap, dock power-cycle, wake/power-on the device, replace batteries, re-pair, or trust the Bluetooth reset if it ran) and let me know if your peripheral is working now."
+options:
+  - { id: "works",        label: "It works now",                kind: "primary" }
+  - { id: "still-broken", label: "Still not working",           kind: "secondary" }
+  - { id: "skip",         label: "Skip — I'll test later",      kind: "cancel" }
+```
+
+On `works`: report success and end the run. On `still-broken`: surface IT-escalation guidance in Step 8 — likely hardware failure (cable, port, peripheral) or driver corruption that requires IT intervention. On `skip`: close with "diagnostics complete; user will verify later".
+
+Without this gate, the skill ends after Step 6's optional reset without ever asking the user whether the recommended physical actions (cable swap / dock cycle / device wake / re-pair) actually fixed the symptom — leaving the agent blind to whether escalation is needed.
+
+**Step 8 — Final report**
 
 Summarise:
 - Which peripheral was diagnosed and what class (USB / Bluetooth / audio routing / video routing)
 - What the OS sees vs what the user expects
-- Which physical actions (cable swap, port change, power-cycle dock, replace batteries) the user should try
+- Which physical actions (cable swap, port change, power-cycle dock, replace batteries) the user tried
 - Whether the Bluetooth module was reset
+- The user's Step 7 ack outcome (`works` / `still-broken` / `skip`)
 
-If the symptom persists after Steps 2–6, the likely remaining causes are hardware failure or an OS-level driver corruption that needs IT intervention. Escalate.
+If Step 7 returned `still-broken` (or was skipped and Steps 2–6 surfaced no fix), the likely remaining causes are hardware failure or an OS-level driver corruption that needs IT intervention. Escalate with the full diagnostic packet from Steps 2–6.
 
 ---
 
