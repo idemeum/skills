@@ -5,7 +5,6 @@ license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
   - disk_scan
-  - get_disk_usage
   - get_large_files
   - find_duplicate_files
   - find_old_downloads
@@ -190,7 +189,7 @@ For each category id in Step 9's `selected` output, call the relevant tool. G4 m
 - `"docker"`         → call `prune_docker`
 - `"trash"`          → call `empty_trash`
 
-Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `When:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
+Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `Condition:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
 
 **Step 11 — Final report**
 Summarise total space recovered across all operations. Optionally call `disk_scan` again on the home directory to show the updated sizes.
@@ -201,7 +200,7 @@ Summarise total space recovered across all operations. Optionally call `disk_sca
 
 - **Never delete outside home directory** — `delete_files` enforces this at the skill level and will return an error for any blocked path; do not attempt to work around it
 - **Never delete system directories** — see `references/safe-paths.md` for the full blocked list on macOS and Windows
-- **Always run dryRun: true first** — never call `delete_files` with `dryRun: false` without first showing the user the dry-run output
+- **Dry-run is automatic** — do NOT pass `dryRun: true/false` to `delete_files`; G4 substitutes the value per the binding contract (Step 10 prose explains this). The user always sees the dry-run preview + consent gate before any deletion runs.
 - **Downloads folder** — always warn the user explicitly before deleting the entire Downloads folder; offer to scan it with `get_large_files` first so they can choose individual files
 - **macOS Library** — `~/Library` contains application support files; do not recommend deleting it wholesale; only specific cache sub-folders if the user requests
 - **Empty disk_scan output** — if `disk_scan` returns an empty entry list (permission-denied root), try calling `get_large_files` on the home directory as a fallback

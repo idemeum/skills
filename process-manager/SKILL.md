@@ -139,7 +139,7 @@ For each category id in Step 5's `selected`, re-derive the target list from the 
 - `"kill-runaway-memory"` → for each PID classified as `kill-runaway-memory` AND NOT in `kill-runaway-cpu` selection (dedupe PIDs that already received a kill), call `kill_process` with `{ pid, signal: "TERM" }`.
 - `"disable-startup"` → for each `item.name` from Step 4's `output.loginItems`, call `disable_startup_item` with `{ name: item.name }`. G4 manages the dry-run + consent flow automatically.
 
-Each corrective step sets `inputsFrom: [{ step: <step-5-index>, field: "selected" }]` and a `When:` clause testing whether its category id appears in `selected`. Skip silently when the id is not in `selected`. If a process from the classification has terminated between Step 1 and Step 6 (rare but possible — the user took a long time at the gate), the tool will return a "no matching processes found" message; treat as a no-op for that PID and continue.
+Each corrective step sets `inputsFrom: [{ step: <step-5-index>, field: "selected" }]` and a `Condition:` clause testing whether its category id appears in `selected`. Skip silently when the id is not in `selected`. If a process from the classification has terminated between Step 1 and Step 6 (rare but possible — the user took a long time at the gate), the tool will return a "no matching processes found" message; treat as a no-op for that PID and continue.
 
 If `TERM` left a process alive (`kill_process` output shows it didn't terminate), the user may re-trigger the skill and escalate to `signal: "KILL"` on the second pass.
 
