@@ -131,7 +131,9 @@ Three branches based on `detect_idp_username`'s output:
 **Do NOT write prose like "ask the user via chat" for the username** — that pattern is functionally broken because `conversationIdRef` clears on run end (see `useAgent.ts:156`). `request_user_input` is the only mid-plan free-text mechanism that actually works.
 
 **Step 2 — User picks reset path**
-Call `wait_for_user_ack` to let the user choose between the IDP's self-service portal and the idemeum cloud-mediated path:
+Call `wait_for_user_ack`. **The options depend on the IDP detected in Step 1 / Step 1a** — `request_idemeum_idp_reset` only supports Entra and Google Workspace today; Okta cloud reset is not yet enabled.
+
+**For Entra / Google Workspace** (cloud path available — 3 buttons):
 
 ```
 prompt: "How do you want to reset your {idp} password?"
@@ -141,9 +143,20 @@ options:
   - { id: "cancel", label: "Cancel",                           kind: "cancel"    }
 ```
 
-Substitute `{idp}` with the human-readable IDP name from Step 1 (`Okta` / `Microsoft Entra` / `Google Workspace`). Mention briefly in the prompt body that the **cloud path is the right choice when the user has lost MFA access** (lost phone, no recovery email) — SSPR requires passing MFA at the IDP portal; the cloud path can deliver a reset through a recovery email configured by IT.
+Mention briefly in the prompt body that the **cloud path is the right choice when the user has lost MFA access** (lost phone, no recovery email) — SSPR requires passing MFA at the IDP portal; the cloud path can deliver a reset through a recovery email configured by IT.
 
-If `choice === "cancel"` or `timeout`, end the run.
+**For Okta** (cloud path NOT available — 2 buttons):
+
+```
+prompt: "How do you want to reset your Okta password? Note: idemeum cloud-mediated reset is not yet supported for Okta — only the self-service portal path is available. If you've lost MFA access at Okta, ask IT to reset your password directly."
+options:
+  - { id: "sspr",   label: "Self-service portal (Okta)",  kind: "primary" }
+  - { id: "cancel", label: "Cancel",                      kind: "cancel"  }
+```
+
+Do **NOT** offer the `"cloud"` button to Okta users — Step 4's `Condition:` will refuse it anyway, but the picker must not present an option the agent cannot fulfil.
+
+Substitute `{idp}` with the human-readable IDP name from Step 1 (`Microsoft Entra` / `Google Workspace`). On `choice === "cancel"` or `timeout`, end the run.
 
 **Step 3 — SSPR path: open the IDP's portal**
 **Condition:** only if Step 2 returned `choice === "sspr"`.
@@ -151,7 +164,7 @@ If `choice === "cancel"` or `timeout`, end the run.
 Call `open_idp_sspr_portal` with `idp` from Step 1 and `tenant` if applicable (Okta tenant slug from user; Entra directory if known). The user's default browser opens on the IDP's password-reset page — the IDP enforces MFA and recovery factors, not the agent.
 
 **Step 4 — Cloud path: request the reset**
-**Condition:** only if Step 2 returned `choice === "cloud"`.
+**Condition:** only if (a) Step 2 returned `choice === "cloud"` AND (b) Step 1's detected IDP is `"entra"` OR `"google"`. `request_idemeum_idp_reset` does NOT support Okta — the cloud reset is not enabled for Okta tenants today. For Okta this step MUST be skipped; Step 2's option list won't offer the `cloud` button for Okta, but this Condition is belt-and-suspenders if any future edit ever re-adds it inadvertently.
 
 Call `request_idemeum_idp_reset` with `idp`, `username` (the confirmed username from Step 1c's scratchpad — already auto-detected or user-entered with email-format validation), and `tenant` if applicable. The tool's Zod schema enforces email/UPN format on `username`; G4 auto-triggers a dry-run preview (showing the exact outbound payload, with `username` redacted per the tool's `sensitiveParams` declaration) and then the consent gate. Surface the cloud's response to the user:
 
