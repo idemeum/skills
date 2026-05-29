@@ -11,7 +11,7 @@ allowed-tools:
   - reset_av_device_selection
   - restart_process
   - check_app_permissions
-  - list_installed_apps
+  - wait_for_user_ack
 metadata:
   prerequisites:
     before-corrective:
@@ -54,66 +54,99 @@ Do NOT use this skill when the user is asking to **sign out** of the app, **unin
 **Step 1 — Detect installed collab apps**
 Call `check_collab_app_status` with `app: "all"` (or omit the parameter — `all` is the default). The tool returns one entry per supported app (Teams, Slack, Zoom, Webex) with `installed`, `installPath`, `cachePath`, `cacheAgeHours`, and an `authState` heuristic (`"signed-in" | "signed-out" | "unknown"`).
 
-Use the result to confirm which app the user is talking about. If `check_collab_app_status` returns `installed: false` for the app the user named, surface this to the user and stop — there is nothing to repair on this machine.
+Use the result to confirm which app the user is talking about. If `check_collab_app_status` returns `installed: false` for the app the user named, surface this to the user and stop — there is nothing to repair on this machine. The remaining Steps' `Condition:` clauses will all skip cleanly.
 
-If the user's reported app is `installed: true` but `authState: "signed-out"`, the symptom is most likely a sign-in issue rather than a cache or A/V problem — tell the user to sign in first, then re-run if the symptom persists.
+**Step 1b — Wait for user to sign in (if signed out)**
+`Condition:` only run if Step 1 returned `authState: "signed-out"` for the user's reported app. Call `wait_for_user_ack`:
 
-**Step 2 — Enumerate A/V devices when the symptom is media**
-If the user's complaint involves mic, camera, or speaker (Steps 5 and 6 below will branch on this), call `list_audio_devices` and `list_video_devices` in parallel to enumerate available devices and the system default.
+```yaml
+prompt: "It looks like you're signed out of {app}. Sign in first — your symptom (mic / camera / messages / search) may resolve on its own once authentication completes. Let me know how it goes."
+options:
+  - { id: "fixed",        label: "Signing in fixed it",        kind: "primary" }
+  - { id: "still-broken", label: "Still broken after sign-in", kind: "secondary" }
+  - { id: "skip",         label: "Skip — diagnose anyway",     kind: "cancel" }
+```
 
-The output gives you (and the user) ground truth on what the OS sees — if the user expects "AirPods" but the audio list does not contain them, the problem is the device pairing, not the app. Suggest the user re-pair the device and re-run.
+On `fixed`: end the run with success (Step 8 final report). On `still-broken` / `skip`: proceed to Step 2. Without this gate, Steps 2–6 would run on a signed-out account — cache clears and A/V resets would still leave the user unable to use the app.
+
+**Step 2 — Enumerate audio devices when the symptom is media**
+`Condition:` only run if the user's complaint involves mic, camera, or speaker. (The tool returns cleanly on any complaint type, so always-calling is safe-but-wasteful — skip when irrelevant.)
+
+Call `list_audio_devices` to enumerate available audio devices and the system default. The output gives the user ground truth on what the OS sees — if the user expects "AirPods" but the audio list does not contain them, the problem is the device pairing, not the app.
+
+**Step 2b — Enumerate video devices when the symptom is media**
+`Condition:` same as Step 2. Call `list_video_devices`. Same purpose for camera devices (FaceTime HD, Continuity Camera, external webcams).
 
 **Step 3 — Check app permissions (mic / camera / screen recording)**
-Call `check_app_permissions` for the affected app (`appBundleId` for macOS — e.g. `com.microsoft.teams2`, `com.tinyspeck.slackmacgap`, `us.zoom.xos`, `Cisco-Systems.Spark`; the Windows path is the executable). Required permissions vary per symptom:
+`Condition:` only run if the user's complaint involves mic, camera, speaker, or screen share. Call `check_app_permissions` for the affected app:
+- `appBundleId` for macOS — e.g. `com.microsoft.teams2`, `com.tinyspeck.slackmacgap`, `us.zoom.xos`, `Cisco-Systems.Spark`
+- Windows path is the executable
+
+Required permissions vary per symptom:
 - **Mic problem** — Microphone permission must be granted
 - **Camera problem** — Camera permission must be granted
 - **Screen-share problem** — Screen Recording permission must be granted (macOS only)
 
-If a required permission is denied, guide the user to System Settings → Privacy & Security and re-run after they grant access. The app must be relaunched after permission changes.
+If a required permission is denied, Step 3b's ack will surface the System Settings path and wait for the user to grant access.
 
-**Step 4 — Decide repair path based on the user's report**
+**Step 3b — Wait for user to grant required permission (if denied)**
+`Condition:` only run if Step 3 returned at least one denied permission required for the user's symptom. Call `wait_for_user_ack`:
 
-The repair path branches on the symptom:
+```yaml
+prompt: "{App} needs {permission} permission to handle your symptom, but it's currently denied. Open System Settings → Privacy & Security → {permission}, enable it for {app}, then relaunch the app. Let me know how it goes."
+options:
+  - { id: "fixed",        label: "Granted — and that fixed it", kind: "primary" }
+  - { id: "still-broken", label: "Granted, still broken",       kind: "secondary" }
+  - { id: "skip",         label: "Skip — diagnose anyway",      kind: "cancel" }
+```
 
-| User report | Go to |
-|---|---|
-| "my mic / camera / speaker isn't working in <app>" | Step 5 (A/V reset) |
-| "messages / search / meeting list is stale" | Step 6 (cache clear) |
-| "the app is sluggish or stuck" | Step 6 (cache clear) followed by Step 7 (restart) |
-| "the app crashes when I do X" | Step 7 (restart) only — cache clear is more invasive than needed |
+On `fixed`: end the run with success (Step 8 final report). On `still-broken` / `skip`: proceed to Step 4. Without this gate, Steps 4–6 (A/V reset, cache clear, restart) would run while the underlying permission denial remains — none of them can give the app permission it doesn't have, so the symptom would persist.
 
-If the symptom is genuinely unclear, prefer Step 5 first (smaller blast radius — only A/V settings are touched), then escalate to Step 6 if the symptom persists.
+**Step 4 — Reset A/V device selection (mic / camera / speaker stuck on wrong device)**
+`Condition:` only run if (a) the user's complaint involves mic / camera / speaker AND (b) Step 3b either was skipped (no denied permissions) or returned `still-broken` / `skip` AND (c) Step 1b either was skipped or returned `still-broken` / `skip`.
 
-**Step 5 — Reset A/V device selection (mic / camera / speaker stuck on wrong device)**
+Call `reset_av_device_selection` with `app: <app>`. The required parameter is `app` (one of `"teams" | "slack" | "zoom" | "webex"`) — wildcards are rejected at the schema layer. G4 auto-triggers the dry-run preview (`destructive: true` + `supportsDryRun: true`) surfacing the affected file paths and which keys would be cleared, then the consent gate fires. The tool clears only the audio/video selection keys — broader app preferences and sign-in state are preserved.
 
-Call `reset_av_device_selection` with `app: <app>`. The G4 dry-run + consent gates surface the affected file paths and which keys would be cleared so the user understands what changes. After consent, the tool clears only the audio/video selection keys — broader app preferences and sign-in state are preserved.
+Step 6's restart picks up the cleared selection — the user does NOT need to manually quit and relaunch between Steps 4 and 6.
 
-The required parameter is `app` (one of `"teams" | "slack" | "zoom" | "webex"`) — wildcards are rejected at the schema layer.
+**Step 5 — Clear app cache (stuck media / stale search / old metadata)**
+`Condition:` only run if (a) the user's complaint involves stale search / stale messages / stale meeting list / sluggish behavior, OR (b) Step 4 ran and the user reports the issue persists. Skip for pure A/V symptoms where Step 4 alone is expected to fix it (cache clears are more invasive).
 
-After the reset, advise the user to fully quit and relaunch the app for the change to take effect (most collab apps cache the device selection in memory until restart).
+Call `clear_collab_app_cache` with `app: <app>`. G4 auto-triggers the dry-run preview showing which cache subdirectories will be cleared and the bytes-freed estimate, then the consent gate fires. Auth artefacts (Cookies, Local Storage, IndexedDB, accounts) are NOT cleared — the user stays signed in.
 
-**Step 6 — Clear app cache (stuck media / stale search / old metadata)**
+The tool deletes the cache subdirectories and reports per-path bytes freed. Errors per path (most commonly because the app is still running and holds a file lock) are returned in the `errors[]` array — partial-clear is reported as success with errors enumerated. Step 6's restart resolves most lock errors.
 
-Call `clear_collab_app_cache` with `app: <app>`. The G4 dry-run gate shows which cache subdirectories will be cleared and the bytes-freed estimate. Auth artefacts (Cookies, Local Storage, IndexedDB, accounts) are NOT cleared — the user stays signed in.
+**Step 6 — Restart the app**
+`Condition:` only run if Step 4 OR Step 5 ran. Call `restart_process` with the app's process name. The process name is NOT derivable from Step 1's `installPath` (e.g. macOS Teams installs at `/Applications/Microsoft Teams.app` but the running process is `MSTeams`). Use this hardcoded mapping:
+- Teams (macOS new) → `MSTeams`
+- Slack → `Slack`
+- Zoom → `zoom.us` (macOS) / `Zoom` (Windows)
+- Webex → `Webex`
 
-After consent, the tool deletes the cache subdirectories and reports per-path bytes freed. Errors per path (most commonly because the app is still running and holds a file lock) are returned in the `errors[]` array — partial-clear is reported as success with errors enumerated.
+The tool does NOT support dry-run (`supportsDryRun: false`). G4's consent gate fires automatically before the restart. After the restart, the user should see the app re-detect A/V devices (if Step 4 ran) and rebuild its cache (if Step 5 ran).
 
-If `errors[]` shows lock-related failures, advise the user to fully quit the app and re-run. Step 7 below is the natural follow-up to ensure a clean restart.
+**Step 7 — Wait for user to test the app**
+`Condition:` only run if any corrective (Steps 4, 5, or 6) ran. Call `wait_for_user_ack`:
 
-**Step 7 — Restart the app (after Step 5 or Step 6, optional)**
+```yaml
+prompt: "I've reset {app}'s {av-selection|cache|both} and restarted it. Try the original action that was broken (join meeting, test mic, search messages, etc.) and let me know whether it works now."
+options:
+  - { id: "works",        label: "It works now",                kind: "primary" }
+  - { id: "still-broken", label: "Still not working",           kind: "secondary" }
+  - { id: "skip",         label: "Skip — I'll test later",      kind: "cancel" }
+```
 
-Call `restart_process` with the app's process name (take it from Step 1's `installPath` — e.g. for macOS Teams `MSTeams`, for Slack `Slack`, for Zoom `zoom.us`, for Webex `Webex`). The tool does NOT support dry-run (`supportsDryRun: false` per its meta) — the G4 consent gate handles user confirmation automatically.
-
-After the restart, the user should see the app re-detect A/V devices (if Step 5 ran) and rebuild its cache (if Step 6 ran).
+On `works`: report success and end the run. On `still-broken`: surface the IT-escalation guidance in the response (network firewall, identity-layer issue via `identity-auth-repair`, corrupt install via `software-reinstall`). On `skip`: close with "diagnostics complete; user will verify later".
 
 **Step 8 — Final report**
-
 Summarise what was changed:
 - Which app was diagnosed (Step 1)
-- Whether A/V permissions were OK (Step 3)
-- Whether A/V device selection was reset (Step 5) — and which device the app should now pick up
-- Whether cache was cleared (Step 6) — and bytes freed
-- Whether the app was restarted (Step 7)
+- Sign-in state and whether sign-in alone resolved it (Step 1b)
+- A/V permission state and whether granting alone resolved it (Step 3 / 3b)
+- Whether A/V device selection was reset (Step 4) — and which device the app should now pick up
+- Whether cache was cleared (Step 5) — and bytes freed
+- Whether the app was restarted (Step 6)
+- The user's final-test ack outcome (Step 7)
 
 If after all steps the symptom persists, escalate to IT — the likely remaining causes are network restrictions (firewall blocking the collab service), identity-layer issues (use [identity-auth-repair](../identity-auth-repair/SKILL.md)), or a corrupt installation that needs reinstall via [software-reinstall](../software-reinstall/SKILL.md).
 
