@@ -9,17 +9,20 @@
  *
  * The agent never sees IDP admin credentials — those live only on the
  * idemeum cloud service.  The agent's role is to forward context
- * (agentId, username, idp, tenant, platform) and surface the response.
+ * (agentId, username, idp, tenant, platform, action) and surface the response.
  *
  * Wire contract
  * -------------
- * POST ${IDEMEUM_IDP_URL}/v1/password-reset
- *   Authorization: Bearer ${IDEMEUM_IDP_API_KEY}
- *   Body: { agentId, username, idp, tenant, platform }
+ * POST ${IDEMEUM_IDP_URL}/api/eoc/idp-password/{upn}
+ *   Accept:        application/vnd.dvmi.cloud.reset.result+json
+ *   Content-Type:  application/vnd.dvmi.idp.password.action+json
+ *   X-Idemeum-Eoc-Api-Key: ${IDEMEUM_IDP_API_KEY}
+ *   Body: { agentId, username, idp, tenant, platform, action: "RESET_PASSWORD" }
  *
- *   Success  → { status: "initiated", deliveryMethod, message, ticketId? }
- *   Failure  → { status: "failed",    message }
- *   Refused  → { status: "not-eligible", message }
+ *   Success  → { status: "initiated", deliveryMethod, message,
+ *                notificationEmail?, notificationPhone? }
+ *   Failure  → { status: "failed",    message, httpStatus?, failureReason? }
+ *   Not conf → { status: "not-configured", message }
  *
  * When IDEMEUM_IDP_URL is unset, the tool resolves fail-open with
  * { status: "not-configured", message: "…" } so the skill prose can
@@ -73,9 +76,7 @@ export const meta = {
   // credential per se, exposing it across audit logs / response bubble /
   // scratchpad replay broadens the attack surface for targeted phishing
   // and account-enumeration. Declaring it sensitive lets the centralised
-  // sanitiser handle redaction at every downstream surface; skills that
-  // call this tool inherit the protection automatically — they do NOT
-  // need to repeat it in their own SKILL.md sensitiveParams.
+  // sanitiser handle redaction at every downstream surface.
   sensitiveParams: ["username"],
   schema: {
     idp: z
@@ -83,9 +84,7 @@ export const meta = {
       .describe("IDP identifier; JumpCloud/Ping deferred to Wave 2."),
     // Email / UPN regex — rejects obvious typos at tool entry (e.g.
     // "alice@" or "alice example.com") so we don't round-trip to cloud
-    // just to discover the format is wrong. The validator is intentionally
-    // permissive (no DNS lookup, no MX check) — the cloud's eligibility
-    // check is the authoritative "is this a real account" test.
+    // just to discover the format is wrong.
     username: z
       .string()
       .min(1)
@@ -103,7 +102,7 @@ export const meta = {
       .optional()
       .describe(
         "When true, return { willPost, endpoint, payloadWithoutSecrets } " +
-        "without posting. The Bearer token is never included even in dry-run.",
+        "without posting. The API key is never included even in dry-run.",
       ),
   },
 } as const;
@@ -117,6 +116,7 @@ interface CloudResetPayload {
   idp:      Idp;
   tenant:   string | null;
   platform: "darwin" | "win32" | "other";
+  action:   "RESET_PASSWORD";
 }
 
 export type CloudResetStatus =
@@ -128,7 +128,9 @@ export type CloudResetStatus =
 export interface CloudResetResult {
   status:          CloudResetStatus;
   message:         string;
-  deliveryMethod?: "email" | "sms" | "helpdesk-ticket";
+  deliveryMethod?: "email" | "sms" | "email,sms" | "helpdesk-ticket";
+  notificationEmail?: string;
+  notificationPhone?: string;
   ticketId?:       string;
   /** Present on dry-run. */
   willPost?:              boolean;
@@ -157,6 +159,7 @@ function buildPayload(args: {
     idp:      args.idp,
     tenant:   args.tenant && args.tenant.length > 0 ? args.tenant : null,
     platform: resolvePlatform(),
+    action:   "RESET_PASSWORD",
   };
 }
 
@@ -183,8 +186,9 @@ export async function run(args: {
     };
   }
 
-  const endpoint = url.replace(/\/$/, "") + "/v1/password-reset";
-  const payload  = buildPayload(args);
+  const encodedUpn = encodeURIComponent(args.username);
+  const endpoint   = url.replace(/\/$/, "") + `/api/eoc/idp-password/${encodedUpn}`;
+  const payload    = buildPayload(args);
 
   if (args.dryRun) {
     return {
@@ -192,17 +196,17 @@ export async function run(args: {
       message: `Would POST idemeum cloud reset request for ${args.username} (${args.idp}).`,
       willPost:              true,
       endpoint,
-      // NEVER include the Bearer token in dry-run output.
+      // NEVER include the API key in dry-run output.
       payloadWithoutSecrets: payload,
     };
   }
 
   const headers: Record<string, string> = {
-    "content-type": "application/json",
-    "accept":       "application/json",
+    "Content-Type": "application/vnd.dvmi.idp.password.action+json",
+    "Accept":       "application/vnd.dvmi.cloud.reset.result+json",
   };
   if (apiKey && apiKey.length > 0) {
-    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["X-Idemeum-Eoc-Api-Key"] = apiKey;
   }
 
   const body = JSON.stringify(payload);
@@ -258,27 +262,37 @@ export async function run(args: {
   const rawDelivery = typeof parsed["deliveryMethod"] === "string"
     ? (parsed["deliveryMethod"] as string)
     : undefined;
+  const deliveryMethod =
+    rawDelivery === "email" || rawDelivery === "sms" || rawDelivery === "email,sms" || rawDelivery === "helpdesk-ticket"
+      ? rawDelivery
+      : undefined;
   const rawTicketId = typeof parsed["ticketId"] === "string"
     ? (parsed["ticketId"] as string)
     : undefined;
+  const rawNotificationEmail = typeof parsed["notificationEmail"] === "string"
+    ? (parsed["notificationEmail"] as string)
+    : undefined;
+  const rawNotificationPhone = typeof parsed["notificationPhone"] === "string"
+    ? (parsed["notificationPhone"] as string)
+    : undefined;
 
   const status: CloudResetStatus =
-    rawStatus === "initiated" || rawStatus === "failed" || rawStatus === "not-eligible"
+    rawStatus === "initiated"      ||
+    rawStatus === "failed"         ||
+    rawStatus === "not-eligible"   ||
+    rawStatus === "not-configured"
       ? rawStatus
       : "failed";
 
-  const deliveryMethod =
-    rawDelivery === "email" || rawDelivery === "sms" || rawDelivery === "helpdesk-ticket"
-      ? rawDelivery
-      : undefined;
-
   return {
     status,
-    message:  rawMessage.length > 0
+    message: rawMessage.length > 0
       ? rawMessage
       : `idemeum cloud responded with status "${status}".`,
-    deliveryMethod,
-    ticketId: rawTicketId,
+    ...(deliveryMethod        !== undefined && { deliveryMethod }),
+    ...(rawNotificationEmail  !== undefined && { notificationEmail: rawNotificationEmail }),
+    ...(rawNotificationPhone  !== undefined && { notificationPhone: rawNotificationPhone }),
+    ...(rawTicketId           !== undefined && { ticketId:          rawTicketId }),
   };
 }
 
