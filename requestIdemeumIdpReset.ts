@@ -16,7 +16,7 @@
  * POST ${IDEMEUM_IDP_URL}/api/eoc/idp-password/{upn}
  *   Accept:        application/vnd.dvmi.cloud.reset.result+json
  *   Content-Type:  application/vnd.dvmi.idp.password.action+json
- *   X-Idemeum-Eoc-Api-Key: ${IDEMEUM_IDP_API_KEY}
+ *   X-Idemeum-Eoc-Api-Key: ${IDEMEUM_API_KEY}
  *   Body: { agentId, username, idp, tenant, platform, action: "RESET_PASSWORD" }
  *
  *   Success  → { status: "initiated", deliveryMethod, message,
@@ -175,7 +175,7 @@ export async function run(args: {
   dryRun?:  boolean;
 }): Promise<CloudResetResult> {
   const url    = process.env["IDEMEUM_IDP_URL"];
-  const apiKey = process.env["IDEMEUM_IDP_API_KEY"];
+  const apiKey = (process.env["IDEMEUM_API_KEY"] ?? "").trim();
 
   if (!url || url.length === 0) {
     return {
