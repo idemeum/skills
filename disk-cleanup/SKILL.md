@@ -83,10 +83,10 @@ Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` 
 Call `find_old_downloads` with `olderThanDays: 90` and `minSizeMb: 50` to list stale downloads ≥50 MB. Installers (.dmg, .pkg, .exe) older than 90 days are almost always safe to remove.
 
 **Step 5 — Check application caches**
-Call `get_app_cache_info` to list all app cache directories and their sizes. Present the largest caches. Ask the user if they want to clear specific ones or all. This is a read-only probe — nothing is deleted at this step.
+Call `get_app_cache_info` to report app cache directory sizes. This is a read-only probe — nothing is deleted at this step; the user opts in or out via the Step 9 card.
 
 **Step 6 — Check browser caches**
-Call `get_browser_cache_info` to report browser cache sizes (Chrome, Safari, Firefox, Edge). Browser caches are always safe to clear — they rebuild automatically on next use. This is a read-only probe.
+Call `get_browser_cache_info` to report browser cache sizes (Chrome, Safari, Firefox, Edge). This is a read-only probe — nothing is deleted at this step; the user opts in or out via the Step 9 card.
 
 **Step 7 — Check developer caches (if applicable)**
 If the user is a developer or has large ~/Library entries:
