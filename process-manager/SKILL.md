@@ -28,7 +28,7 @@ metadata:
     - "an application is using too much CPU or memory"
   pill:
     label: Fix Performance
-    goal: My Mac is running slow or an app is frozen and using too much CPU or memory, please diagnose and fix it
+    goal: My computer is running slow or an app is frozen and using too much CPU or memory, please diagnose and fix it
     icon: Activity
     iconClass: text-red-500
     order: 5

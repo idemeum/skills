@@ -39,7 +39,7 @@ metadata:
     - "my computer says the disk is full"
   pill:
     label: Clean Disk
-    goal: My disk is full or my Mac is running slow due to low storage, please scan and free up space
+    goal: My disk is full or my computer is running slow due to low storage, please scan and free up space
     icon: HardDrive
     iconClass: text-amber-500
     order: 1
