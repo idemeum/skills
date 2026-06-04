@@ -88,11 +88,11 @@ Call `get_app_cache_info` to report app cache directory sizes. This is a read-on
 **Step 6 — Check browser caches**
 Call `get_browser_cache_info` to report browser cache sizes (Chrome, Safari, Firefox, Edge). This is a read-only probe — nothing is deleted at this step; the user opts in or out via the Step 9 card.
 
-**Step 7 — Check developer caches (if applicable)**
-If the user is a developer or has large ~/Library entries:
-- Call `get_dev_cache_info` to report npm/yarn/pnpm/pip/gradle/maven cache sizes (read-only)
-- Call `get_docker_disk_usage` if relevant — reports reclaimable bytes via `docker system df` without modifying anything; returns `dockerInstalled:false` when Docker is unavailable so the caller can branch
-- Call `get_xcode_derived_data_info` on macOS to report DerivedData / Archives / DeviceSupport sizes (read-only; returns `supported:false` on non-darwin)
+**Step 7 — Check developer and Docker caches**
+Always run these read-only probes — do NOT gate them on a guess about whether the user is "a developer." They self-report zero on machines that don't have the relevant tooling, and the Step 9 card's empty-category filter drops any row whose reclaimable bytes are 0, so a non-developer machine simply won't show these categories. Skipping them on a hunch risks silently missing real reclaimable space (e.g. a multi-GB npm cache).
+- Call `get_dev_cache_info` to report npm/yarn/pnpm/pip/gradle/maven cache sizes. Read-only; returns `totalBytes: 0` when no dev caches exist.
+- Call `get_docker_disk_usage` to report reclaimable bytes via `docker system df`. Read-only; returns `dockerInstalled: false` and `totalReclaimableBytes: 0` when Docker is unavailable.
+- Call `get_xcode_derived_data_info` on macOS to report DerivedData / Archives / DeviceSupport sizes. Read-only; returns `supported: false` on non-darwin.
 
 **Step 8 — Check Trash contents (always include)**
 This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space, and the consolidated `present_preview` card lets the user opt in or out of emptying it. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
