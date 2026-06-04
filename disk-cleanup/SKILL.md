@@ -105,72 +105,83 @@ Call `present_preview` with:
 
 ```yaml
 title: "Cleanup Plan"
-summary: "You can recover {totalSize} by cleaning the following:"
+summary: "You can recover the following:"
 categories:
   - id: large-files
     label: "Large files"
     summary: "{N} files over 100 MB ({size})"
+    bytesFromTool: get_large_files
     defaultSelected: true
 
   - id: duplicates
     label: "Duplicate files"
     summary: "{N} duplicate files ({size})"
+    bytesFromTool: find_duplicate_files
     defaultSelected: true
 
   - id: old-downloads
     label: "Old downloads"
     summary: "{N} installers/archives older than 90 days ({size})"
+    bytesFromTool: find_old_downloads
     defaultSelected: true
 
   - id: app-cache
     label: "App caches"
     summary: "Slack, Spotify, Discord, etc. ({size})"
+    bytesFromTool: get_app_cache_info
     defaultSelected: true
 
   - id: browser-cache
     label: "Browser caches"
     summary: "Chrome, Safari, Edge — rebuild automatically ({size})"
+    bytesFromTool: get_browser_cache_info
     defaultSelected: true
 
   - id: dev-cache
     label: "Developer caches"
     summary: "npm, yarn, pip, gradle, Xcode DerivedData ({size})"
+    bytesFromTool: get_dev_cache_info
     destructive: true
     defaultSelected: false
 
   - id: docker
     label: "Docker resources"
     summary: "Unused images, containers, volumes ({size})"
+    bytesFromTool: get_docker_disk_usage
     destructive: true
     defaultSelected: false
 
   - id: trash
     label: "Trash"
     summary: "{N} items ({size})"
+    bytesFromTool: get_trash_info
     defaultSelected: true
 ```
 
-Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from prior scratchpad outputs):
+**The top-level `summary` MUST be emitted verbatim as `"You can recover the following:"` — do NOT compute, estimate, paraphrase, or append an aggregate/total size (no "approximately X GB", no grand total). The only sizes shown to the user are the per-category `{size}` values inside each category row.**
 
-- top-level `{totalSize}` — sum of every category's size, formatted human-readable
-- inside large-files.summary:
+**Empty categories are dropped automatically by G4 — do NOT hand-filter them and do NOT compute byte counts.** Each category declares `bytesFromTool: <tool>`, naming the read-only diagnostic whose output owns its reclaimable size. G4's `present_preview` gate reads `bytesFromTool` from the plan template (never from any value you emit), looks up that tool's REAL output captured during the run, and drops any category whose true reclaimable bytes are 0 before the card renders. If every category is 0 (so none remain) it skips the card entirely and treats the run as "nothing to clean". This is enforced in code (`runPresentPreviewGate` in `electron/agent/guards/execution.ts`) from the truth source, so you don't need prose rules for "No duplicates found" / "0 items" rows. Still emit every category in the template; the gate decides which survive. (When the gate has no output for a category's tool — the probe didn't run or failed — it keeps the category, since it can't prove it empty. Omit a category yourself only when the tool reports it inapplicable, e.g. `dockerInstalled: false` for docker.)
+
+Data lineage (executor LLM substitutes `{placeholder}` display tokens at runtime from prior scratchpad outputs; byte counts are NOT your job — the gate derives them from `bytesFromTool`):
+
+- inside large-files:
   - `{N}` — `output.returned` from the Step 2 `get_large_files` call.
   - `{size}` — sum of `file.size` across every entry in `output.files` from Step 2, formatted human-readable.
-- inside duplicates.summary:
+- inside duplicates:
   - `{N}` — `output.topDeletables.length` from the Step 3 `find_duplicate_files` call (bounded to ≤10 by `topDeletableLimit: 10`).
   - `{size}` — sum of `sizeBytes` across every entry in `output.topDeletables` from Step 3, formatted human-readable. (Note: `find_duplicate_files` omits `duplicateGroups` and `totalWastedBytes` from its output whenever `topDeletableLimit` is set, so those scan-wide aggregates aren't available to mistakenly pick.)
-- inside old-downloads.summary:
+- inside old-downloads:
   - `{N}` — length of `output.oldFiles` from the `find_old_downloads` step
   - `{size}` — `output.totalHuman` from the `find_old_downloads` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
-- inside app-cache.summary:
+- inside app-cache:
   - `{size}` — `output.totalHuman` from the `get_app_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
-- inside browser-cache.summary:
+- inside browser-cache:
   - `{size}` — `output.totalHuman` from the `get_browser_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
-- inside dev-cache.summary:
+- inside dev-cache:
   - `{size}` — `output.totalHuman` from the `get_dev_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
-- inside docker.summary:
+- inside docker:
   - `{size}` — `output.totalReclaimableHuman` from the `get_docker_disk_usage` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute). Omit the category entirely when `dockerInstalled` is false.
-- inside trash.summary:
+- inside trash:
   - `{N}` — `output.itemCount` from the `get_trash_info` step
   - `{size}` — `output.totalHuman` from the `get_trash_info` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute from `totalBytes`)
 

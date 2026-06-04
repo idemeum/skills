@@ -296,6 +296,37 @@ export const meta = {
               "Optional extra bullet text shown when the user expands the " +
               "category. Use sparingly.",
             ),
+          bytes: z
+            .number()
+            .nonnegative()
+            .optional()
+            .describe(
+              "Reclaimable size of this category in raw bytes (NOT a " +
+              "formatted string). Used by G4 to decide which rows are " +
+              "empty: any category whose `bytes` is 0 is dropped before the " +
+              "card renders, and if every category is 0 (or the array ends " +
+              "up empty) G4 skips the card entirely and treats the run as " +
+              "'nothing to clean'. Omit only for previews that have no " +
+              "meaningful size — those rows are always kept. Populate this " +
+              "from the same source as the row's `{size}` text (e.g. " +
+              "`output.totalBytes`), do NOT round or pre-format it.",
+            ),
+          bytesFromTool: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              "Canonical name of the read-only diagnostic tool whose output " +
+              "determines this category's reclaimable size (e.g. " +
+              "'get_app_cache_info'). Authored in SKILL.md and copied " +
+              "verbatim into the plan — the G4 gate reads it from the PLAN " +
+              "template (not from this executor-supplied value), so it cannot " +
+              "be stripped. The gate looks up the tool's REAL output captured " +
+              "during the run and drops the category when its true reclaimable " +
+              "bytes are 0. This is the deterministic, executor-independent " +
+              "empty-row filter; prefer it over `bytes` for size-based cards. " +
+              "Omit for non-size categories (those rows are always kept).",
+            ),
           defaultSelected: z
             .boolean()
             .optional()
