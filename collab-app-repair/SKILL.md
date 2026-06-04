@@ -45,7 +45,7 @@ Use this skill when the user:
 - Reports the app is sluggish, stuck loading, or showing yesterday's notifications
 - Asks "why is my Teams not working?" or "Slack is broken"
 
-Do NOT use this skill when the user is asking to **sign out** of the app, **uninstall** the app, or **migrate** to a different account — those are configuration tasks, not repair. If the user reports cross-app authentication problems (multiple apps prompting for login at the same time), use [identity-auth-repair](../identity-auth-repair/SKILL.md) instead — the root cause is likely identity-layer (NTP drift, expired Kerberos / SSO cert), not collab-app-specific.
+Do NOT use this skill when the user is asking to **sign out** of the app, **uninstall** the app, or **migrate** to a different account — those are configuration tasks, not repair. If the user reports cross-app authentication problems (multiple apps prompting for login at the same time), use the identity-auth-repair skill instead — the root cause is likely identity-layer (NTP drift, expired Kerberos / SSO cert), not collab-app-specific.
 
 ---
 
@@ -148,7 +148,7 @@ Summarise what was changed:
 - Whether the app was restarted (Step 6)
 - The user's final-test ack outcome (Step 7)
 
-If after all steps the symptom persists, escalate to IT — the likely remaining causes are network restrictions (firewall blocking the collab service), identity-layer issues (use [identity-auth-repair](../identity-auth-repair/SKILL.md)), or a corrupt installation that needs reinstall via [software-reinstall](../software-reinstall/SKILL.md).
+If after all steps the symptom persists, escalate to IT — the likely remaining causes are network restrictions (firewall blocking the collab service), identity-layer issues (use the identity-auth-repair skill), or a corrupt installation that needs reinstall via the software-reinstall skill.
 
 ---
 

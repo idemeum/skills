@@ -44,7 +44,7 @@ Use this skill when the user:
 - Reports a Bluetooth keyboard, trackpad, or mouse that worked yesterday is not connecting
 - Asks "why isn't my monitor / dock / AirPods / mouse working?"
 
-Do NOT use this skill when the symptom is collab-app-specific — e.g. "Zoom can't see my mic but other apps can" — use [collab-app-repair](../collab-app-repair/SKILL.md) instead. Cross-app A/V symptoms (the OS doesn't see the device at all) belong here.
+Do NOT use this skill when the symptom is collab-app-specific — e.g. "Zoom can't see my mic but other apps can" — use the collab-app-repair skill instead. Cross-app A/V symptoms (the OS doesn't see the device at all) belong here.
 
 ---
 
@@ -101,7 +101,7 @@ Step 7's final-test ack will verify whether these worked.
 `Condition:` only run if Step 1 routed to audio routing (audio device showing up but wrong — wrong mic / speaker default selection). Note: the OS-doesn't-see-the-device case for audio routes to Step 2 (USB audio device) or Step 3 (Bluetooth audio device) instead.
 
 Call `list_audio_devices`. The result enumerates input + output devices and flags the system default. Common patterns:
-- The expected device IS listed but is not the default → a setting issue, not a hardware issue. The user can change the default via System Settings → Sound (macOS) or Settings → System → Sound (Windows). For per-app overrides, use [collab-app-repair](../collab-app-repair/SKILL.md)
+- The expected device IS listed but is not the default → a setting issue, not a hardware issue. The user can change the default via System Settings → Sound (macOS) or Settings → System → Sound (Windows). For per-app overrides, use the collab-app-repair skill
 - The expected device is NOT listed → physical connection problem. If it is a USB device, return to Step 2; if Bluetooth, return to Step 3
 - Multiple of the same device appear (e.g. two "AirPods Pro") → an OS pairing artifact; advise the user to unpair both then re-pair the active one
 
@@ -111,7 +111,7 @@ Call `list_audio_devices`. The result enumerates input + output devices and flag
 
 Call `list_video_devices`. Symptoms:
 - Camera not in list → return to Step 2 (most webcams are USB) or Step 3 (Continuity Camera over Bluetooth proximity)
-- Camera in list but not selected by an app → app-specific configuration; route to [collab-app-repair](../collab-app-repair/SKILL.md)
+- Camera in list but not selected by an app → app-specific configuration; route to the collab-app-repair skill
 - macOS Continuity Camera (iPhone-as-webcam) reports `connection: "continuity"` but does not appear in apps → the iPhone may be off-Wi-Fi or out of Bluetooth range; advise the user to put both devices on the same network and within a few feet
 
 **Step 6 — Reset the Bluetooth module (last resort)**
