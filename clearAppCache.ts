@@ -20,7 +20,7 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
-import { DARWIN_BROWSER_CACHE_DIR_NAMES } from "./_shared/browserCaches";
+import { DARWIN_BROWSER_CACHE_DIR_NAMES, isWin32BrowserVendorDir } from "./_shared/browserCaches";
 
 const execAsync = promisify(exec);
 
@@ -198,6 +198,11 @@ async function clearAppCacheWin32(
     for (const d of dirents) {
       if (!d.isDirectory() || seen.has(d.name.toLowerCase())) continue;
       if (appName && !d.name.toLowerCase().includes(appName.toLowerCase())) continue;
+      // In the bulk (no appName) flow, NEVER recurse-delete a browser vendor
+      // dir — it holds the full browser profile, not just cache. The browser
+      // caches inside are cleaned by clear_browser_cache. An explicit appName
+      // target still wins. See _shared/browserCaches.ts.
+      if (!appName && isWin32BrowserVendorDir(d.name)) continue;
       seen.add(d.name.toLowerCase());
       all.push({ name: d.name, fullPath: nodePath.join(root, d.name), root });
     }

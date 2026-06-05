@@ -25,7 +25,7 @@ import * as nodePath from "path";
 import { execAsync, isDarwin, isWin32 } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 import { formatBytes } from "./_shared/formatBytes";
-import { DARWIN_BROWSER_CACHE_DIR_NAMES } from "./_shared/browserCaches";
+import { DARWIN_BROWSER_CACHE_DIR_NAMES, isWin32BrowserVendorDir } from "./_shared/browserCaches";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -161,6 +161,10 @@ async function getAppCacheInfoWin32(): Promise<GetAppCacheInfoResult> {
     }
     for (const d of dirents) {
       if (!d.isDirectory() || seen.has(d.name.toLowerCase())) continue;
+      // Exclude browser vendor dirs — they hold profile data, not just cache,
+      // and clear_app_cache deletes top-level dirs wholesale. Owned by
+      // clear_browser_cache. See _shared/browserCaches.ts.
+      if (isWin32BrowserVendorDir(d.name)) continue;
       seen.add(d.name.toLowerCase());
       all.push({ name: d.name, fullPath: nodePath.join(root, d.name) });
     }
