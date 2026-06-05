@@ -70,8 +70,20 @@ Missing permissions (Full Disk Access, Accessibility, Camera, Microphone, etc.) 
 **Step 4 — Check MDM enrollment**
 Call `check_mdm_enrollment`. Determines whether the device is MDM-managed, which gates Step 7's Self Service catalog path. On enrolled devices the catalog is the **strongly preferred** install route because (a) the corp-licensed version is the supported version, (b) the catalog applies management-agent post-install configuration (license keys, MDM profiles, firewall exceptions, login items), and (c) the catalog's agent handles privilege escalation server-side (no local admin password).
 
+**Step 4b — Capture fix-first vs. straight-to-reinstall preference**
+`Condition:` only run if Step 2's `check_app_integrity` returned `signatureValid: true` (the binary is intact, so non-destructive fixes are worth offering). Skip when `signatureValid` is `false`/`null` — the bundle is corrupt; go straight to the reinstall path. Call `wait_for_user_ack`:
+
+```yaml
+prompt: "The app's code signature is intact, so the binary itself isn't corrupt. I can try non-destructive fixes first (reset preferences + clear cache — your data stays intact), or skip straight to a clean reinstall. Which do you want?"
+options:
+  - { id: "try-fixes", label: "Try non-destructive fixes first", kind: "primary" }
+  - { id: "reinstall", label: "Skip — reinstall cleanly",       kind: "secondary" }
+```
+
+This converts the prior free-text "user reports misbehaving vs. explicitly asked for a reinstall" judgement into a concrete `choice` value that Steps 5/5b branch on.
+
 **Step 5 — Try non-destructive fix: reset app preferences**
-`Condition:` only run if (a) Step 2's `check_app_integrity` returned a valid signature AND (b) the user reports the app is misbehaving (crash on launch, frozen, slow). Skip if the signature is invalid (the binary itself is corrupt — go straight to reinstall) or the user explicitly asked for a reinstall.
+`Condition:` only run if (a) Step 2's `check_app_integrity` returned `signatureValid: true` AND (b) Step 4b returned `choice: "try-fixes"` (`inputsFrom: [{ step: "4b", field: "choice" }]`). Skip if the signature is invalid (the binary itself is corrupt — go straight to reinstall) or Step 4b returned `choice: "reinstall"`.
 
 Call `reset_app_preferences` with `appName` set to the same display name from Step 3. G4 auto-triggers the dry-run preview (`tool.meta.destructive: true` + `supportsDryRun: true`) listing which preference files would be removed, then the consent gate fires (`requiresConsent: true`). Warn in the rationale that this resets the app's settings — accounts may need re-adding for some apps.
 

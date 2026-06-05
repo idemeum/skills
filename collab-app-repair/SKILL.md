@@ -110,7 +110,7 @@ Call `reset_av_device_selection` with `app: <app>`. The required parameter is `a
 Step 6's restart picks up the cleared selection — the user does NOT need to manually quit and relaunch between Steps 4 and 6.
 
 **Step 5 — Clear app cache (stuck media / stale search / old metadata)**
-`Condition:` only run if (a) the user's complaint involves stale search / stale messages / stale meeting list / sluggish behavior, OR (b) Step 4 ran and the user reports the issue persists. Skip for pure A/V symptoms where Step 4 alone is expected to fix it (cache clears are more invasive).
+`Condition:` only run if the user's complaint involves stale search / stale messages / stale meeting list / sluggish behavior. Skip for pure A/V symptoms where Step 4 alone is expected to fix it (cache clears are more invasive).
 
 Call `clear_collab_app_cache` with `app: <app>`. G4 auto-triggers the dry-run preview showing which cache subdirectories will be cleared and the bytes-freed estimate, then the consent gate fires. Auth artefacts (Cookies, Local Storage, IndexedDB, accounts) are NOT cleared — the user stays signed in.
 

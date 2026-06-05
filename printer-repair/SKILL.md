@@ -55,7 +55,7 @@ This skill follows a **diagnostic-driven escalation** pattern. The agent runs al
 ## Steps
 
 **Step 1 — Inventory configured printers**
-Call `list_printers`. Returns `output.printers: [{ name, status, queueDepth }]` (statuses on macOS: `idle`, `stopped`, `processing`, `disabled`) and `output.defaultPrinter`. Used by every downstream step to identify printers and their states.
+Call `list_printers`. Returns `output.printers: [{ name, status, type, queueDepth }]` (statuses on macOS: `idle`, `stopped`, `processing`, `disabled`) and `output.defaultPrinter`. The `type` field classifies attachment: network-attached printers begin with `network` (`network (IPP)`, `network (LPD)`, `network (socket)`, `network (shared)`); directly-attached printers are `local (USB)` or `local`; non-physical destinations are `virtual`. Used by every downstream step to identify printers, their states, and whether they are network-reachable.
 
 **Step 2 — Check ALL print queues**
 Call `check_print_queue` with **no `printerName` arg**. Returns `output.jobs: [{ id, printer, owner, document, status, sizeKb, sizeHuman, submittedAt }]`, `output.stuckCount`, `output.total`. The unfiltered call returns jobs for every configured printer in one pass — avoids the "which printer is affected?" ambiguity and gives the executor full queue state to drive escalation decisions. `sizeHuman` is pre-formatted (decimal/SI MB to match Finder / Explorer); substitute verbatim, do NOT recompute from `sizeKb`.
@@ -69,7 +69,7 @@ placeholder: "192.168.1.50 or printer.local"
 validator: "^[A-Za-z0-9.\\-:]+$"
 ```
 
-`Condition:` only run if (a) Step 1's `list_printers` returned at least one printer in `stopped` / `disabled` state OR the user's goal names a specific printer, AND (b) the user's goal does NOT already contain an IP/hostname (the planner can use the goal-provided value directly without invoking this step), AND (c) the target printer is network-attached (USB printers — see Edge Cases — skip this step entirely because `check_printer_connectivity` only tests network ports). Skip silently otherwise — Step 4 will also skip when no host is known.
+`Condition:` only run if (a) Step 1's `list_printers` returned at least one printer in `stopped` / `disabled` state OR the user's goal names a specific printer, AND (b) the user's goal does NOT already contain an IP/hostname (the planner can use the goal-provided value directly without invoking this step), AND (c) the target printer's Step 1 `type` begins with `network` (e.g. `network (IPP)`). Skip this step for `local (USB)` / `local` printers — see Edge Cases — because `check_printer_connectivity` only tests network ports. Skip silently otherwise — Step 4 will also skip when no host is known.
 
 If the user submits an empty value (cancel / timeout), Step 4 will skip and the escalation continues without network reachability evidence. Surface that gap in the final summary.
 
@@ -172,7 +172,7 @@ Steps 5, 7, 9, and 10 require administrator privileges to execute the underlying
 ## Edge cases
 
 - **Printer shows online but jobs stuck immediately** — this often means the driver is sending a job format the printer does not understand. When re-adding via `add_printer`, use `protocol: "ipp"` with no custom PPD to use IPP Everywhere — this uses driverless printing with a format guaranteed to be compatible
-- **USB printers** — `check_printer_connectivity` tests network ports only. For a USB-connected printer, skip Steps 3 and 4 entirely (Step 3's `request_user_input` is conditioned on network-attached printers; Step 4's connectivity check needs a network host). If the USB printer is offline, unplug and replug the USB cable, then call `restart_cups` to force the OS to re-detect it
+- **USB / locally-attached printers** — identified by Step 1 `type` of `local (USB)` (or `local`). `check_printer_connectivity` tests network ports only, so for these printers skip Steps 3 and 4 entirely (Step 3's `request_user_input` is conditioned on `type` beginning with `network`; Step 4's connectivity check needs a network host). If a `local (USB)` printer is offline, unplug and replug the USB cable, then call `restart_cups` to force the OS to re-detect it
 - **Shared network printer via another computer** — if the printer is shared from another computer (not a direct network printer), that computer must be on and the sharing must be enabled. `check_printer_connectivity` will show the host computer's IP as reachable but the printer port may still fail if sharing is disabled
 - **CUPS requires elevated privileges** — `restart_cups` and `reset_printing_system` on macOS need root to talk to `launchctl system/...`. With the privileged helper daemon installed (default), this is handled silently end-to-end. If the helper is unavailable or disabled, guide the user to open Terminal and run `sudo launchctl kickstart -k system/org.cups.cupsd` manually as the fallback.
 - **Printer IP address changes** — DHCP-assigned printer IPs can change after a router reboot. If the printer was working before and is now offline, the IP may have changed. Ask the user to print a configuration page directly from the printer's control panel to find its current IP, then remove and re-add with the new IP

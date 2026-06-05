@@ -116,7 +116,7 @@ Call `reconnect_vpn` to force a clean disconnect/reconnect cycle. The G4 consent
 
 Fallback source if Step 2 returned no profiles: Step 1's `check_vpn_status.clientConnections[].name`.
 
-`Condition:` only run if (a) Step 1's `check_vpn_status` shows the VPN is connected but routing is broken (a Step 12 internal-hostname check would fail), OR (b) Steps 4–6 surfaced a fixable issue (server reachable, cert valid, extension approved — and Step 7's ack returned `"approved"` if it ran) and a reconnect is the natural corrective. Skip if Steps 4–6 surfaced an unresolvable issue (server down, cert expired, extension blocked) — escalate to IT instead.
+`Condition:` only run if (a) Step 1's `check_vpn_status` returned `isConnected === true` with at least one entry in `activeConnections[]` whose `status` is `"Connected"` or `"Active"`, AND the user's reported symptom is the "connected but internal resources unreachable" failure mode (a stale-session / DNS / routing reconnect is the natural corrective; routing itself is not yet verified — Step 12 confirms it after the reconnect), OR (b) Steps 4–6 surfaced a fixable issue (server reachable, cert valid, extension approved — and Step 7's ack returned `"approved"` if it ran) and a reconnect is the natural corrective. Skip if Steps 4–6 surfaced an unresolvable issue (server down, cert expired, extension blocked) — escalate to IT instead.
 
 Surface the MFA/SAML warning (see Edge Cases) in the rationale before the consent gate fires — a reconnect on those VPNs triggers a browser auth window the user needs to anticipate.
 

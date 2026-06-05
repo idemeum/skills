@@ -115,18 +115,47 @@ Call `check_mail_permissions` (read-only mode). Returns `output.errors[]` listin
 
 Re-call `check_mail_permissions` with `fix: true` to restore correct ownership and read/write permissions on the affected paths. Explain in the response that this only modifies the user's own Mail directory — it does not touch system files.
 
+**Step 5c — Capture the symptom (drives which corrective fires)**
+Call `wait_for_user_ack` to record the concrete failure mode before any corrective. The returned `choice` is the binding gate signal for Steps 6–8 — no free-text symptom inference:
+
+```yaml
+prompt: "What's the email client actually doing wrong? This decides which repair I run."
+options:
+  - { id: "index-corrupt", label: "Slow, wrong counts, or missing messages", kind: "primary" }
+  - { id: "client-crashing", label: "Crashing, hanging, or data errors",        kind: "primary" }
+  - { id: "send-receive",   label: "Just can't send/receive (no crashes)",       kind: "secondary" }
+  - { id: "skip",           label: "Not sure / skip",                            kind: "cancel" }
+```
+
+`Condition:` only run if at least one corrective (Step 6, 7, or 8) could still apply for the detected client — i.e. Step 3 returned `output.client ∈ {"mail", "outlook"}`. Skip silently when `output.client === "unknown"` (no corrective is reachable). On `skip`/`timeout`, treat as no symptom captured: Steps 6/7 do not fire on the symptom branch (Step 6 may still fire via the Step 5b permission-fix branch).
+
 **Step 6 — Rebuild mail index**
-**Condition:** only if (a) Step 3 returned `output.client === "mail"` (Apple Mail) AND (b) the user reports Mail is slow, showing wrong message counts, or missing messages, OR Step 5b ran (permission fix often warrants an index rebuild).
+**Condition:** only if (a) Step 3 returned `output.client === "mail"` (Apple Mail) AND (b) Step 5c returned `choice === "index-corrupt"`, OR Step 5b ran (permission fix often warrants an index rebuild).
 
 Call `rebuild_mail_index`. G4 auto-triggers a dry-run preview gate (showing which envelope index files would be removed) followed by the consent gate. Explain in the response that Mail will quit and rebuild its index on next launch — this is safe and non-destructive in user terms (no messages are deleted; the index regenerates from the message store on next launch).
 
 **Step 7 — Repair Outlook database**
-**Condition:** only if (a) Step 3 returned `output.client === "outlook"` (Microsoft Outlook) AND (b) the user reports Outlook crashing or showing data errors.
+**Condition:** only if (a) Step 3 returned `output.client === "outlook"` (Microsoft Outlook) AND (b) Step 5c returned `choice === "client-crashing"`. (If Step 5c was skipped, `repair_outlook_database` is destructive/requiresConsent — G4's dry-run preview + consent gate still protect the user, so the planner may also fire it on `output.client === "outlook"` alone when the goal explicitly cites Outlook crashes/corruption.)
 
 Call `repair_outlook_database`. G4 auto-triggers the dry-run preview gate (locating the repair tool + database files) followed by the consent gate. Instruct the user in the response to quit Outlook before confirming.
 
+**Step 7b — Re-check after the first corrective (gate before the last resort)**
+**Condition:** only if Step 6 or Step 7 ran. Skip if neither ran (Step 8 then only fires via the explicit-request branch below).
+
+The Step 6 / Step 7 corrective only takes effect after the user relaunches the client, so whether it worked is observable only from the user's end. Call `wait_for_user_ack` to get that read BEFORE escalating to the destructive preferences reset:
+
+```yaml
+prompt: "I've run the first repair. Relaunch your email client and check — is email working now?"
+options:
+  - { id: "works",        label: "Working now",                kind: "primary" }
+  - { id: "still-broken", label: "Still misbehaving",          kind: "secondary" }
+  - { id: "skip",         label: "Skip — I'll test later",     kind: "cancel" }
+```
+
+On `works`: stop the escalation — do NOT run Step 8; proceed to Step 9/10 to report success. On `still-broken`: proceed to Step 8. On `skip`/`timeout`: do NOT run the destructive reset on a guess; surface the diagnostic packet for IT escalation instead.
+
 **Step 8 — Reset preferences (last resort)**
-**Condition:** only if (a) Steps 6 or 7 ran AND the user reports the client still misbehaves after those repairs, OR (b) the user explicitly asked to reset client preferences.
+**Condition:** only if (a) Step 7b ran AND returned `choice === "still-broken"`, OR (b) the user explicitly asked to reset client preferences.
 
 Call `reset_app_preferences` with `appName` set to the email client name (`appName: "Mail"` for Apple Mail, `appName: "Microsoft Outlook"` for Outlook — `appName` is required, infer it from Step 3's `output.client`). G4 auto-triggers the dry-run preview gate (listing which preference files would be removed) followed by the consent gate. Warn the user clearly in the response: this resets all client settings and they will need to re-add their accounts.
 

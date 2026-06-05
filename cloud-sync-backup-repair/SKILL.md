@@ -116,19 +116,17 @@ This is a tool-less interpretation step — re-read `check_cloud_sync_status` ou
 
 **Step 5 — Pause the target client**
 
-`Condition:` only run if (a) Step 2 picked a cloud-sync target AND (b) the user's intent is either "pause for slow network" OR "un-stick a stuck sync engine" (per Step 4's `stale` interpretation).
+`Condition:` only run if (a) Step 2 picked a cloud-sync target AND (b) Step 4 routed the target into the `status: "stale"` (case c — paused — or case a — crashed) branch, OR the user explicitly asked to pause for a slow network. Skip for `idle` / `error` / `not-installed` (Step 4 already ends those branches).
 
 Call `pause_resume_cloud_sync` with `client: <target>` and `action: "pause"`. The required `client` parameter is one of `"onedrive" | "google-drive" | "dropbox" | "icloud"`. iCloud is rejected programmatically — the tool returns `outcome: "not-supported"` with guidance to use System Settings (Apple Menu → System Settings → Apple ID → iCloud).
 
 The G4 consent gate fires automatically (`requiresConsent: true`) with the dry-run preview surfaced inside the consent card (`supportsDryRun: true`) — the user sees the exact command (e.g. `OneDrive --command pauseSyncing`) before approving. Pause is reversible (Step 6's resume restores active syncing without data loss).
 
-**Slow-network use case**: if the user's intent is to free bandwidth and stay paused until they're back on a fast network, end the run after Step 5 succeeds — do NOT proceed to Step 5b. Surface in the response: *"Sync is paused. Run this skill again with 'resume sync' when you want it back on."*
+Once the pause succeeds, always proceed to Step 5b's ack gate — do NOT decide here whether to resume or stay paused. That decision belongs to the user and is made explicitly via the gate's `choice` (`resume-now` to un-stick now, `leave-paused` to free bandwidth and resume later). The skill does not guess slow-network-vs-stuck intent.
 
-**Stuck-sync use case**: if the user's intent is to un-stick a frozen sync engine, proceed to Step 5b's ack gate and then Step 6's resume call.
+**Step 5b — Wait for the user's resume decision**
 
-**Step 5b — Wait for the sync engine to settle (stuck-sync only)**
-
-`Condition:` only run if Step 5 ran AND the user's intent is "un-stick stuck sync" (NOT the slow-network pause-and-stay use case). Call `wait_for_user_ack`:
+`Condition:` only run if Step 5 ran (the pause succeeded). Always run this gate after a successful pause — the user's `choice` (not a guessed intent) decides whether to resume now or stay paused. Call `wait_for_user_ack`:
 
 ```yaml
 prompt: "I've paused {client}. Wait ~10–30 seconds for the sync engine state to clear, then click below — I'll resume sync and verify it picked up."
