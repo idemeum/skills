@@ -21,6 +21,7 @@ import { promisify } from "util";
 import { z }         from "zod";
 
 import { DARWIN_BROWSER_CACHE_DIR_NAMES, isWin32BrowserVendorDir } from "./_shared/browserCaches";
+import { isDevCacheDir } from "./_shared/devCaches";
 
 const execAsync = promisify(exec);
 
@@ -109,13 +110,14 @@ async function clearAppCacheDarwin(
   const subdirs = dirents.filter((d) => d.isDirectory());
 
   // If appName provided, filter to matching subdirs (case-insensitive).
-  // In the bulk (no appName) disk-cleanup flow, exclude browser cache dirs —
-  // the browser-cache tool owns them; clearing them here deletes Chrome/etc.
-  // before clear_browser_cache runs. An explicit appName target still wins
-  // (the caller asked for that specific app). See _shared/browserCaches.ts.
+  // In the bulk (no appName) disk-cleanup flow, exclude browser + dev cache
+  // dirs — those categories own them; clearing them here deletes Chrome / pip /
+  // Yarn before clear_browser_cache / clear_dev_cache run (and clears dev caches
+  // even when only "App caches" was selected). An explicit appName target still
+  // wins. See _shared/browserCaches.ts and _shared/devCaches.ts.
   const matched = appName
     ? subdirs.filter((d) => d.name.toLowerCase().includes(appName.toLowerCase()))
-    : subdirs.filter((d) => !DARWIN_BROWSER_CACHE_DIR_NAMES.has(d.name));
+    : subdirs.filter((d) => !DARWIN_BROWSER_CACHE_DIR_NAMES.has(d.name) && !isDevCacheDir(d.name));
 
   const caches: CacheEntry[] = await Promise.all(
     matched.map(async (d) => {
@@ -199,10 +201,11 @@ async function clearAppCacheWin32(
       if (!d.isDirectory() || seen.has(d.name.toLowerCase())) continue;
       if (appName && !d.name.toLowerCase().includes(appName.toLowerCase())) continue;
       // In the bulk (no appName) flow, NEVER recurse-delete a browser vendor
-      // dir — it holds the full browser profile, not just cache. The browser
-      // caches inside are cleaned by clear_browser_cache. An explicit appName
-      // target still wins. See _shared/browserCaches.ts.
-      if (!appName && isWin32BrowserVendorDir(d.name)) continue;
+      // dir (holds the full browser profile, not just cache) or a dev cache dir
+      // (pip/Yarn) — those are owned by clear_browser_cache / clear_dev_cache.
+      // An explicit appName target still wins.
+      // See _shared/browserCaches.ts and _shared/devCaches.ts.
+      if (!appName && (isWin32BrowserVendorDir(d.name) || isDevCacheDir(d.name))) continue;
       seen.add(d.name.toLowerCase());
       all.push({ name: d.name, fullPath: nodePath.join(root, d.name), root });
     }

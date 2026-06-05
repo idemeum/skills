@@ -26,6 +26,7 @@ import { execAsync, isDarwin, isWin32 } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 import { formatBytes } from "./_shared/formatBytes";
 import { DARWIN_BROWSER_CACHE_DIR_NAMES, isWin32BrowserVendorDir } from "./_shared/browserCaches";
+import { isDevCacheDir } from "./_shared/devCaches";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -105,11 +106,14 @@ async function getAppCacheInfoDarwin(deadlineMs: number): Promise<GetAppCacheInf
     return { platform: "darwin", caches: [], totalBytes: 0, totalHuman: formatBytes(0), errors };
   }
 
-  // Exclude browser cache dirs — the browser-cache tool owns them. Without
-  // this, app-cache double-counts them in the cleanup card and clear_app_cache
-  // deletes them before clear_browser_cache runs. See _shared/browserCaches.ts.
+  // Exclude browser + dev cache dirs — the browser-cache / dev-cache tools own
+  // them. Without this, app-cache double-counts them in the cleanup card and
+  // clear_app_cache deletes them before clear_browser_cache / clear_dev_cache
+  // run. See _shared/browserCaches.ts and _shared/devCaches.ts.
   const subdirs = dirents.filter(
-    (d) => d.isDirectory() && !DARWIN_BROWSER_CACHE_DIR_NAMES.has(d.name),
+    (d) => d.isDirectory()
+      && !DARWIN_BROWSER_CACHE_DIR_NAMES.has(d.name)
+      && !isDevCacheDir(d.name),
   );
   let anyPartial = false;
   const caches: AppCacheEntry[] = await Promise.all(
@@ -161,10 +165,11 @@ async function getAppCacheInfoWin32(): Promise<GetAppCacheInfoResult> {
     }
     for (const d of dirents) {
       if (!d.isDirectory() || seen.has(d.name.toLowerCase())) continue;
-      // Exclude browser vendor dirs — they hold profile data, not just cache,
-      // and clear_app_cache deletes top-level dirs wholesale. Owned by
-      // clear_browser_cache. See _shared/browserCaches.ts.
-      if (isWin32BrowserVendorDir(d.name)) continue;
+      // Exclude browser vendor dirs (hold profile data, not just cache, and
+      // clear_app_cache deletes top-level dirs wholesale) and dev cache dirs
+      // (pip/Yarn) — owned by clear_browser_cache / clear_dev_cache.
+      // See _shared/browserCaches.ts and _shared/devCaches.ts.
+      if (isWin32BrowserVendorDir(d.name) || isDevCacheDir(d.name)) continue;
       seen.add(d.name.toLowerCase());
       all.push({ name: d.name, fullPath: nodePath.join(root, d.name) });
     }
