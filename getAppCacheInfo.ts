@@ -25,6 +25,7 @@ import * as nodePath from "path";
 import { execAsync, isDarwin, isWin32 } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 import { formatBytes } from "./_shared/formatBytes";
+import { DARWIN_BROWSER_CACHE_DIR_NAMES } from "./_shared/browserCaches";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -104,7 +105,12 @@ async function getAppCacheInfoDarwin(deadlineMs: number): Promise<GetAppCacheInf
     return { platform: "darwin", caches: [], totalBytes: 0, totalHuman: formatBytes(0), errors };
   }
 
-  const subdirs = dirents.filter((d) => d.isDirectory());
+  // Exclude browser cache dirs — the browser-cache tool owns them. Without
+  // this, app-cache double-counts them in the cleanup card and clear_app_cache
+  // deletes them before clear_browser_cache runs. See _shared/browserCaches.ts.
+  const subdirs = dirents.filter(
+    (d) => d.isDirectory() && !DARWIN_BROWSER_CACHE_DIR_NAMES.has(d.name),
+  );
   let anyPartial = false;
   const caches: AppCacheEntry[] = await Promise.all(
     subdirs.map(async (d) => {

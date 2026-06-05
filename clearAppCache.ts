@@ -20,6 +20,8 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
+import { DARWIN_BROWSER_CACHE_DIR_NAMES } from "./_shared/browserCaches";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -106,10 +108,14 @@ async function clearAppCacheDarwin(
 
   const subdirs = dirents.filter((d) => d.isDirectory());
 
-  // If appName provided, filter to matching subdirs (case-insensitive)
+  // If appName provided, filter to matching subdirs (case-insensitive).
+  // In the bulk (no appName) disk-cleanup flow, exclude browser cache dirs —
+  // the browser-cache tool owns them; clearing them here deletes Chrome/etc.
+  // before clear_browser_cache runs. An explicit appName target still wins
+  // (the caller asked for that specific app). See _shared/browserCaches.ts.
   const matched = appName
     ? subdirs.filter((d) => d.name.toLowerCase().includes(appName.toLowerCase()))
-    : subdirs;
+    : subdirs.filter((d) => !DARWIN_BROWSER_CACHE_DIR_NAMES.has(d.name));
 
   const caches: CacheEntry[] = await Promise.all(
     matched.map(async (d) => {
