@@ -17,6 +17,7 @@ import * as os       from "os";
 import * as nodePath from "path";
 
 import { execAsync, isDarwin } from "./_shared/platform";
+import { formatBytes } from "./_shared/formatBytes";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -50,6 +51,9 @@ export interface GetXcodeDerivedDataInfoResult {
   supported:  boolean;
   targets:    XcodeTargetInfo[];
   totalBytes: number;
+  /** Pre-formatted size of `totalBytes` (decimal/SI). The disk-cleanup card
+   *  substitutes this verbatim into the Xcode category's {size} placeholder. */
+  totalHuman: string;
   errors?:    Array<{ scope: string; message: string }>;
 }
 
@@ -102,7 +106,7 @@ async function getXcodeDerivedDataInfoDarwin(): Promise<GetXcodeDerivedDataInfoR
   targets.sort((a, b) => b.sizeBytes - a.sizeBytes);
   const totalBytes = targets.reduce((s, t) => s + t.sizeBytes, 0);
 
-  return { platform: "darwin", supported: true, targets, totalBytes };
+  return { platform: "darwin", supported: true, targets, totalBytes, totalHuman: formatBytes(totalBytes) };
 }
 
 // -- Exported run -------------------------------------------------------------
@@ -114,6 +118,7 @@ export async function run(_args: Record<string, never> = {}): Promise<GetXcodeDe
       supported:  false,
       targets:    [],
       totalBytes: 0,
+      totalHuman: formatBytes(0),
     };
   }
   return getXcodeDerivedDataInfoDarwin();

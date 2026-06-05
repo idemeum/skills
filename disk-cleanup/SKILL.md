@@ -92,7 +92,7 @@ Call `get_browser_cache_info` to report browser cache sizes (Chrome, Safari, Fir
 Always run these read-only probes — do NOT gate them on a guess about whether the user is "a developer." They self-report zero on machines that don't have the relevant tooling, and the Step 9 card's empty-category filter drops any row whose reclaimable bytes are 0, so a non-developer machine simply won't show these categories. Skipping them on a hunch risks silently missing real reclaimable space (e.g. a multi-GB npm cache).
 - Call `get_dev_cache_info` to report npm/yarn/pnpm/pip/gradle/maven cache sizes. Read-only; returns `totalBytes: 0` when no dev caches exist.
 - Call `get_docker_disk_usage` to report reclaimable bytes via `docker system df`. Read-only; returns `dockerInstalled: false` and `totalReclaimableBytes: 0` when Docker is unavailable.
-- Call `get_xcode_derived_data_info` on macOS to report DerivedData / Archives / DeviceSupport sizes. Read-only; returns `supported: false` on non-darwin.
+- Call `get_xcode_derived_data_info` to report DerivedData / Archives / DeviceSupport sizes. Read-only; returns `supported: false` and `totalBytes: 0` on non-darwin, so its card row auto-drops there.
 
 **Step 8 — Check Trash contents (always include)**
 This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space, and the consolidated `present_preview` card lets the user opt in or out of emptying it. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
@@ -139,8 +139,15 @@ categories:
 
   - id: dev-cache
     label: "Developer caches"
-    summary: "npm, yarn, pip, gradle, Xcode DerivedData ({size})"
+    summary: "npm, yarn, pip, gradle ({size})"
     bytesFromTool: get_dev_cache_info
+    destructive: true
+    defaultSelected: false
+
+  - id: xcode
+    label: "Xcode DerivedData"
+    summary: "DerivedData, archives, device support ({size})"
+    bytesFromTool: get_xcode_derived_data_info
     destructive: true
     defaultSelected: false
 
@@ -179,6 +186,8 @@ Data lineage (executor LLM substitutes `{placeholder}` display tokens at runtime
   - `{size}` — `output.totalHuman` from the `get_browser_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
 - inside dev-cache:
   - `{size}` — `output.totalHuman` from the `get_dev_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
+- inside xcode:
+  - `{size}` — `output.totalHuman` from the `get_xcode_derived_data_info` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute). The tool returns `totalBytes: 0` / `supported: false` off macOS, so the gate drops this row there.
 - inside docker:
   - `{size}` — `output.totalReclaimableHuman` from the `get_docker_disk_usage` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute). Omit the category entirely when `dockerInstalled` is false.
 - inside trash:
@@ -196,7 +205,8 @@ For each category id in Step 9's `selected` output, call the relevant tool. G4 m
 - `"old-downloads"`  → collect every `oldFiles[].path` from the `find_old_downloads` output and call `delete_files` **once** with `paths: [<all old-download paths>]`. A single batched call produces one dry-run preview (listing every stale download) and one consent prompt — never iterate per file.
 - `"app-cache"`      → call `clear_app_cache`
 - `"browser-cache"`  → call `clear_browser_cache` with `browser: "all"`
-- `"dev-cache"`      → call `clear_dev_cache`; on macOS also call `clear_xcode_derived_data`
+- `"dev-cache"`      → call `clear_dev_cache`
+- `"xcode"`          → call `clear_xcode_derived_data` (macOS only; no-ops with `supported: false` elsewhere)
 - `"docker"`         → call `prune_docker`
 - `"trash"`          → call `empty_trash`
 
