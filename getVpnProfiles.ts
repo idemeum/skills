@@ -22,6 +22,8 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
+import { enumerateVendorVpnProfilesDarwin } from "./_shared/vpnProfiles";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -116,49 +118,20 @@ async function getVpnProfilesDarwin(): Promise<GetVpnProfilesResult> {
     });
   }
 
-  // Check for Cisco AnyConnect profiles
-  const anyconnectDir = "/opt/cisco/anyconnect/profile";
-  try {
-    const files = await fs.readdir(anyconnectDir);
-    for (const file of files) {
-      if (!file.endsWith(".xml")) continue;
-      const content = await fs.readFile(nodePath.join(anyconnectDir, file), "utf8");
-      const hostMatch = content.match(/<HostAddress>([^<]+)<\/HostAddress>/);
-      const nameMatch = content.match(/<HostName>([^<]+)<\/HostName>/);
-      profiles.push({
-        name:        nameMatch ? nameMatch[1] : file.replace(".xml", ""),
-        type:        "Cisco AnyConnect",
-        server:      hostMatch ? hostMatch[1] : null,
-        protocol:    "SSL/IKEv2",
-        isConnected: false,
-        lastUsed:    null,
-      });
-    }
-  } catch { /* directory not present */ }
-
-  // Check for GlobalProtect profiles
-  const gpDir = "/Library/Application Support/Palo Alto Networks/GlobalProtect";
-  try {
-    const files = await fs.readdir(gpDir);
-    for (const file of files) {
-      if (!file.endsWith(".xml") && !file.endsWith(".cfg")) continue;
-      let server: string | null = null;
-      try {
-        const content   = await fs.readFile(nodePath.join(gpDir, file), "utf8");
-        const hostMatch = content.match(/<portal>([^<]+)<\/portal>/) ??
-                          content.match(/<server>([^<]+)<\/server>/);
-        if (hostMatch) server = hostMatch[1];
-      } catch { /* ignore read errors */ }
-      profiles.push({
-        name:        file.replace(/\.(xml|cfg)$/, ""),
-        type:        "Palo Alto GlobalProtect",
-        server,
-        protocol:    "SSL",
-        isConnected: false,
-        lastUsed:    null,
-      });
-    }
-  } catch { /* directory not present */ }
+  // Vendor-managed profiles (Cisco AnyConnect / Palo Alto GlobalProtect) — shared
+  // with reconnect_vpn via _shared/vpnProfiles.ts so the two tools agree on which
+  // profiles exist (reconnect_vpn drives scutil and can't reconnect these, but it
+  // must recognise them rather than report "Profile not found").
+  for (const v of await enumerateVendorVpnProfilesDarwin()) {
+    profiles.push({
+      name:        v.name,
+      type:        v.type,
+      server:      v.server,
+      protocol:    v.type === "Cisco AnyConnect" ? "SSL/IKEv2" : "SSL",
+      isConnected: false,
+      lastUsed:    null,
+    });
+  }
 
   return { profiles };
 }

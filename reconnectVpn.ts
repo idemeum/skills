@@ -18,6 +18,8 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
+import { detectVendorForProfile, type VpnVendor } from "./_shared/vpnProfiles";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -53,6 +55,11 @@ interface ReconnectVpnResult {
   reconnected:  boolean;
   dryRun:       boolean;
   newStatus:    string | null;
+  /** Set when the profile is a vendor-managed VPN (AnyConnect / GlobalProtect)
+   *  that scutil cannot drive — the corrective can't reconnect it and the user
+   *  must use the vendor client. Distinct from a genuinely missing profile. */
+  vendorManaged?: VpnVendor;
+  message?:       string;
 }
 
 // -- PowerShell helper --------------------------------------------------------
@@ -83,6 +90,26 @@ async function reconnectVpnDarwin(
   } catch { /* ignore */ }
 
   if (!profileExists) {
+    // Not a native (scutil) profile. Before declaring it missing, check whether
+    // it's a vendor-managed profile that get_vpn_profiles legitimately surfaced —
+    // scutil can't list OR drive AnyConnect / GlobalProtect, so reconnecting must
+    // happen via the vendor client. Return accurate guidance instead of a
+    // misleading "Profile not found".
+    const vendor = await detectVendorForProfile(profileName);
+    if (vendor) {
+      return {
+        profileName,
+        disconnected: false,
+        reconnected:  false,
+        dryRun,
+        newStatus:    "vendor-managed — not reconnected",
+        vendorManaged: vendor,
+        message:
+          `"${profileName}" is a ${vendor} VPN managed by its own client; ` +
+          `macOS scutil cannot reconnect it. Quit and relaunch the ${vendor} ` +
+          `app (or use its menu-bar Connect) to re-establish the tunnel.`,
+      };
+    }
     throw new Error(
       `[reconnect_vpn] Profile not found: "${profileName}". ` +
       "Use get_vpn_profiles to list available profiles.",

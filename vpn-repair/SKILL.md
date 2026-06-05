@@ -120,6 +120,8 @@ Fallback source if Step 2 returned no profiles: Step 1's `check_vpn_status.clien
 
 Surface the MFA/SAML warning (see Edge Cases) in the rationale before the consent gate fires — a reconnect on those VPNs triggers a browser auth window the user needs to anticipate.
 
+If `reconnect_vpn` returns `vendorManaged` (a Cisco AnyConnect / Palo Alto GlobalProtect profile — scutil cannot drive these), it does NOT reconnect: surface the returned `message` verbatim (reconnect via the vendor client) and treat the step as "guidance given," not a failure. Step 10's DNS flush will skip because the reconnect did not succeed; proceed to verification.
+
 **Step 10 — Flush DNS after reconnect**
 Call `flush_dns_cache` to clear any stale DNS entries from before the VPN tunnel was established. DNS entries cached before VPN connect often point to external IPs instead of internal ones, making internal hostnames unreachable even when the tunnel is up.
 
