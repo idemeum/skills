@@ -20,12 +20,37 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
-import { DARWIN_BROWSER_CACHE_DIR_NAMES, isWin32BrowserVendorDir } from "./_shared/browserCaches";
-import { isDevCacheDir } from "./_shared/devCaches";
+import {
+  DARWIN_BROWSER_CACHE_DIR_NAMES,
+  WIN32_BROWSER_VENDOR_DIR_NAMES,
+  isWin32BrowserVendorDir,
+} from "./_shared/browserCaches";
+import { DEV_CACHE_DIR_NAMES, isDevCacheDir } from "./_shared/devCaches";
+import type { Footprint } from "./_shared/footprint";
 
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
+
+// Footprint excludes are derived from the SAME ownership sets the runtime
+// filter uses, so the declared footprint can never drift from actual behavior.
+const APP_CACHE_FOOTPRINT: Footprint = {
+  kind: "sweep",
+  darwin: {
+    roots: ["~/Library/Caches"],
+    excludes: [
+      ...[...DARWIN_BROWSER_CACHE_DIR_NAMES].map((n) => `~/Library/Caches/${n}`),
+      ...[...DEV_CACHE_DIR_NAMES].map((n) => `~/Library/Caches/${n}`),
+    ],
+  },
+  win32: {
+    roots: ["%LOCALAPPDATA%", "%TEMP%"],
+    excludes: [
+      ...[...WIN32_BROWSER_VENDOR_DIR_NAMES].map((n) => `%LOCALAPPDATA%/${n}`),
+      ...[...DEV_CACHE_DIR_NAMES].map((n) => `%LOCALAPPDATA%/${n}`),
+    ],
+  },
+};
 
 export const meta = {
   name: "clear_app_cache",
@@ -40,6 +65,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  footprint:       APP_CACHE_FOOTPRINT,
   schema: {
     appName: z
       .string()

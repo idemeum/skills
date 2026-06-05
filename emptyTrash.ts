@@ -45,6 +45,11 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess", "Automation"],
+  footprint: {
+    kind: "sweep",
+    darwin: { roots: ["~/.Trash"] },
+    win32:  { roots: ["%SYSTEMDRIVE%/$Recycle.Bin"] },
+  },
   schema: {
     dryRun: z
       .boolean()

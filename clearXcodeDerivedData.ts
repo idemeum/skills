@@ -37,6 +37,12 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  footprint: {
+    kind: "sweep",
+    // ~/Library/Developer/Xcode — outside ~/Library/Caches, so no overlap with
+    // any cache sweeper. macOS only.
+    darwin: { roots: ["~/Library/Developer/Xcode"] },
+  },
   schema: {
     what: z
       .array(z.enum(["derivedData", "archives", "deviceSupport", "all"]))

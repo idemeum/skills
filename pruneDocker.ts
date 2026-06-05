@@ -36,6 +36,8 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  // Acts on the Docker daemon, not the filesystem — never overlaps a cache root.
+  footprint:       { kind: "external" },
   schema: {
     what: z
       .array(z.enum(["containers", "images", "volumes", "networks", "all"]))

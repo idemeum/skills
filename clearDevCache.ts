@@ -40,6 +40,19 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  footprint: {
+    kind: "sweep",
+    // pip/Yarn live under ~/Library/Caches (excused by clear_app_cache's DEV
+    // excludes); npm/maven/gradle/pnpm live outside it (no overlap).
+    darwin: { roots: [
+      "~/.npm", "~/.m2/repository", "~/.gradle/caches", "~/Library/pnpm",
+      "~/Library/Caches/pip", "~/Library/Caches/Yarn",
+    ] },
+    win32: { roots: [
+      "%USERPROFILE%/.m2/repository", "%USERPROFILE%/.gradle/caches",
+      "%LOCALAPPDATA%/npm-cache", "%LOCALAPPDATA%/pip", "%LOCALAPPDATA%/Yarn",
+    ] },
+  },
   schema: {
     tools: z
       .array(z.enum(["npm", "yarn", "pnpm", "pip", "gradle", "maven", "all"]))

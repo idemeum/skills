@@ -34,6 +34,23 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  footprint: {
+    kind: "sweep",
+    // Subtrees of the dirs clear_app_cache excludes (Google/com.apple.Safari/
+    // Firefox/Microsoft Edge on darwin; Google/Mozilla/Microsoft on win32), so
+    // the app-cache↔browser-cache overlap is excused by those excludes.
+    darwin: { roots: [
+      "~/Library/Caches/Google/Chrome",
+      "~/Library/Caches/com.apple.Safari",
+      "~/Library/Caches/Firefox",
+      "~/Library/Caches/Microsoft Edge",
+    ] },
+    win32: { roots: [
+      "%LOCALAPPDATA%/Google/Chrome/User Data/Default/Cache",
+      "%LOCALAPPDATA%/Mozilla/Firefox/Profiles",
+      "%LOCALAPPDATA%/Microsoft/Edge/User Data/Default/Cache",
+    ] },
+  },
   schema: {
     browser: z
       .enum(["chrome", "safari", "firefox", "edge", "all"])

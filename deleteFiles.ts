@@ -39,6 +39,10 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  // Acts only on explicitly enumerated paths and is idempotent on missing paths
+  // (a vanished path returns a per-path failure, never throws), so overlapping a
+  // cache sweeper is benign — exempt from the disjointness check.
+  footprint:       { kind: "targeted" },
   schema: {
     paths: z
       .array(z.string().min(1))
