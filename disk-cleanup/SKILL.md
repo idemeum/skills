@@ -5,6 +5,7 @@ license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
   - disk_scan
+  - get_disk_usage
   - get_large_files
   - find_duplicate_files
   - find_old_downloads
