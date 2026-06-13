@@ -18,6 +18,7 @@ import * as os       from "os";
 import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
+import { isAgentSelf } from "./_shared/processIdentity";
 
 const execAsync = promisify(exec);
 
@@ -275,6 +276,15 @@ export async function run({
 } = {}) {
   if (!name && !pid) {
     throw new Error("[restart_process] Either name or pid must be provided");
+  }
+
+  // Never restart the agent itself — killing it would terminate the running
+  // agent before any relaunch could complete.
+  if (isAgentSelf(name, pid)) {
+    return {
+      killed: false, relaunched: false, newPid: null,
+      message: "Refused: cannot restart the AI Support Agent itself.",
+    };
   }
 
   const platform = os.platform();

@@ -26,8 +26,10 @@ const execAsync = promisify(exec);
 export const meta = {
   name: "list_printers",
   description:
-    "Lists all configured printers with their status, type (local/network), and " +
-    "current queue depth. Use at the start of any printer troubleshooting workflow.",
+    "Lists all configured printers with a canonical status (idle/processing/stopped/" +
+    "disabled/offline/error/unknown), canonical type (network/local/virtual), the " +
+    "host (IP/hostname when derivable), and current queue depth. Use at the start of " +
+    "any printer troubleshooting workflow.",
   riskLevel:       "low",
   destructive:     false,
   requiresConsent: false,
@@ -41,9 +43,13 @@ export const meta = {
 
 interface PrinterEntry {
   name:       string;
+  /** Canonical across platforms: idle | processing | stopped | disabled | offline | error | unknown */
   status:     string;
   isDefault:  boolean;
+  /** Canonical across platforms: network | local | virtual | unknown */
   type:       string;
+  /** IP/hostname when derivable from the device URI/port (network printers); null for USB/virtual/Bonjour. */
+  host:       string | null;
   queueDepth: number;
 }
 
@@ -121,25 +127,27 @@ async function listPrintersDarwin(): Promise<ListPrintersResult> {
     const name   = nameMatch[1];
     const status = statusMatch ? statusMatch[1] : "unknown";
 
-    // Determine type from the device URI (USB / network / virtual).
-    // The URI itself isn't returned — it contains printer serial numbers
-    // which (a) aren't useful to the user, (b) trip the sanitiser's Layer 4
-    // entropy heuristic, and (c) overlap entirely with the `type` field.
+    // Resolve canonical type + the host from the device URI. The URI is read
+    // but only the host (IP/hostname) is surfaced — the full URI carries printer
+    // serial numbers (PII + Layer-4 entropy). For ipp/ipps/socket/lpd the host
+    // is right there in the authority; Bonjour (dnssd://) resolves via mDNS so
+    // the URI has no literal host (left null → Step 3 fallback prompt).
     let type = "unknown";
+    let host: string | null = null;
     try {
       const { stdout: uriOut } = await execAsync(
         `lpstat -v "${name.replace(/"/g, '\\"')}" 2>/dev/null`,
         { maxBuffer: 1 * 1024 * 1024 },
       );
-      if (uriOut.includes("ipp://") || uriOut.includes("ipps://")) {
-        type = "network (IPP)";
-      } else if (uriOut.includes("lpd://")) {
-        type = "network (LPD)";
-      } else if (uriOut.includes("socket://")) {
-        type = "network (socket)";
-      } else if (uriOut.includes("usb://")) {
-        type = "local (USB)";
-      } else if (uriOut.includes("file:") || uriOut.includes("pdf")) {
+      if (/(?:ipps?|socket|lpd):\/\//i.test(uriOut)) {
+        type = "network";
+        const hm = uriOut.match(/(?:ipps?|socket|lpd):\/\/(?:[^@/\s]*@)?([^/\s:?]+)/i);
+        host = hm ? hm[1] : null;
+      } else if (/dnssd:\/\//i.test(uriOut)) {
+        type = "network";          // Bonjour — host not literal in the URI
+      } else if (/usb:\/\//i.test(uriOut)) {
+        type = "local";
+      } else if (/file:|\bpdf\b/i.test(uriOut)) {
         type = "virtual";
       } else {
         type = "local";
@@ -148,9 +156,10 @@ async function listPrintersDarwin(): Promise<ListPrintersResult> {
 
     printers.push({
       name,
-      status,
+      status,            // idle | stopped | processing | disabled | unknown
       isDefault:  name === defaultPrinter,
       type,
+      host,
       queueDepth: queueDepths.get(name) ?? 0,
     });
   }
@@ -189,13 +198,47 @@ $default  = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows NT\\Cur
     try {
       const arr = JSON.parse(outer.printers);
       const list = Array.isArray(arr) ? arr : [arr];
-      printers = (list as Record<string, unknown>[]).map((p) => ({
-        name:       String(p.Name          ?? "Unknown"),
-        status:     String(p.PrinterStatus ?? "Unknown"),
-        isDefault:  String(p.Name) === defaultPrinter,
-        type:       p.Shared ? "network (shared)" : String(p.Type ?? "local"),
-        queueDepth: typeof p.JobCount === "number" ? p.JobCount : 0,
-      }));
+      printers = (list as Record<string, unknown>[]).map((p) => {
+        // Normalise Windows PrinterStatus into the canonical vocabulary.
+        const rawStatus = String(p.PrinterStatus ?? "").toLowerCase();
+        const status =
+          rawStatus.includes("offline")  ? "offline"    :
+          rawStatus.includes("error")    ? "error"      :
+          rawStatus.includes("paused")   ? "stopped"    :
+          rawStatus.includes("printing") ? "processing" :
+          (rawStatus.includes("normal") || rawStatus.includes("idle")) ? "idle" :
+          "unknown";
+
+        // Windows classes TCP/IP printers as Type "Local" with an IP-bearing
+        // port, so derive type + host from PortName, not Type. (USB/LPT/COM are
+        // truly local; WSD and IP/hostname ports are network.)
+        const port = String(p.PortName ?? "");
+        let host: string | null = null;
+        let type: string;
+        if (/^(?:usb|lpt|com|dot4|nul|file|portprompt)/i.test(port)) {
+          type = "local";
+        } else if (/^wsd/i.test(port)) {
+          type = "network";
+        } else {
+          const h = port.replace(/^IP_/i, "");
+          if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(h) || /^[A-Za-z][A-Za-z0-9.\-]+$/.test(h)) {
+            type = "network";
+            host = h;
+          } else {
+            type = (p.Shared || String(p.Type) === "Connection") ? "network" : "local";
+          }
+        }
+        if (p.Shared) type = "network";
+
+        return {
+          name:       String(p.Name ?? "Unknown"),
+          status,
+          isDefault:  String(p.Name) === defaultPrinter,
+          type,
+          host,
+          queueDepth: typeof p.JobCount === "number" ? p.JobCount : 0,
+        };
+      });
     } catch { /* ignore */ }
   }
 

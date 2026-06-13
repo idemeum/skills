@@ -133,13 +133,19 @@ async function addPrinterWin32(
   const uri        = buildUri(host, protocol);
   const safeName   = name.replace(/'/g, "''");
   const safeHost   = host.replace(/'/g, "''");
+  const safePort   = `${safeName}_Port`;
 
+  // Install driverless via the Microsoft IPP Class Driver (the Windows
+  // equivalent of IPP Everywhere), matching this tool's documented command.
+  // The previous 'Generic / Text Only' driver produced text-only garbage on
+  // real printers. NOTE: win32 uses the IPP class driver regardless of
+  // `protocol` — a legacy lpd/socket printer that needs a vendor driver must be
+  // added with a specific PPD/INF by IT.
   const ps = `
 $ErrorActionPreference = 'Stop'
-# Add printer port (ignore error if already exists)
-try { Add-PrinterPort -Name '${safeHost}' -PrinterHostAddress '${safeHost}' } catch {}
-# Add printer
-Add-Printer -Name '${safeName}' -DriverName 'Generic / Text Only' -PortName '${safeHost}'
+# Add a TCP/IP port pointing at the printer (idempotent).
+try { Add-PrinterPort -Name '${safePort}' -PrinterHostAddress '${safeHost}' } catch {}
+Add-Printer -Name '${safeName}' -DriverName 'Microsoft IPP Class Driver' -PortName '${safePort}'
 'success'`.trim();
 
   let added = false;
@@ -154,7 +160,7 @@ Add-Printer -Name '${safeName}' -DriverName 'Generic / Text Only' -PortName '${s
 
   const message = added
     ? `Printer "${name}" added successfully. URI would be: ${uri}`
-    : `Failed to add printer "${name}": ${errorMsg}. Ensure you have administrator privileges and the Generic/Text Only driver is available.`;
+    : `Failed to add printer "${name}": ${errorMsg}. Ensure you have administrator privileges; the Microsoft IPP Class Driver ships with Windows 10/11.`;
 
   return { name, uri, added, message };
 }

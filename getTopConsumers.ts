@@ -18,6 +18,7 @@ import { exec }               from "child_process";
 import { promisify }          from "util";
 import { z }                  from "zod";
 import { formatBytesBinary }  from "./_shared/formatBytes";
+import { isAgentSelf, isSystemProcess } from "./_shared/processIdentity";
 
 const execAsync = promisify(exec);
 
@@ -57,6 +58,8 @@ interface ConsumerEntry {
   /** Pre-formatted memory string (binary units — matches Activity Monitor / Task Manager). */
   memoryHuman:   string;
   combinedScore: number;
+  /** True for critical OS processes that must NOT be killed (surface as a note, never an action). */
+  isSystem:      boolean;
 }
 
 // -- PowerShell helper --------------------------------------------------------
@@ -94,9 +97,13 @@ async function getTopConsumersDarwin(
       const fullComm = parts.slice(3).join(" ");
       const name     = fullComm.split("/").at(-1) ?? fullComm;
       if (isNaN(pid)) return [];
+      // Never surface the agent's own process(es) — it must not be offered for
+      // kill/restart (would terminate the agent mid-run).
+      if (isAgentSelf(name, pid, fullComm)) return [];
       const memoryMb    = Math.round((rssKb / 1024) * 10) / 10;
       const memoryHuman = formatBytesBinary(rssKb * 1024);
-      return [{ pid, name, cpuPercent: cpu, memoryMb, memoryHuman, combinedScore: 0 }];
+      return [{ pid, name, cpuPercent: cpu, memoryMb, memoryHuman, combinedScore: 0,
+                isSystem: isSystemProcess(name, fullComm) }];
     });
 
   // Normalise and compute combined score
@@ -138,8 +145,10 @@ Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit
 
   const raw    = await runPS(ps);
   if (!raw) return [];
-  const parsed = JSON.parse(raw) as Omit<ConsumerEntry, "combinedScore">[] | Omit<ConsumerEntry, "combinedScore">;
-  const arr    = Array.isArray(parsed) ? parsed : [parsed];
+  const parsed = JSON.parse(raw) as Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">[] | Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">;
+  const rawArr = Array.isArray(parsed) ? parsed : [parsed];
+  // Never surface the agent's own process(es) (no exec path on win32 — match by name/pid).
+  const arr    = rawArr.filter(r => !isAgentSelf(r.name, r.pid));
 
   const maxCpu = Math.max(...arr.map(r => r.cpuPercent), 1);
   const maxMem = Math.max(...arr.map(r => r.memoryMb), 1);
@@ -150,6 +159,7 @@ Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit
     combinedScore: Math.round(
       ((r.cpuPercent / maxCpu) * 50 + (r.memoryMb / maxMem) * 50) * 100,
     ) / 100,
+    isSystem:      isSystemProcess(r.name),
   }));
 }
 

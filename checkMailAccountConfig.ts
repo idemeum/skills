@@ -6,7 +6,13 @@
  *
  * Platform strategy
  * -----------------
- * darwin Mail:    read ~/Library/Mail/V{n}/MailData/Accounts.plist via plutil
+ * darwin Mail:    enumerate accounts via Mail's AppleScript interface (JXA).
+ *                 Modern macOS (since ~OS X Yosemite) no longer stores accounts
+ *                 in ~/Library/Mail/.../Accounts.plist — they live in the system
+ *                 Accounts DB owned by accountsd and are exposed through Mail's
+ *                 scripting dictionary. This also covers OAuth providers (Gmail,
+ *                 Microsoft 365) added via Internet Accounts and needs only the
+ *                 Apple Events automation grant (Tier-1 auto-prompt), not FDA.
  * darwin Outlook: read Outlook 15 Profiles via plutil
  * win32:          PowerShell check Outlook profile via registry
  *
@@ -37,7 +43,10 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
-  tccCategories:   ["FullDiskAccess"],
+  // No tccCategories: the macOS Mail path uses Apple Events (Tier-1 auto-prompt),
+  // and the Outlook path reads the user's own Group Container (not TCC-gated).
+  // Declaring FullDiskAccess here would make G4's preflight abort the run when
+  // FDA is absent — needlessly, since neither path requires it.
   schema: {
     client: z
       .enum(["mail", "outlook", "auto"])
@@ -75,23 +84,6 @@ async function runPS(script: string): Promise<string> {
 
 // -- darwin helpers -----------------------------------------------------------
 
-async function findMailDataDir(): Promise<string | null> {
-  const mailBase = nodePath.join(os.homedir(), "Library", "Mail");
-  try {
-    const entries = await fs.readdir(mailBase);
-    // Prefer highest version number (V10, V9, ...)
-    const vDirs = entries
-      .filter(e => /^V\d+$/.test(e))
-      .sort((a, b) => parseInt(b.slice(1), 10) - parseInt(a.slice(1), 10));
-    if (vDirs.length > 0) {
-      return nodePath.join(mailBase, vDirs[0], "MailData");
-    }
-  } catch {
-    // Mail directory not found
-  }
-  return null;
-}
-
 async function readPlistAsJson(plistPath: string): Promise<Record<string, unknown> | null> {
   try {
     const { stdout } = await execAsync(
@@ -104,39 +96,100 @@ async function readPlistAsJson(plistPath: string): Promise<Record<string, unknow
   }
 }
 
-async function getMailAccounts(filterEmail?: string): Promise<AccountInfo[]> {
-  const mailDataDir = await findMailDataDir();
-  if (!mailDataDir) return [];
+// JXA enumerated against Mail's scripting dictionary. Returns a JSON array of
+// account records, or {error} if Mail itself rejects the request. Per-property
+// try/catch keeps one unreadable field from dropping the whole account.
+const MAIL_JXA = `
+(() => {
+  const Mail = Application("Mail");
+  let accts;
+  try { accts = Mail.accounts(); } catch (e) { return JSON.stringify({ error: String(e) }); }
+  const out = [];
+  for (const a of accts) {
+    let enabled = true;  try { enabled = a.enabled(); } catch (e) {}
+    if (enabled === false) continue;
+    let emails = [];     try { emails = a.emailAddresses() || []; } catch (e) {}
+    let userName = "";   try { userName = a.userName() || ""; } catch (e) {}
+    let server = null;   try { server = a.serverName(); } catch (e) {}
+    let port = null;     try { port = a.port(); } catch (e) {}
+    let ssl = null;      try { ssl = a.usesSsl(); } catch (e) {}
+    let smtp = null;     try { const d = a.deliveryAccount(); if (d) smtp = d.serverName(); } catch (e) {}
+    out.push({
+      email:      emails[0] || userName || null,
+      imapServer: server || null,
+      smtpServer: smtp || null,
+      port:       (typeof port === "number")  ? port : null,
+      ssl:        (typeof ssl  === "boolean") ? ssl  : null,
+    });
+  }
+  return JSON.stringify(out);
+})();
+`;
 
-  const plistPath = nodePath.join(mailDataDir, "Accounts.plist");
-  const data      = await readPlistAsJson(plistPath);
-  if (!data) return [];
+async function runJxa(script: string): Promise<string> {
+  const tmp = nodePath.join(os.tmpdir(), `mailcfg-${process.pid}-${Date.now()}.js`);
+  await fs.writeFile(tmp, script, "utf8");
+  try {
+    const { stdout } = await execAsync(`osascript -l JavaScript '${tmp}'`, {
+      timeout:    30_000,
+      maxBuffer:  5 * 1024 * 1024,
+    });
+    return stdout.trim();
+  } finally {
+    await fs.unlink(tmp).catch(() => undefined);
+  }
+}
 
-  const rawAccounts = (data["MailAccounts"] ?? data["Accounts"] ?? []) as Record<string, unknown>[];
+async function getMailAccounts(filterEmail?: string): Promise<{ accounts: AccountInfo[]; error: string | null }> {
+  let raw: string;
+  try {
+    raw = await runJxa(MAIL_JXA);
+  } catch (err) {
+    // Never silently swallow an authorization failure — surface it so the
+    // response can guide the user to grant the Automation permission.
+    const msg = (err as { stderr?: string; message?: string }).stderr
+      || (err instanceof Error ? err.message : String(err));
+    if (/-1743|Not authori[sz]ed|not allowed to send Apple events/i.test(msg)) {
+      return {
+        accounts: [],
+        error: "Automation permission required: allow this app to control Mail "
+             + "(System Settings → Privacy & Security → Automation), then retry.",
+      };
+    }
+    return { accounts: [], error: `Could not read Mail accounts: ${msg.split("\n")[0]}` };
+  }
+
+  if (!raw) return { accounts: [], error: null };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { accounts: [], error: null };
+  }
+
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && "error" in parsed) {
+    return { accounts: [], error: String((parsed as { error: unknown }).error) };
+  }
+
+  const rawAccounts = Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
   const accounts: AccountInfo[] = [];
 
   for (const acct of rawAccounts) {
-    const email      = String(acct["EmailAddresses"]
-      ? (acct["EmailAddresses"] as string[])[0] ?? ""
-      : acct["AccountEmailAddress"] ?? "");
-    const imapServer = String(acct["Hostname"] ?? acct["IMAPHostName"] ?? "");
-    const smtpServer = String((acct["SMTPAccount"] as Record<string, unknown>)?.["Hostname"] ?? "");
-    const port       = acct["PortNumber"] ? Number(acct["PortNumber"]) : null;
-    const ssl        = acct["SSLEnabled"] !== undefined ? Boolean(acct["SSLEnabled"]) : null;
-
+    const email = String(acct["email"] ?? "");
     if (!email) continue;
     if (filterEmail && !email.toLowerCase().includes(filterEmail.toLowerCase())) continue;
 
     accounts.push({
       email,
-      imapServer: imapServer || null,
-      smtpServer: smtpServer || null,
-      port,
-      ssl,
+      imapServer: (acct["imapServer"] as string) || null,
+      smtpServer: (acct["smtpServer"] as string) || null,
+      port:       typeof acct["port"] === "number" ? (acct["port"] as number) : null,
+      ssl:        typeof acct["ssl"]  === "boolean" ? (acct["ssl"]  as boolean) : null,
     });
   }
 
-  return accounts;
+  return { accounts, error: null };
 }
 
 async function getOutlookAccountsDarwin(filterEmail?: string): Promise<AccountInfo[]> {
@@ -181,21 +234,12 @@ async function getOutlookAccountsDarwin(filterEmail?: string): Promise<AccountIn
   return accounts;
 }
 
-async function detectClientDarwin(): Promise<DetectedClient> {
-  try {
-    await fs.access("/Applications/Mail.app");
-    return "mail";
-  } catch {
-    // not found
-  }
-  try {
-    await fs.access("/Applications/Microsoft Outlook.app");
-    return "outlook";
-  } catch {
-    // not found
-  }
-  return "unknown";
-}
+// NOTE: client detection on darwin is intentionally NOT by app presence.
+// Mail.app ALWAYS exists on macOS (system app at /System/Applications), so its
+// presence cannot distinguish a Mail user from an Outlook user — presence-based
+// detection resolved `client` to "mail" for every Mac and left the Outlook path
+// unreachable (e.g. for an Outlook user whose Mail.app has no accounts). run()
+// instead probes BOTH clients and resolves to whichever has accounts configured.
 
 // -- win32 implementation -----------------------------------------------------
 
@@ -248,23 +292,33 @@ export async function run({
     return { client: "outlook", platform, accounts };
   }
 
-  // macOS
-  let resolvedClient: DetectedClient = client === "auto" ? await detectClientDarwin() : client;
-
+  // macOS. In "auto" mode, resolve the client by which one actually has accounts
+  // configured — NOT by app presence (Mail.app always exists on macOS, so
+  // presence always picked "mail" and left "outlook" unreachable).
+  let resolvedClient: DetectedClient;
   let accounts: AccountInfo[] = [];
-  if (resolvedClient === "mail") {
-    accounts = await getMailAccounts(account);
-  } else if (resolvedClient === "outlook") {
+  let mailError: string | null = null;
+
+  if (client === "mail") {
+    const r   = await getMailAccounts(account);
+    accounts  = r.accounts;
+    mailError = r.error;
+    resolvedClient = "mail";
+  } else if (client === "outlook") {
     accounts = await getOutlookAccountsDarwin(account);
+    resolvedClient = "outlook";
   } else {
-    // Try both
-    const mailAccounts    = await getMailAccounts(account);
+    // auto: probe BOTH, resolve to whichever has accounts.
+    const mail            = await getMailAccounts(account);
     const outlookAccounts = await getOutlookAccountsDarwin(account);
-    accounts = [...mailAccounts, ...outlookAccounts];
-    resolvedClient = mailAccounts.length > 0 ? "mail" : outlookAccounts.length > 0 ? "outlook" : "unknown";
+    accounts  = [...mail.accounts, ...outlookAccounts];
+    mailError = mail.error;
+    resolvedClient = mail.accounts.length > 0
+      ? "mail"
+      : outlookAccounts.length > 0 ? "outlook" : "unknown";
   }
 
-  return { client: resolvedClient, platform, accounts };
+  return { client: resolvedClient, platform, accounts, ...(mailError ? { error: mailError } : {}) };
 }
 
 // -- Smoke test ---------------------------------------------------------------

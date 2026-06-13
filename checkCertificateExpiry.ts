@@ -108,8 +108,11 @@ async function checkCertificate(host: string, port: number): Promise<CertResult>
         validFrom:       "unknown",
         validTo:         "unknown",
         daysUntilExpiry: -1,
-        isExpired:       true,
-        isExpiringSoon:  true,
+        // No cert read — we cannot know expiry. Do NOT report isExpired:true,
+        // which would misdiagnose an unreadable cert as an expired one.
+        // Consumers must branch on `error` before trusting the expiry fields.
+        isExpired:       false,
+        isExpiringSoon:  false,
         error:           "No certificate returned",
       };
     }
@@ -167,8 +170,12 @@ export async function run({
       validFrom:       "unknown",
       validTo:         "unknown",
       daysUntilExpiry: -1,
-      isExpired:       true,
-      isExpiringSoon:  true,
+      // Connection/handshake failure — the host was unreachable or did not
+      // speak implicit TLS on this port. That is NOT an expired certificate;
+      // surfacing isExpired:true here caused a false "cert expired" diagnosis
+      // (e.g. an SMTP host probed on 443). Callers branch on `error`.
+      isExpired:       false,
+      isExpiringSoon:  false,
       error:           (err as Error).message,
     };
   }

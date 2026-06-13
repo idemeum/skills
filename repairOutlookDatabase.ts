@@ -140,6 +140,22 @@ async function repairOutlookDarwin(dryRun: boolean): Promise<RepairOutlookResult
     // Group container not found — Outlook may not be installed
   }
 
+  // Execute-time guard: never open the repair tool against a live database.
+  // The dry-run preview card already warned the user to quit Outlook; enforce
+  // it here so a missed/ignored warning cannot fail or corrupt the database.
+  if (!dryRun && outlookRunning) {
+    return {
+      toolFound: toolPath !== null,
+      toolPath,
+      databaseFiles,
+      outlookRunning,
+      dryRun,
+      message:
+        "Microsoft Outlook is still running — quit it completely, then re-run the repair. " +
+        "Running the database repair while Outlook is open can fail or corrupt the database.",
+    };
+  }
+
   // Open the repair tool if requested
   if (!dryRun && toolPath) {
     try {
@@ -149,10 +165,19 @@ async function repairOutlookDarwin(dryRun: boolean): Promise<RepairOutlookResult
     }
   }
 
+  // Surface the quit-Outlook warning on the dry-run PREVIEW message — this is
+  // the pre-confirm surface the user actually sees. A post-run response cannot
+  // deliver a "quit before confirming" instruction, since it is generated only
+  // after the consent gate has already been confirmed.
+  const runningWarning = outlookRunning
+    ? "⚠ Microsoft Outlook is currently running — quit it completely BEFORE confirming, "
+      + "or the repair may fail or corrupt the database. "
+    : "";
+
   const message = dryRun
-    ? toolPath
+    ? runningWarning + (toolPath
       ? `Found repair tool at: ${toolPath}. Run with dryRun=false to open it.`
-      : "Outlook repair tool not found. Ensure Microsoft Outlook is installed."
+      : "Outlook repair tool not found. Ensure Microsoft Outlook is installed.")
     : toolPath
       ? `Opened repair tool: ${toolPath}`
       : "Outlook repair tool not found — cannot run repair automatically.";
@@ -213,10 +238,31 @@ Get-ChildItem -Path "$env:LOCALAPPDATA\\Microsoft\\Outlook" -Include *.pst,*.ost
     databaseFiles = [];
   }
 
+  // Execute-time guard: scanpst cannot repair an open data file. Refuse rather
+  // than direct the user to a tool that will fail against a live mailbox.
+  if (!dryRun && outlookRunning) {
+    return {
+      toolFound: toolPath !== null,
+      toolPath,
+      databaseFiles,
+      outlookRunning,
+      dryRun,
+      message:
+        "Microsoft Outlook is still running — close it completely, then re-run the repair. " +
+        "scanpst.exe cannot repair an open .pst/.ost data file.",
+    };
+  }
+
+  // Warn on the pre-confirm dry-run preview message (not the post-run response).
+  const runningWarning = outlookRunning
+    ? "⚠ Microsoft Outlook is currently running — close it completely BEFORE confirming; "
+      + "scanpst.exe cannot repair an open data file. "
+    : "";
+
   const message = dryRun
-    ? toolPath
+    ? runningWarning + (toolPath
       ? `Found scanpst.exe at: ${toolPath}. Found ${databaseFiles.length} data file(s). Run with dryRun=false to open the repair tool.`
-      : `scanpst.exe not found in standard locations. Found ${databaseFiles.length} data file(s).`
+      : `scanpst.exe not found in standard locations. Found ${databaseFiles.length} data file(s).`)
     : toolPath
       ? `Repair tool located: ${toolPath}. Run the tool manually against the .pst/.ost files listed in databaseFiles.`
       : "scanpst.exe not found — install or repair Microsoft Office to restore the tool.";

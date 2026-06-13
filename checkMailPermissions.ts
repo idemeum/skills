@@ -61,6 +61,7 @@ interface CheckMailPermissionsResult {
   currentUser:    string;
   permissionsOk:  boolean;
   fixed:          boolean;
+  tccBlocked:     boolean;
   supported?:     boolean;
   message:        string;
 }
@@ -100,21 +101,32 @@ async function checkMailPermissionsDarwin(fix: boolean): Promise<CheckMailPermis
       currentUser,
       permissionsOk: false,
       fixed:         false,
+      tccBlocked:    false,
       message:       `Mail directory not found at ${mailDir}. Apple Mail may not be configured.`,
     };
   }
 
-  // Check read/write access
+  // Check read/write access. Capture the errno: macOS TCC (e.g. missing Full
+  // Disk Access) denies with EPERM ("Operation not permitted"), whereas a real
+  // ownership/mode problem denies with EACCES ("Permission denied"). We must
+  // not conflate the two — chown cannot fix a TCC block.
   let readable = false;
   let writable = false;
+  let accessErrno: string | null = null;
   try {
     await fs.promises.access(mailDir, fs.constants.R_OK);
     readable = true;
-  } catch { /* no read access */ }
+  } catch (e) {
+    accessErrno = (e as NodeJS.ErrnoException).code ?? null;
+  }
   try {
     await fs.promises.access(mailDir, fs.constants.W_OK);
     writable = true;
-  } catch { /* no write access */ }
+  } catch (e) {
+    if (!accessErrno) accessErrno = (e as NodeJS.ErrnoException).code ?? null;
+  }
+
+  const tccBlocked = accessErrno === "EPERM";
 
   // Parse ownership from `ls -la ~/Library/`
   let owner: string | null = null;
@@ -138,8 +150,11 @@ async function checkMailPermissionsDarwin(fix: boolean): Promise<CheckMailPermis
 
   const permissionsOk = readable && writable && (owner === null || owner === currentUser);
 
+  // chown only helps a genuine ownership/mode problem. Skip it when the denial
+  // is a TCC block — the user already owns the directory; the fix is granting
+  // Full Disk Access, not changing ownership.
   let fixed = false;
-  if (fix && (!readable || !writable || (owner !== null && owner !== currentUser))) {
+  if (fix && !tccBlocked && (!readable || !writable || (owner !== null && owner !== currentUser))) {
     try {
       await execAsync(`chown -R $(whoami) '${mailDir.replace(/'/g, "'\\''")}'`);
       fixed = true;
@@ -148,13 +163,22 @@ async function checkMailPermissionsDarwin(fix: boolean): Promise<CheckMailPermis
     }
   }
 
-  const message = fixed
-    ? "Permissions repaired with chown -R. Restart Mail to apply changes."
-    : permissionsOk
-      ? "Mail directory permissions look correct."
-      : `Permission issues detected — readable:${readable}, writable:${writable}, owner:${owner ?? "unknown"} vs currentUser:${currentUser}. Run with fix=true to attempt repair.`;
+  let message: string;
+  if (tccBlocked) {
+    message =
+      `Cannot read ${mailDir} — macOS denied access with EPERM (Operation not permitted). ` +
+      `You own this directory (owner:${owner ?? "unknown"} === currentUser:${currentUser}), so this is NOT a ` +
+      `file-permission problem — this app is missing Full Disk Access. Grant it in ` +
+      `System Settings → Privacy & Security → Full Disk Access, then retry. chown will not resolve a TCC block.`;
+  } else if (fixed) {
+    message = "Permissions repaired with chown -R. Restart Mail to apply changes.";
+  } else if (permissionsOk) {
+    message = "Mail directory permissions look correct.";
+  } else {
+    message = `Permission issues detected — readable:${readable}, writable:${writable}, owner:${owner ?? "unknown"} vs currentUser:${currentUser}. Run with fix=true to attempt repair.`;
+  }
 
-  return { mailDir, exists, readable, writable, owner, currentUser, permissionsOk, fixed, message };
+  return { mailDir, exists, readable, writable, owner, currentUser, permissionsOk, fixed, tccBlocked, message };
 }
 
 // -- win32 implementation -----------------------------------------------------
@@ -169,6 +193,7 @@ async function checkMailPermissionsWin32(_fix: boolean): Promise<CheckMailPermis
     currentUser:   "",
     permissionsOk: false,
     fixed:         false,
+    tccBlocked:    false,
     supported:     false,
     message:       "Use check_mail_account_config for Windows Outlook diagnostics.",
   };

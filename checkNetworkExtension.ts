@@ -8,8 +8,12 @@
  *
  * Platform strategy
  * -----------------
- * darwin  `systemextensionsctl list` to see all system extensions and state
- *         (activated, enabled, waiting for user, terminated, etc.)
+ * darwin  TWO sources merged: `systemextensionsctl list` for system extensions
+ *         (sysext — carry the activated / enabled / waiting-for-user approval
+ *         state) AND `pluginkit -m -p <ne-protocol>` for app-extension (appex)
+ *         network providers, which many VPN clients ship and which do NOT appear
+ *         in systemextensionsctl (the reason this tool used to return empty for a
+ *         configured VPN). Apple's own providers are filtered out.
  * win32   PowerShell Get-NetAdapter for network driver/adapter status
  *
  * Smoke test
@@ -53,11 +57,12 @@ export const meta = {
 // -- Types --------------------------------------------------------------------
 
 interface ExtensionEntry {
-  identifier:    string;
+  identifier:    string;   // bundle ID
+  name:          string;   // display name (sysext "name" column / appex bundle leaf)
   teamId:        string;
   bundleVersion: string;
-  state:         string;
-  type:          string;
+  state:         string;   // e.g. "activated enabled", "activated waiting for user", "enabled" (appex)
+  type:          string;   // "System Extension" | "App Extension" | "Network Adapter" (win32)
 }
 
 interface CheckNetworkExtensionResult {
@@ -78,70 +83,127 @@ async function runPS(script: string): Promise<string> {
 
 // -- darwin implementation ----------------------------------------------------
 
+/** An extension is "ready" only when enabled AND not still pending user approval.
+ *  NOTE: "activated waiting for user" CONTAINS "activated", so we must NOT treat
+ *  presence of "activated" as ready (the prior bug) — gate on "enabled" and
+ *  explicitly exclude the pending state. */
+function isReady(state: string): boolean {
+  return state.includes("enabled") && !state.includes("waiting for user");
+}
+
+/**
+ * Parse one `systemextensionsctl list` data row. Real output is TAB-separated:
+ *   enabled  active  teamID  bundleID (version)  name  [state]
+ *   *  *  7L2RM5R3FG  com.paloaltonetworks.GlobalProtect.client.extension (6.0.4)  GlobalProtect  [activated enabled]
+ * Falls back to whitespace/regex extraction if the row isn't cleanly tabbed.
+ */
+function parseSysextRow(line: string): ExtensionEntry | null {
+  const cols = line.split("\t").map((c) => c.trim()).filter(Boolean);
+  if (cols.length >= 5) {
+    const bundleCol = cols.find((c) => /[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+\s*\(/.test(c)) ?? cols[3];
+    const idMatch   = bundleCol.match(/([a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/);
+    if (!idMatch) return null;
+    const verMatch  = bundleCol.match(/\(([^)]+)\)/);
+    const stateCol  = cols.find((c) => c.startsWith("[")) ?? cols[cols.length - 1];
+    const bundleIdx = cols.indexOf(bundleCol);
+    const nameCol   = cols[bundleIdx + 1];
+    return {
+      identifier:    idMatch[1],
+      name:          nameCol && !nameCol.startsWith("[") ? nameCol : idMatch[1],
+      teamId:        cols.find((c) => /^[A-Z0-9]{10}$/.test(c)) ?? "Unknown",
+      bundleVersion: verMatch ? verMatch[1] : "Unknown",
+      state:         stateCol.replace(/[[\]]/g, "").trim(),
+      type:          "System Extension",
+    };
+  }
+  const idMatch    = line.match(/([a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)\s*\(/);
+  if (!idMatch) return null;
+  const verMatch   = line.match(/\(([^)]+)\)/);
+  const stateMatch = line.match(/\[([^\]]+)\]/);
+  const teamMatch  = line.match(/\b([A-Z0-9]{10})\b/);
+  return {
+    identifier:    idMatch[1],
+    name:          idMatch[1],
+    teamId:        teamMatch ? teamMatch[1] : "Unknown",
+    bundleVersion: verMatch ? verMatch[1] : "Unknown",
+    state:         stateMatch ? stateMatch[1].trim() : "Unknown",
+    type:          "System Extension",
+  };
+}
+
+/** System extensions (sysext) — Cisco Secure Client, GlobalProtect sysext, etc.
+ *  These carry the user-approval state the Step 7 gate keys on. */
+async function listSystemExtensions(): Promise<ExtensionEntry[]> {
+  let out = "";
+  try {
+    ({ stdout: out } = await execAsync("systemextensionsctl list 2>/dev/null", { maxBuffer: 5 * 1024 * 1024 }));
+  } catch (err) {
+    out = (err as { stdout?: string }).stdout ?? "";
+  }
+  const entries: ExtensionEntry[] = [];
+  for (const line of out.split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("---") || t.startsWith("enabled") || /^\d+\s+extension/.test(t)) continue;
+    const row = parseSysextRow(line);
+    if (row) entries.push(row);
+  }
+  return entries;
+}
+
+/**
+ * App-extension (appex) network providers. Many VPN clients ship these instead
+ * of system extensions, and they do NOT appear in `systemextensionsctl` — the
+ * main reason check_network_extension used to return empty for a configured VPN.
+ * `pluginkit -m -p <protocol>` lists them. appex have no separate System-Settings
+ * approval (they enable with the VPN config), so we mark them "enabled". Apple's
+ * own providers (com.apple.*) are filtered out — we only want third-party clients.
+ */
+async function listAppExtensions(): Promise<ExtensionEntry[]> {
+  const protocols = [
+    "com.apple.networkextension.packet-tunnel",
+    "com.apple.networkextension.app-proxy",
+  ];
+  const entries: ExtensionEntry[] = [];
+  for (const proto of protocols) {
+    let out = "";
+    try {
+      ({ stdout: out } = await execAsync(`pluginkit -m -p ${proto} 2>/dev/null`, { maxBuffer: 2 * 1024 * 1024 }));
+    } catch { /* pluginkit absent or no matches — skip */ }
+    for (const line of out.split("\n")) {
+      const m = line.trim().match(/^([a-zA-Z0-9._-]+?)\(([^)]*)\)\s*$/);
+      if (!m) continue;
+      const identifier = m[1];
+      if (identifier.startsWith("com.apple.")) continue;       // skip Apple's own providers
+      if (entries.some((e) => e.identifier === identifier)) continue;
+      entries.push({
+        identifier,
+        name:          identifier.split(".").pop() ?? identifier,
+        teamId:        "Unknown",
+        bundleVersion: m[2] || "Unknown",
+        state:         "enabled",
+        type:          "App Extension",
+      });
+    }
+  }
+  return entries;
+}
+
 async function checkNetworkExtensionDarwin(
   extensionName: string | undefined,
 ): Promise<CheckNetworkExtensionResult> {
-  let listOut = "";
-  try {
-    ({ stdout: listOut } = await execAsync("systemextensionsctl list 2>/dev/null", {
-      maxBuffer: 5 * 1024 * 1024,
-    }));
-  } catch (err) {
-    listOut = (err as { stdout?: string }).stdout ?? "";
-  }
+  const [sysext, appex] = await Promise.all([listSystemExtensions(), listAppExtensions()]);
+  // sysext first (they carry the approval state), then appex not already seen as a sysext.
+  const all = [...sysext, ...appex.filter((a) => !sysext.some((s) => s.identifier === a.identifier))];
 
-  const extensions: ExtensionEntry[] = [];
-
-  // systemextensionsctl output lines look like:
-  //   <teamId>  <state>  <bundleId> (<version>)  [<type>] "<display name>"
-  // Example:
-  //   DE8Y96K9QP  [activated enabled]  com.cisco.anyconnect.macos.acsock (1.0.0.0)  [Network Extension]
-  const lines = listOut.trim().split("\n");
-  for (const line of lines) {
-    // Skip header lines
-    if (
-      line.trim() === "" ||
-      line.startsWith("---") ||
-      line.startsWith("enabled") ||
-      line.startsWith("1 extension") ||
-      /^\d+ extension/.test(line)
-    ) continue;
-
-    // Parse: teamId, state brackets, bundleId, version, type brackets
-    const stateMatch   = line.match(/\[([^\]]+)\]/g);
-    const bundleMatch  = line.match(/([a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)\s+\(/);
-    const versionMatch = line.match(/\(([^)]+)\)/);
-    const teamMatch    = line.match(/^([A-Z0-9]{10})\s/);
-
-    if (!bundleMatch) continue;
-
-    const identifier    = bundleMatch[1];
-    const teamId        = teamMatch    ? teamMatch[1]                       : "Unknown";
-    const bundleVersion = versionMatch ? versionMatch[1]                    : "Unknown";
-    const state         = stateMatch   ? stateMatch[0].replace(/[\[\]]/g, "") : "Unknown";
-    const type          = stateMatch && stateMatch.length > 1
-      ? stateMatch[1].replace(/[\[\]]/g, "")
-      : "System Extension";
-
-    extensions.push({ identifier, teamId, bundleVersion, state, type });
-  }
-
-  // Filter by extensionName if provided
   const filtered = extensionName
-    ? extensions.filter(
+    ? all.filter(
         (e) =>
           e.identifier.toLowerCase().includes(extensionName.toLowerCase()) ||
-          e.type.toLowerCase().includes(extensionName.toLowerCase()),
+          e.name.toLowerCase().includes(extensionName.toLowerCase()),
       )
-    : extensions;
+    : all;
 
-  const allActivated =
-    filtered.length > 0 &&
-    filtered.every(
-      (e) =>
-        e.state.includes("activated") ||
-        e.state.includes("enabled"),
-    );
+  const allActivated = filtered.length > 0 && filtered.every((e) => isReady(e.state));
 
   return { extensions: filtered, allActivated };
 }
@@ -174,6 +236,7 @@ Get-NetAdapter ${filterClause} |
   const arr = Array.isArray(parsed) ? parsed : [parsed];
   const extensions: ExtensionEntry[] = (arr as Record<string, unknown>[]).map((a) => ({
     identifier:    String(a.Name             ?? "Unknown"),
+    name:          String(a.DriverDescription ?? a.Name ?? "Unknown"),
     teamId:        String(a.DriverProvider   ?? "Unknown"),
     bundleVersion: String(a.DriverVersion    ?? "Unknown"),
     state:         String(a.Status           ?? "Unknown"),

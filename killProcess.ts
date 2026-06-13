@@ -17,6 +17,7 @@ import * as os       from "os";
 import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
+import { isAgentSelf, isSystemProcess } from "./_shared/processIdentity";
 
 const execAsync = promisify(exec);
 
@@ -71,12 +72,20 @@ interface KillResult {
 
 // -- Guards -------------------------------------------------------------------
 
-const PROTECTED_NAMES = new Set(["kernel", "launchd", "systemd"]);
+/**
+ * Returns a human-readable reason when a process must NOT be killed, else null.
+ * Covers: the agent itself (never terminate the running agent), PID 1, and
+ * critical OS processes (shared SYSTEM_PROCESS_NAMES / system paths).
+ */
+function protectionReason(pid: number | undefined, name: string | undefined): string | null {
+  if (isAgentSelf(name, pid))    return "the AI Support Agent itself";
+  if (pid === 1)                 return "PID 1 (init)";
+  if (isSystemProcess(name))     return "a protected system process";
+  return null;
+}
 
 function isProtected(pid: number | undefined, name: string | undefined): boolean {
-  if (pid === 1) return true;
-  if (name && PROTECTED_NAMES.has(name.toLowerCase())) return true;
-  return false;
+  return protectionReason(pid, name) !== null;
 }
 
 // -- PowerShell helper --------------------------------------------------------
@@ -142,7 +151,7 @@ async function killProcessDarwin(
         killed:  false,
         dryRun,
         signal,
-        message: `Refused: process '${m.name}' (PID ${m.pid}) is a protected system process.`,
+        message: `Refused: process '${m.name}' (PID ${m.pid}) is ${protectionReason(m.pid, m.name) ?? "a protected system process"}.`,
       };
     }
   }
@@ -211,7 +220,7 @@ async function killProcessWin32(
         killed:  false,
         dryRun,
         signal,
-        message: `Refused: process '${m.name}' (PID ${m.pid}) is a protected system process.`,
+        message: `Refused: process '${m.name}' (PID ${m.pid}) is ${protectionReason(m.pid, m.name) ?? "a protected system process"}.`,
       };
     }
   }

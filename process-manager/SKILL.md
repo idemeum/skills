@@ -12,6 +12,7 @@ allowed-tools:
   - restart_process
   - kill_process
   - disable_startup_item
+  - get_disk_usage
 metadata:
   prerequisites:
     before-corrective:
@@ -58,13 +59,14 @@ Call `get_memory_pressure`. Returns `output.pressureLevel` (`"normal"` | `"warn"
 Call `get_cpu_temperature`. Returns `output.cpuTempC` (number or null) and `output.isThrottling` (boolean or null). Throttling kicks in above 90°C — no amount of process-killing fixes a thermal problem.
 
 **Step 4 — List startup items**
-Call `get_startup_items`. Returns `output.loginItems: [{ name, path, type }]` (Apple system agents are excluded by default). Always run this step — the consolidated card in Step 5 has a "Disable startup items" category that needs this data; on machines with no non-Apple login items the category still renders with a count of zero.
+Call `get_startup_items`. Returns `output.loginItems: [{ name, path, type }]` (Apple system agents excluded by default). Always run this step — Step 5's card needs it for the "Disable startup items" category; if there are no *disableable* items the category is simply dropped from the card.
 
 **Step 5 — Present consolidated findings + offer actions**
 
-Call `present_preview` with the four-category card below. **The category list is fixed across every run** — only the `summary` strings are filled in from prior scratchpad output (same pattern as `disk-cleanup`'s cleanup-plan card). Do NOT add per-process category rows — that pattern's MUST guards do not survive the planner→executor boundary.
+Call `present_preview` with the card below. **The category list is fixed across every run.** Because the step declares `cardFromClassifier`, G4's gate builds the summary + category rows in code from the Step 1–4 tool outputs (see Data lineage); the `{placeholder}` values in the template are the **fallback contract**, used only if the classifier can't run. Do NOT add per-process category rows.
 
 ```yaml
+cardFromClassifier: "process-performance"
 title: "Performance findings"
 summary: "{diagnosticSummary}"
 categories:
@@ -91,63 +93,33 @@ categories:
     defaultSelected: false
 ```
 
-Data lineage (executor LLM substitutes `{placeholder}` tokens at runtime from prior scratchpad outputs):
+**The card is built in code (`cardFromClassifier: "process-performance"`)** — the classifier is the source of truth. G4's gate computes the summary and category rows from the real Step 1–4 outputs, so they are exact: the agent's own process and system processes are excluded by `get_top_consumers` (system ones appear only in the summary note, never as an action), empty categories are dropped, and if none survive the card is skipped entirely.
 
-- top-level `{diagnosticSummary}` — multi-line string built from Steps 2 and 3 outputs, plus a system-process callout when relevant. Newlines render in the card. Format:
-  ```
-  Memory pressure: {output.pressureLevel from Step 2} ({output.swapUsedHuman from Step 2} swap).
-  CPU temperature: {output.cpuTempC from Step 3}°C{ " — thermal throttling detected." if output.isThrottling else "."}
-  {systemProcessNote}                              # see below
-  ```
-  - Substitute `output.swapUsedHuman` verbatim — do NOT divide `swapUsedMb` by 1024 or recompute. The tool already formatted it.
-  - When `output.cpuTempC` is null, write `"CPU temperature: unavailable (requires elevated access)."` instead of pretending to know.
-  - **MUST: `{systemProcessNote}` is the ONLY place in the entire card where system-scope processes are mentioned.** If any high-resource process (cpuPercent > 20 OR memoryMb > 500) from Step 1's `output.processes` is system-scope (`kernel_task`, `WindowServer`, `launchd`, `loginwindow`, `coreaudiod`, `mds`, root-owned daemons, anything in `/System/`), write a `{systemProcessNote}` line — do NOT omit it, do NOT paraphrase it away, do NOT drop it because the prose-narration "reads better" without it. Format: `"Note: {name} (PID {pid}) is the top CPU consumer at {cpuPercent}% but cannot be acted on here — it is a system process. Restart your Mac or contact IT."` (Or `"top memory consumer at {memoryHuman}"` when memory is the issue.) Omit the line entirely ONLY when no system process exceeds the threshold.
+The classification logic (system/self exclusion, the restart-vs-kill rules, the disableable-startup filter) lives in the **code classifier** — the single source of truth — so it is not restated here. The `{placeholder}` template is only a display fallback if the classifier can't run (e.g. `get_top_consumers` produced no data); in that case there is nothing to classify, so Step 6 runs **no** correctives.
 
-- Process **classification** (computed once, drives all 3 process categories' summaries; PID belongs to at most one category). For each entry in Step 1's `output.processes`:
-  - **Skip if system-scope.** System-scope processes (`kernel_task`, `WindowServer`, `launchd`, `loginwindow`, `coreaudiod`, `mds`, root-owned daemons, anything in `/System/`) are NEVER classified into any category — not `restart-helpers`, not `kill-runaway-cpu`, not `kill-runaway-memory`. They are surfaced exclusively in the top `{systemProcessNote}` above.
-  - If `process.name` (exact match, case-sensitive) is in the **launchable-GUI-app allowlist** AND `cpuPercent > 20`: assign to `restart-helpers`. The allowlist is the closed set: `Finder`, `Mail`, `Safari`, `Google Chrome`, `Firefox`, `Microsoft Edge`, `Falcon`, `CrowdStrike`, `Sophos`, `Cisco Secure Client`. Do NOT extend this set by inferring whether some other name "looks launchable" — `get_top_consumers` returns no field indicating bundle-launchability (only `pid, name, cpuPercent, memoryMb, memoryHuman, combinedScore`), so any name outside this allowlist MUST NOT be classified as `restart-helpers`; it flows to a kill category below. The `restart_process` tool will `kill` the process and then `open -a "<name>"` to relaunch it as a fresh top-level app.
-  - **NOT eligible for `restart-helpers`:** processes whose names contain `Helper`, `(Renderer)`, `(GPU)`, `agent`, `daemon`, or `xpcservice`, OR names with characters outside `[a-zA-Z0-9 _\-.]` (parens, ampersands, slashes — `restart_process` validation rejects these AND `open -a` cannot find a matching .app bundle for them). These processes are child / helper processes that the parent app or launchd will respawn automatically when killed — so killing them IS the restart. They flow to `kill-runaway-cpu` or `kill-runaway-memory` below, where `kill_process` does exactly the right thing (parent or launchd auto-respawns; user sees the process effectively restart). Examples that always go to a kill category, never restart-helpers: `Electron Helper (GPU)`, `Electron Helper (Renderer)`, `Google Chrome Helper (Renderer)`, `Keybase Helper`, `Slack Helper`, `Microsoft AutoUpdate.Helper`.
-  - Else if `cpuPercent > 20`: assign to `kill-runaway-cpu`.
-  - Else if `memoryMb > 500`: assign to `kill-runaway-memory`.
-  - Else: skip (not actionable).
-
-- inside `restart-helpers.summary`:
-  - `{N1}` — count of processes classified as `restart-helpers`
-  - `{list1}` — comma-separated `"{name} (PID {pid}, {cpuPercent}% CPU, {memoryHuman})"` for each classified process. `memoryHuman` is from Step 1 and is pre-formatted in binary units (matches Activity Monitor); substitute verbatim, do NOT recompute from `memoryMb`. Cap at 3 names then `", …"` if more.
-  - If `{N1}` is 0, write `"0 process(es): none currently running"` and let the user see the empty row (still selectable; Step 6 will no-op for an empty category).
-
-- inside `kill-runaway-cpu.summary`:
-  - `{N2}` — count of processes classified as `kill-runaway-cpu`. **MUST: this count NEVER includes system-scope processes** (they are excluded by classification per the rule above). If WindowServer is at 49% CPU and 4 other processes are above 20% CPU, `{N2}` is `4`, not `5`.
-  - `{list2}` — same format as `{list1}`. **MUST: this list NEVER includes system-scope process names** — they were already filtered at classification. A user reading this list should be able to trust that every name shown is actionable.
-
-- inside `kill-runaway-memory.summary`:
-  - `{N3}` — count of processes classified as `kill-runaway-memory`. Same exclusion rule as `{N2}`.
-  - `{list3}` — same format as `{list1}`. Same exclusion rule as `{list2}`.
-
-- inside `disable-startup.summary`:
-  - `{N4}` — `output.loginItems.length` from Step 4
-  - `{list4}` — comma-separated `item.name` values, cap at 3 then `", …"` if more. If `{N4}` is 0, write `"0 login item(s): none flagged"`.
-
-Returns `{ selected: string[] }`. Empty selection = Step 6 no-ops; Step 7 skips re-running diagnostics.
+Returns `{ selected, selectedTargets }` — `selectedTargets` maps each selected category id to its exact code-computed items (`{ pid, name }` / `{ name }`). Empty selection = Step 6 no-ops; Step 7 skips re-running diagnostics.
 
 **Step 6 — Execute confirmed actions**
 
-For each category id in Step 5's `selected`, re-derive the target list from the same classification rule used in Step 5's data lineage (the executor has Step 1 and Step 4 outputs in scratchpad), then iterate the matching tool:
+Step 5 returns `output.selectedTargets` — a map of each selected category id → the **exact items the classifier assigned** to it (`{ pid, name }` for processes, `{ name }` for startup items). **Act on these directly — do NOT re-derive the list.** This guarantees the executed set equals what the user saw and consented to. If `selectedTargets` is absent (the classifier couldn't run), do NOT guess targets — skip the correctives and surface the diagnostics for the user / IT.
 
-- `"restart-helpers"` → for each PID classified as `restart-helpers`, call `restart_process` with `{ pid, name }`. **MUST pass `name`** — without it the tool kills the process but cannot relaunch (no `launchPath`, no `name` → "Killed PID X. No launchPath or name provided for relaunch."). `name` comes from `process.name` in Step 1's output. The tool will `kill -TERM` the PID, wait 1.5s, then `open -a "<name>"` to relaunch. G4's consent gate prompts before each execution (the tool does not support dry-run).
-- `"kill-runaway-cpu"` → for each PID classified as `kill-runaway-cpu` AND NOT already in `restart-helpers` (if both categories were selected — restart wins on overlap, but classification is non-overlapping so the deduplication is normally a no-op), call `kill_process` with `{ pid, signal: "TERM" }`. G4 manages the dry-run preview + consent flow automatically. Do NOT pass `dryRun` — G4 substitutes it per the binding contract.
-- `"kill-runaway-memory"` → for each PID classified as `kill-runaway-memory` AND NOT in `kill-runaway-cpu` selection (dedupe PIDs that already received a kill), call `kill_process` with `{ pid, signal: "TERM" }`.
-- `"disable-startup"` → for each `item.name` from Step 4's `output.loginItems`, call `disable_startup_item` with `{ name: item.name }`. G4 manages the dry-run + consent flow automatically.
+For each selected category id, iterate `output.selectedTargets[id]`:
+- `"restart-helpers"` → `restart_process` with `{ pid, name }` per target. **MUST pass `name`** — without it the tool kills the process but cannot relaunch. The tool `kill -TERM`s the PID, waits 1.5s, then `open -a "<name>"`. Consent gate fires before each (no dry-run support).
+- `"kill-runaway-cpu"` and `"kill-runaway-memory"` → `kill_process` with `{ pid, signal: "TERM" }` per target. Do NOT pass `dryRun` — G4 substitutes it. (Dedupe a pid that appears in both before the second kill.)
+- `"disable-startup"` → `disable_startup_item` with `{ name }` per target. G4 manages dry-run + consent.
 
-Each corrective step sets `inputsFrom: [{ step: <step-5-index>, field: "selected" }]` and a `Condition:` clause testing whether its category id appears in `selected`. Skip silently when the id is not in `selected`. If a process from the classification has terminated between Step 1 and Step 6 (rare but possible — the user took a long time at the gate), the tool will return a "no matching processes found" message; treat as a no-op for that PID and continue.
+Each corrective step sets `inputsFrom: [{ step: <step-5-index>, field: "selectedTargets" }]` and a `Condition:` clause testing whether its category id is a key in `selectedTargets`. Skip silently otherwise. If a target terminated between Step 1 and Step 6 (the user lingered at the gate), the tool returns "no matching processes found" — treat as a no-op and continue.
 
-If `TERM` left a process alive (`kill_process` output shows it didn't terminate), the user may re-trigger the skill and escalate to `signal: "KILL"` on the second pass.
+**Did `TERM` actually work?** `kill_process`'s `killed: true` only means the signal was *sent* — it does not confirm termination. The real survival check is Step 7's re-snapshot: if a killed PID still appears in `get_top_consumers`, tell the user it survived and that re-running the skill will escalate to `signal: "KILL"`.
 
 **Step 7 — Verify recovery**
 Call `get_top_consumers` again with the same args as Step 1. If Step 2 reported `"warn"` or `"critical"` pressure, also call `get_memory_pressure` again. Skip both calls when Step 5's `selected` was empty AND no diagnostic concerns were flagged in Step 5's summary.
 
-**Step 8 — Final report**
-One short paragraph: which processes were acted on, what the post-action snapshot looks like, and any remaining concerns. If memory pressure or CPU temperature stayed elevated and no user-scope process was the cause, advise a system restart or escalating to IT with the Step 1–3 diagnostic snapshot.
+**Step 8 — Check disk pressure (slowness is often disk-related)**
+Call `get_disk_usage`. If `output.usagePercent >= 85`, the root volume is nearly full — which causes swapping and sluggishness that killing processes won't resolve. Surface it and offer to run the `disk-cleanup` skill to reclaim space. When `usagePercent < 85`, make no disk recommendation.
+
+**Step 9 — Final report**
+One short paragraph: which processes were acted on, what the post-action snapshot looks like, and any remaining concerns. If memory pressure or CPU temperature stayed elevated and no user-scope process was the cause, advise a system restart or escalating to IT with the Step 1–3 diagnostic snapshot. If Step 8 found high disk usage, mention the `disk-cleanup` option.
 
 ---
 

@@ -1,14 +1,16 @@
 ---
 name: email-repair
-description: Diagnoses and repairs email client issues including account configuration, index corruption, database errors, SMTP/IMAP connectivity failures, and permission problems. Use when user reports email not sending, not receiving, missing messages, or client crashes.
+description: Diagnoses and repairs email client issues including account configuration, authentication/credential failures, index corruption, database errors, SMTP/IMAP connectivity failures, and permission problems. Use when user reports email not sending, not receiving, repeated password prompts, missing messages, or client crashes.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
+  - check_mail_account_config
   - check_smtp_connectivity
   - check_certificate_expiry
-  - check_mail_account_config
   - get_top_consumers
   - check_mail_permissions
+  - get_cached_credentials_count
+  - repair_keychain
   - rebuild_mail_index
   - repair_outlook_database
   - reset_app_preferences
@@ -17,17 +19,16 @@ allowed-tools:
 metadata:
   prerequisites:
     before-corrective:
+      - check_mail_account_config
       - check_smtp_connectivity
       - check_certificate_expiry
-      - check_mail_account_config
       - get_top_consumers
-      - check_mail_permissions
   maxAggregateRisk: high
   userLabel: "Email not working"
   examples:
     - "my email is not sending or receiving"
     - "my email app keeps crashing"
-    - "I can't access my email"
+    - "I keep getting asked for my email password"
     - "Outlook keeps freezing"
     - "email stopped working this morning"
   pill:
@@ -40,164 +41,132 @@ metadata:
 
 ## When to use
 
-Use this skill when the user:
-- Cannot send or receive email
-- Reports their email client (Mail, Outlook) is crashing or hanging
-- Sees messages missing, duplicated, or out of order
-- Gets repeated password prompts or authentication failures
-- Reports "cannot connect to server" or "server not responding" errors
-- Asks "why is my email not working?" or "my Outlook keeps crashing"
+Use when the user: can't send or receive email; their client (Mail, Outlook) crashes or hangs; messages are missing/duplicated; they get **repeated password prompts / authentication failures**; or "cannot connect to server" errors.
 
-Do NOT use this skill for general internet connectivity issues — use the `network-reset` skill first if the user has no internet access at all.
+Do NOT use for general no-internet problems — run the `network-reset` skill first if the user has no internet at all.
 
-This skill follows a **diagnostic-driven escalation** pattern. Steps 1 and 1a capture the SMTP hostname (skipped if the goal already supplied it). The agent then runs all read-only diagnostics (Steps 2–5), escalates corrective actions from lightest (rebuild index) to most destructive (reset preferences), and closes with an out-of-band user-ack (Step 9). G4's per-tool dry-run preview + consent gates fire before every destructive action; the user can abort mid-escalation.
+**Pattern — diagnostic-driven escalation.** Read the account config → test the server → check the process/permissions → capture the symptom → run the *matched* corrective (lightest first: re-auth → index/DB repair → preferences reset) → verify. G4 gates every destructive action (dry-run preview + consent); the user can abort mid-escalation.
 
 ---
 
 ## Steps
 
-**Step 1 — Pick the email provider (to derive the SMTP hostname)**
-Call `wait_for_user_ack` to identify the user's email provider — Step 2's `check_smtp_connectivity` needs an SMTP hostname, and the user's choice maps directly to a known-good hostname for the common providers:
+**Step 1 — Read account configuration**
+Call `check_mail_account_config` with `client: "auto"`. Returns `output.client` (`"mail" | "outlook" | "unknown"`) and `output.accounts: [{ email, imapServer, smtpServer, port, ssl }]`. On macOS, `auto` probes **both** clients and resolves `output.client` to whichever has accounts configured — detection is by accounts, not app presence (Mail.app always exists on macOS), so Step 8's Outlook path is reachable for Outlook users. `port`/`ssl` are the **IMAP** values (no SMTP port/ssl is returned).
+
+Infer each account's provider from the email domain / `imapServer` — gmail.com/googlemail.com → gmail; outlook/hotmail/live/office365/onmicrosoft → office365; icloud/me/mac → icloud; else other. Compare against this known-good reference (authoritative — do NOT use memorised settings); flag any mismatch:
+
+| Provider | `imapServer` | `smtpServer` | IMAP `port` | `ssl` |
+|---|---|---|---|---|
+| gmail | `imap.gmail.com` | `smtp.gmail.com` | `993` | `true` |
+| office365 | `outlook.office365.com` | `smtp.office365.com` | `993` | `true` |
+| icloud | `imap.mail.me.com` | `smtp.mail.me.com` | `993` | `true` |
+
+For `other` there is no baseline — only sanity-check `ssl === true`, a standard secure port (`993`, or `143` with STARTTLS), and non-empty hosts; advise verifying against the provider's docs.
+
+If `output.client === "unknown"` or `output.accounts` is empty, no config could be read (on macOS Mail this is usually a missing Automation grant — surface `output.error`); get the server host via Step 1b.
+
+**Step 1b — Provider / host fallback**
+**Condition:** only if Step 1 returned no accounts AND the goal doesn't already name an SMTP host.
+Call `wait_for_user_ack`:
 
 ```yaml
-prompt: "Which email provider does the affected account use? This tells me which mail server to test."
+prompt: "Which email provider does the affected account use?"
 options:
-  - { id: "gmail",     label: "Gmail",                       kind: "primary" }
-  - { id: "office365", label: "Outlook / Microsoft 365",     kind: "primary" }
-  - { id: "icloud",    label: "iCloud",                      kind: "secondary" }
-  - { id: "other",     label: "Company / Other / Don't know", kind: "secondary" }
+  - { id: "gmail",     label: "Gmail",                   kind: "primary" }
+  - { id: "office365", label: "Outlook / Microsoft 365", kind: "primary" }
+  - { id: "icloud",    label: "iCloud",                  kind: "secondary" }
+  - { id: "other",     label: "Company / Other",         kind: "secondary" }
 ```
 
-Hostname mapping (applied in Step 2):
-- `gmail` → `smtp.gmail.com`
-- `office365` → `smtp.office365.com`
-- `icloud` → `smtp.mail.me.com`
-- `other` → falls through to Step 1a's `request_user_input` capture
-
-`Condition:` only run if the user's goal does NOT already contain an SMTP hostname / email-provider name (planner can map directly without invoking this gate). Skip silently otherwise — Step 2 uses the goal-provided value.
-
-**Step 1a — Capture custom SMTP hostname (fallback for "other")**
-Call `request_user_input` to capture a custom SMTP hostname when Step 1 returned `other`:
+Map: gmail → `smtp.gmail.com`, office365 → `smtp.office365.com`, icloud → `smtp.mail.me.com`. For `other`, call `request_user_input` (`inputsFrom: [{ step: "1b", field: "choice" }]`, only when `choice === "other"`):
 
 ```yaml
-prompt: "What's your outgoing mail server (SMTP) hostname? You can find this in your email client's account settings, or by checking your email provider's documentation."
+prompt: "What's your outgoing mail server (SMTP) hostname?"
 placeholder: "smtp.acme.com"
 validator: "^[A-Za-z0-9.\\-]+$"
 ```
 
-`inputsFrom: [{ step: 1, field: "choice" }]` — only invoke when Step 1's `choice === "other"`.
+Empty value → end politely ("I can't test mail-server connectivity without a hostname — try restarting your client or contact IT").
 
-`Condition:` only run if Step 1 ran AND returned `choice === "other"`. Skip silently for the gmail / office365 / icloud branches (Step 2 uses the mapped hostname directly).
+**Step 2 — Test mail-server connectivity**
+Call `check_smtp_connectivity` with the SMTP host from Step 1 (`output.accounts[].smtpServer`) or Step 1b. Then call `check_certificate_expiry` with **`port: 465`** (the implicit-TLS submission port; the `443` default and STARTTLS `587` don't serve a direct handshake and return `output.error`). Read it as: `output.isExpired === true` with **no** `output.error` = genuinely expired cert (a real cause); any `output.error` = could-not-verify (inconclusive — do NOT report "expired").
 
-If the user submits an empty value (cancel / timeout), end the run with a polite "I can't test mail-server connectivity without a hostname — try restarting your email client or contacting IT". Step 2 onward all transitively depend on having a hostname, so the rest of the flow is dead without it.
+**Step 3 — Check the client isn't hung**
+Call `get_top_consumers` with `metric: "combined"`, `limit: 10`. If `output.processes` contains `Mail` / `Microsoft Outlook` / `Outlook` with `cpuPercent > 20` OR `memoryMb > 500`, the hung process is the cause — route to the `process-manager` skill, don't continue correctives.
 
-**Step 2 — Check mail server connectivity**
-Call `check_smtp_connectivity` with the SMTP hostname resolved above. Then call `check_certificate_expiry` on the same hostname to rule out an expired TLS certificate as the cause.
+**Step 4 — Check / fix file permissions (macOS Mail only)**
+**Condition:** only if `output.client === "mail"`.
+Call `check_mail_permissions` (read-only). If `output.tccBlocked === true`, this is a Full Disk Access (TCC) block, NOT a fixable permission problem — surface `output.message`, point to System Settings → Privacy & Security → Full Disk Access, and do NOT run the fix. Else if `output.permissionsOk === false`, re-call with `fix: true` (touches only the user's own `~/Library/Mail`). If it still returns `output.fixed === false`, escalate per Graceful degradation #3.
 
-`inputsFrom:`
-- If Step 1's `choice ∈ {gmail, office365, icloud}`: pass the corresponding mapped hostname (gmail → `smtp.gmail.com`, etc.).
-- If Step 1's `choice === "other"`: `inputsFrom: [{ step: 1a, field: "value" }]`.
-- If Step 1 was skipped (goal had hostname): pass the goal-provided value.
-
-**Step 3 — Check account configuration**
-Call `check_mail_account_config` with `client: "auto"` to read the configured IMAP/SMTP settings from the installed email client. Returns `output.client` (detected client: `"mail"` | `"outlook"` | `"unknown"`) and `output.accounts: [{ email, imapServer, smtpServer, port, ssl }]`. Compare server hostnames, ports, and SSL settings against known-good values for the provider. Flag any mismatches in the response.
-
-**Step 4 — Check client process**
-Call `get_top_consumers` with `metric: "combined"` and `limit: 10`. Verify the email client is not hung — check if `output.processes` contains a process named `Mail`, `Microsoft Outlook`, or `Outlook` with `cpuPercent > 20` OR `memoryMb > 500`. If so, the hung process is the root cause, not a configuration issue — surface this in the response and direct the user to the `process-manager` skill instead of continuing with email-repair correctives.
-
-**Step 5 — Check file permissions (macOS Mail only)**
-**Condition:** only if Step 3 returned `output.client === "mail"` (Apple Mail).
-
-Call `check_mail_permissions` (read-only mode). Returns `output.errors[]` listing any paths in `~/Library/Mail` with wrong ownership or missing read/write access. Permission errors silently prevent Mail from syncing or writing its index.
-
-**Step 5b — Fix mail permissions**
-**Condition:** only if Step 5 ran AND `output.errors.length > 0`.
-
-Re-call `check_mail_permissions` with `fix: true` to restore correct ownership and read/write permissions on the affected paths. Explain in the response that this only modifies the user's own Mail directory — it does not touch system files.
-
-**Step 5c — Capture the symptom (drives which corrective fires)**
-Call `wait_for_user_ack` to record the concrete failure mode before any corrective. The returned `choice` is the binding gate signal for Steps 6–8 — no free-text symptom inference:
+**Step 5 — Capture the symptom (drives the corrective)**
+Call `wait_for_user_ack`. The returned `choice` is the binding signal for Steps 6–8 — no free-text inference:
 
 ```yaml
-prompt: "What's the email client actually doing wrong? This decides which repair I run."
+prompt: "What's actually going wrong? This decides which repair I run."
 options:
-  - { id: "index-corrupt", label: "Slow, wrong counts, or missing messages", kind: "primary" }
-  - { id: "client-crashing", label: "Crashing, hanging, or data errors",        kind: "primary" }
-  - { id: "send-receive",   label: "Just can't send/receive (no crashes)",       kind: "secondary" }
-  - { id: "skip",           label: "Not sure / skip",                            kind: "cancel" }
+  - { id: "auth-failure",    label: "Repeated password prompts / can't sign in", kind: "primary" }
+  - { id: "index-corrupt",   label: "Slow, wrong counts, or missing messages",   kind: "primary" }
+  - { id: "client-crashing", label: "Crashing, hanging, or data errors",         kind: "secondary" }
+  - { id: "send-receive",    label: "Can't send/receive (no crashes)",           kind: "secondary" }
+  - { id: "skip",            label: "Not sure / skip",                           kind: "cancel" }
 ```
 
-`Condition:` only run if at least one corrective (Step 6, 7, or 8) could still apply for the detected client — i.e. Step 3 returned `output.client ∈ {"mail", "outlook"}`. Skip silently when `output.client === "unknown"` (no corrective is reachable). On `skip`/`timeout`, treat as no symptom captured: Steps 6/7 do not fire on the symptom branch (Step 6 may still fire via the Step 5b permission-fix branch).
+**Condition:** only if a corrective could apply — `output.client ∈ {"mail","outlook"}`, or connectivity/auth is the suspected cause. On `skip`/`timeout`, run no symptom-driven corrective (Step 7 may still fire via the Step 4 permission-fix branch).
 
-**Step 6 — Rebuild mail index**
-**Condition:** only if (a) Step 3 returned `output.client === "mail"` (Apple Mail) AND (b) Step 5c returned `choice === "index-corrupt"`, OR Step 5b ran (permission fix often warrants an index rebuild).
+**Step 6 — Credential / re-auth fix** *(lightest corrective; the most common cause)*
+**Condition:** only if Step 5 `choice === "auth-failure"`, OR (`choice === "send-receive"` AND Step 2 connectivity was fine AND Step 1 config matched known-good) — i.e. the remaining likely cause is credentials.
+A password change or a stale Keychain entry causes repeated prompts; modern providers use OAuth/SSO.
+- **IdP-managed password (corporate SSO via Okta / Entra / Google):** the password lives at the identity provider — no client-side repair helps. Route the user to the `cloud-idp-password-reset` skill and stop here.
+- **Otherwise:** confirm cached creds with `get_cached_credentials_count` (pass the mail-server domains from Step 1, e.g. `imap.gmail.com`; `output.totalCount > 0` means stale creds may be cached). Then call `repair_keychain` with `action: "repair"` (Keychain First Aid; G4 gates it). After it runs (`output.repaired`), guide the user to re-enter their password / remove and re-add the account using the provider's "Sign in with Google/Microsoft" flow.
 
-Call `rebuild_mail_index`. G4 auto-triggers a dry-run preview gate (showing which envelope index files would be removed) followed by the consent gate. Explain in the response that Mail will quit and rebuild its index on next launch — this is safe and non-destructive in user terms (no messages are deleted; the index regenerates from the message store on next launch).
+**Step 7 — Rebuild mail index (Apple Mail)**
+**Condition:** only if `output.client === "mail"` AND (Step 5 `choice === "index-corrupt"` OR Step 4's permission fix ran).
+Call `rebuild_mail_index` (G4 gates it). In the rationale: Mail quits and rebuilds the index on next launch — no messages are deleted (the index regenerates from the message store). Warn that a large mailbox (100k+) can take 10–60 minutes.
 
-**Step 7 — Repair Outlook database**
-**Condition:** only if (a) Step 3 returned `output.client === "outlook"` (Microsoft Outlook) AND (b) Step 5c returned `choice === "client-crashing"`. (If Step 5c was skipped, `repair_outlook_database` is destructive/requiresConsent — G4's dry-run preview + consent gate still protect the user, so the planner may also fire it on `output.client === "outlook"` alone when the goal explicitly cites Outlook crashes/corruption.)
+**Step 8 — Repair Outlook database (Outlook)**
+**Condition:** only if `output.client === "outlook"` AND Step 5 `choice === "client-crashing"` (or the goal explicitly cites Outlook crashes/corruption).
+Call `repair_outlook_database` (G4 gates it). Carry the **"quit Outlook before confirming"** warning in the step **rationale** (it renders on the gate cards) — NOT in the response (generated post-confirm, too late to act on). The tool also prefixes a warning when `output.outlookRunning === true` and **refuses** at execute time while Outlook is open (returns a "still running" `output.message`) — relay it, have the user quit Outlook, then re-run.
 
-Call `repair_outlook_database`. G4 auto-triggers the dry-run preview gate (locating the repair tool + database files) followed by the consent gate. Instruct the user in the response to quit Outlook before confirming.
-
-**Step 7b — Re-check after the first corrective (gate before the last resort)**
-**Condition:** only if Step 6 or Step 7 ran. Skip if neither ran (Step 8 then only fires via the explicit-request branch below).
-
-The Step 6 / Step 7 corrective only takes effect after the user relaunches the client, so whether it worked is observable only from the user's end. Call `wait_for_user_ack` to get that read BEFORE escalating to the destructive preferences reset:
+**Step 9 — Verify after the first corrective**
+**Condition:** only if a corrective ran (Step 4 fix, 6, 7, or 8).
+Call `wait_for_user_ack`:
 
 ```yaml
-prompt: "I've run the first repair. Relaunch your email client and check — is email working now?"
+prompt: "Relaunch your email client and check — is email working now?"
 options:
-  - { id: "works",        label: "Working now",                kind: "primary" }
-  - { id: "still-broken", label: "Still misbehaving",          kind: "secondary" }
-  - { id: "skip",         label: "Skip — I'll test later",     kind: "cancel" }
+  - { id: "works",        label: "Working now",       kind: "primary" }
+  - { id: "still-broken", label: "Still not working", kind: "secondary" }
+  - { id: "skip",         label: "I'll test later",   kind: "cancel" }
 ```
 
-On `works`: stop the escalation — do NOT run Step 8; proceed to Step 9/10 to report success. On `still-broken`: proceed to Step 8. On `skip`/`timeout`: do NOT run the destructive reset on a guess; surface the diagnostic packet for IT escalation instead.
+`works` → report success (Step 12); do NOT escalate. `still-broken` → Step 10. `skip`/`timeout` → don't reset on a guess; surface the diagnostic packet for IT.
 
-**Step 8 — Reset preferences (last resort)**
-**Condition:** only if (a) Step 7b ran AND returned `choice === "still-broken"`, OR (b) the user explicitly asked to reset client preferences.
+**Step 10 — Reset preferences (last resort)**
+**Condition:** only if Step 9 returned `still-broken`, OR the user explicitly asked to reset preferences.
+Call `reset_app_preferences` with `appName: "Mail"` (Apple Mail) or `appName: "Outlook"` (Outlook) — use `"Outlook"`, not `"Microsoft Outlook"` (the tool matches the `com.microsoft.Outlook` preference domain). G4 gates it. Carry the warning in the **rationale** (not the response): this clears the client's app preferences (signatures, rules, smart mailboxes, layout) — the tool backs each file up to a `.bak` first, so it's reversible — and does NOT remove the user's accounts (they persist in Internet Accounts / the Outlook Group Container).
 
-Call `reset_app_preferences` with `appName` set to the email client name (`appName: "Mail"` for Apple Mail, `appName: "Microsoft Outlook"` for Outlook — `appName` is required, infer it from Step 3's `output.client`). G4 auto-triggers the dry-run preview gate (listing which preference files would be removed) followed by the consent gate. Warn the user clearly in the response: this resets all client settings and they will need to re-add their accounts.
+**Step 11 — Final verify (after reset)**
+**Condition:** only if Step 10 ran.
+Call `wait_for_user_ack` ("Relaunch and try sending/receiving — working now?"; options `works` / `still-broken` / `skip`). `works` → success. `still-broken` → in-scope correctives are exhausted; surface the diagnostic packet for IT (Graceful degradation).
 
-**Step 9 — Verify the user can send and receive**
-**Condition:** only if any corrective step (5b, 6, 7, or 8) ran. Skip if only diagnostics ran (the SMTP-connectivity-only success case is self-explanatory and needs no user-side test).
-
-The corrective steps trigger user-visible work (Mail quit + relaunch + index rebuild on next launch, Outlook database repair, preferences reset + account re-add). Whether the actual issue resolved is only observable from the user's end. Call `wait_for_user_ack` to wait for that confirmation:
-
-```yaml
-prompt: "Relaunch your email client and try sending or receiving a message. Let me know whether email is working now."
-options:
-  - { id: "works",        label: "Email is working",          kind: "primary" }
-  - { id: "still-broken", label: "Still not working",         kind: "secondary" }
-  - { id: "skip",         label: "Skip — I'll test later",    kind: "cancel" }
-```
-
-On `works`: report success and end the run. On `still-broken`: the in-scope correctives have exhausted; surface the diagnostic packet for IT escalation (see "Graceful degradation" below). On `skip`: close with "diagnostics complete; user will verify later".
-
-**Step 10 — Final report**
-Report a summary of all steps that ran, their outcomes, and any IT-escalation recommendations.
+**Step 12 — Final report**
+Summarise the steps that ran, their outcomes, and any IT-escalation recommendation.
 
 ---
 
-## Graceful degradation when account or mailbox repair requires IT
+## Graceful degradation (root cause outside the user's mail data)
 
-Every tool in this skill operates in user space — `rebuild_mail_index`, `repair_outlook_database`, `reset_app_preferences`, and `check_mail_permissions` (even with `fix: true`) all touch only the user's own `~/Library/Mail` / `%LOCALAPPDATA%\Microsoft\Outlook` directories and never need admin privileges. The privileged-helper-daemon routing does not apply to this skill.
+All tools run in user space (no admin). When the cause is server-side or IT-managed:
 
-The agent still hits failure modes it cannot resolve directly when the root cause sits outside the user's own mail data:
-
-1. **Corporate Exchange / Microsoft 365 account locked by IT** — when an account is mid-migration, MFA-suspended, or password-expired on the server side, no client-side repair recovers it. Surface this in the response and direct the user to the IT helpdesk; the SMTP / IMAP connectivity probe and certificate check from Step 2 are the diagnostic IT needs.
-2. **MDM-pushed mail profile blocks configuration changes** — on macOS / iOS / Windows, IT can deploy a configuration profile that pre-fills account settings and locks the user out of editing them. `check_mail_account_config` will surface the locked settings, but `reset_app_preferences` only clears the *client-side* preferences — the profile re-applies on next launch. Tell the user this is an IT-managed account and the change must be made via MDM (Jamf Self Service, Intune Company Portal) or by an IT admin.
-3. **Mail directory has root-owned files** (rare, macOS — typically post-migration or post-restore): `check_mail_permissions` with `fix: true` only adjusts permissions the current user owns. If it reports paths it cannot fix, surface the offending path list and guide the user to fix it themselves: open Terminal → `sudo chown -R $USER ~/Library/Mail` → enter their login password. Do NOT attempt to run this via the agent.
-4. **Outlook database corruption beyond the local repair utility** — when `repair_outlook_database` reports "could not repair", the next step is profile re-creation: Outlook → File → Account Settings → remove the account → re-add it. For Microsoft 365 / Exchange accounts this re-downloads the mailbox from the server, so no local data is lost. For POP accounts there is no server copy — escalate to IT before removing the account.
-5. **Escalation packet** — the diagnostic from Steps 2–5 captures everything IT needs: SMTP reachability, certificate expiry status, configured account settings, mail-permissions output, and (where relevant) the Outlook database repair attempt. The end-of-run ticket includes all of this so a tier-1 helpdesk can pick up cleanly without further back-and-forth.
-
----
+1. **Account locked / suspended / server-side password expired (Exchange / M365):** no client-side repair recovers it — send the user to IT with the Step 2 connectivity + certificate diagnostics.
+2. **MDM-pushed mail profile:** `reset_app_preferences` clears only client-side prefs; the profile re-applies on next launch. Tell the user it's IT-managed (change via Jamf / Intune or an admin).
+3. **Root-owned Mail files (rare, post-migration):** if `check_mail_permissions` with `fix: true` still returns `output.fixed === false`, surface `output.mailDir` / `output.owner` and have the user run `sudo chown -R $USER ~/Library/Mail` themselves — do NOT run sudo via the agent.
+4. **Outlook DB beyond local repair:** if `repair_outlook_database` can't repair, re-create the profile (Outlook → Account Settings → remove + re-add). M365/Exchange re-downloads from the server (no data loss); POP has no server copy — escalate to IT first.
+5. **Escalation packet:** Steps 1–4 (config, connectivity, cert, permissions) plus any repair attempt are captured on the end-of-run ticket for a clean tier-1 handoff.
 
 ## Edge cases
 
-- **Authentication failures vs connectivity failures** — `check_smtp_connectivity` tests TCP only; a successful TCP connection does not mean credentials are valid. If connectivity is fine but send/receive still fails, the issue is likely credentials or 2FA/app password configuration — guide the user through their provider's account settings
-- **OAuth / modern auth** — many providers (Gmail, Microsoft 365) now require OAuth tokens rather than passwords. If the user's client was set up with a plain password, it may have stopped working due to the provider disabling basic auth. Advise them to remove and re-add the account using the client's "Sign in with Google/Microsoft" flow
-- **Exchange / EWS accounts** — Outlook on macOS uses Exchange Web Services (EWS) not IMAP/SMTP. `check_mail_account_config` may not parse EWS profiles. `check_smtp_connectivity` is irrelevant for Exchange — use `check_connectivity` to the Exchange server on port 443 instead
-- **Large mailbox index rebuild** — a large mailbox (100k+ messages) can take 10–60 minutes to rebuild. Warn the user before triggering Step 6 / `rebuild_mail_index`
-- **Keychain conflicts after password change** — if the user recently changed their email password, the old credentials may be cached in the macOS Keychain causing repeated auth failures. The `cloud-idp-password-reset` skill includes a Keychain repair step in its post-reset cleanup; route there if the user's password change was via Okta / Entra / Google. For other password changes, advise the user to open Keychain Access → search for the mail server hostname → delete the stale entry → relaunch the mail client and re-authenticate
-- **VPN required for corporate mail** — if the user's mail server is an internal Exchange server, they may need VPN connected before mail will work. Check with `check_vpn_status` if the mail server hostname is an internal address
+- **Connectivity fine but still failing** = almost always credentials/auth → Step 6 (TCP success does not validate credentials).
+- **Exchange / EWS:** Outlook-for-Mac uses EWS, not IMAP/SMTP, so `check_smtp_connectivity` is irrelevant — check the Exchange host on port 443 instead.
+- **Corporate mail over VPN:** an internal Exchange host needs VPN connected first; check with `check_vpn_status` if the host is internal.

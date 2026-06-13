@@ -31,7 +31,11 @@ export const meta = {
     "Use when a VPN connection is stale, showing connected but not routing traffic, " +
     "or after network changes.",
   riskLevel:       "medium",
-  destructive:     false,
+  // destructive: dropping the tunnel interrupts active sessions and, on a
+  // full-tunnel VPN, briefly cuts the device off the network. Marked true so
+  // G4 auto-triggers the dry-run preview (supportsDryRun + destructive) — a
+  // medium/non-destructive tool would skip the preview and only show consent.
+  destructive:     true,
   requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["network"],

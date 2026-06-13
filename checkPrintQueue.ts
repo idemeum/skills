@@ -83,6 +83,19 @@ async function checkPrintQueueDarwin(printerName?: string): Promise<PrintJob[]> 
     stdout = (err as { stdout?: string }).stdout ?? "";
   }
 
+  // `lpstat -o` carries no per-job state, so a job whose target printer is
+  // stopped/disabled is effectively HELD (stuck behind a halted queue). Derive
+  // that from `lpstat -p` so stuckCount is meaningful on macOS instead of always
+  // 0 (previously every darwin job was hardcoded "queued").
+  const halted = new Set<string>();
+  try {
+    const { stdout: pOut } = await execAsync("lpstat -p 2>/dev/null", { maxBuffer: 1 * 1024 * 1024 });
+    for (const l of pOut.split("\n")) {
+      const m = l.match(/^printer\s+(\S+)\s+is\s+(?:stopped|disabled)/i);
+      if (m) halted.add(m[1]);
+    }
+  } catch { /* best-effort */ }
+
   const lines = stdout.trim().split("\n").filter(Boolean);
 
   return lines.map((line) => {
@@ -107,7 +120,7 @@ async function checkPrintQueueDarwin(printerName?: string): Promise<PrintJob[]> 
       printer,
       owner,
       document:  jobId,
-      status:    "queued",
+      status:    halted.has(printer) ? "held" : "queued",
       sizeKb,
       sizeHuman: formatBytes(sizeBytes),
       submittedAt: dateStr,
@@ -172,7 +185,7 @@ export async function run({
     ? await checkPrintQueueWin32(printerName)
     : await checkPrintQueueDarwin(printerName);
 
-  const stuckStatuses = ["error", "stuck", "paused", "blocked"];
+  const stuckStatuses = ["error", "stuck", "paused", "blocked", "held"];
   const stuckCount    = jobs.filter((j) =>
     stuckStatuses.some((s) => j.status.toLowerCase().includes(s)),
   ).length;
