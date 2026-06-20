@@ -98,7 +98,7 @@ Always run these read-only probes — do NOT gate them on a guess about whether 
 **Step 8 — Check Trash contents (always include)**
 This step MUST be included in every disk-cleanup plan — the Trash is a frequent source of reclaimable space, and the consolidated `present_preview` card lets the user opt in or out of emptying it. Do not treat this step as optional even if the user's goal did not explicitly mention Trash.
 
-Call `get_trash_info` to report Trash item count and total size. This is a read-only probe — nothing is deleted. The corrective `empty_trash` invocation in Step 10 (gated on `'trash'` being in the user's `present_preview` selection) is the single user-facing surface that actually empties the Trash, fronted by the G4 consent gate.
+Call `get_trash_info` to report Trash item count and total size. This is a read-only probe — nothing is deleted. The corrective `empty_trash` invocation in Step 10 (gated on `'trash'` being in the user's `present_preview` selection) is the single user-facing surface that actually empties the Trash, behind a consent gate.
 
 **Step 9 — Present consolidated cleanup plan**
 
@@ -168,9 +168,9 @@ categories:
 
 **The top-level `summary` MUST be emitted verbatim as `"You can recover the following:"` — do NOT compute, estimate, paraphrase, or append an aggregate/total size (no "approximately X GB", no grand total). The only sizes shown to the user are the per-category `{size}` values inside each category row.**
 
-**Empty categories are dropped automatically by G4 — do NOT hand-filter them and do NOT compute byte counts.** Each category declares `bytesFromTool: <tool>`, naming the read-only diagnostic whose output owns its reclaimable size. G4's `present_preview` gate reads `bytesFromTool` from the plan template (never from any value you emit), looks up that tool's REAL output captured during the run, and drops any category whose true reclaimable bytes are 0 before the card renders. If every category is 0 (so none remain) it skips the card entirely and treats the run as "nothing to clean". This is enforced in code by the G4 gate from the truth source, so you don't need prose rules for "No duplicates found" / "0 items" rows. Still emit every category in the template; the gate decides which survive. (When the gate has no output for a category's tool — the probe didn't run or failed — it keeps the category, since it can't prove it empty. Omit a category yourself only when the tool reports it inapplicable, e.g. `dockerInstalled: false` for docker.)
+**Emit every category in the template, each keeping its `bytesFromTool: <tool>`. Do NOT hand-filter empty categories and do NOT compute byte counts — empty rows are dropped automatically downstream.** Omit a category yourself only when its tool reports it inapplicable (e.g. `dockerInstalled: false` for docker).
 
-Data lineage (executor LLM substitutes `{placeholder}` display tokens at runtime from prior scratchpad outputs; byte counts are NOT your job — the gate derives them from `bytesFromTool`):
+Data lineage (substitute each `{placeholder}` from the prior step's output below; byte counts are NOT your job):
 
 - inside large-files:
   - `{N}` — `output.returned` from the Step 2 `get_large_files` call.
@@ -188,18 +188,18 @@ Data lineage (executor LLM substitutes `{placeholder}` display tokens at runtime
 - inside dev-cache:
   - `{size}` — `output.totalHuman` from the `get_dev_cache_info` step (pre-formatted decimal/SI by the tool; substitute the string verbatim, do NOT recompute from `totalBytes`)
 - inside xcode:
-  - `{size}` — `output.totalHuman` from the `get_xcode_derived_data_info` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute). The tool returns `totalBytes: 0` / `supported: false` off macOS, so the gate drops this row there.
+  - `{size}` — `output.totalHuman` from the `get_xcode_derived_data_info` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute). The tool returns `totalBytes: 0` / `supported: false` off macOS (so the row contributes nothing there).
 - inside docker:
   - `{size}` — `output.totalReclaimableHuman` from the `get_docker_disk_usage` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute). Omit the category entirely when `dockerInstalled` is false.
 - inside trash:
   - `{N}` — `output.itemCount` from the `get_trash_info` step
   - `{size}` — `output.totalHuman` from the `get_trash_info` step (pre-formatted decimal/SI by the tool; substitute verbatim, do NOT recompute from `totalBytes`)
 
-The card stays visible until the user submits; the gate returns `{ selected: string[] }` carrying the category ids the user kept checked. Empty selection = cancel; downstream corrective steps no-op.
+Step 9 returns `{ selected: string[] }` — the category ids the user kept checked. An empty selection cancels: the corrective steps below are skipped.
 
 **Step 10 — Execute confirmed cleanups**
 
-For each category id in Step 9's `selected` output, call the relevant tool. G4 manages the dry-run preview + consent flow automatically for every destructive tool (`supportsDryRun: true` on the tool meta); the executor does NOT need to pass `dryRun` — G4 substitutes `dryRun: true` for the preview call and `dryRun: false` for the post-consent real call.
+For each category id in Step 9's `selected` output, call the relevant tool. Do NOT pass `dryRun` — the dry-run preview + consent flow is applied automatically for every destructive tool.
 
 - `"large-files"`    → call `delete_files` **once** with `paths: [<every file.path from Step 2's output.files>]`. Step 2 already returns at most 10 files via `limit: 10`, so this is naturally bounded. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
 - `"duplicates"`     → call `delete_files` **once** with `paths: [<every entry.path from Step 3's output.topDeletables>]`. Step 3 already returned at most 10 pre-sorted deletables via `topDeletableLimit: 10`, so no per-group selection logic is needed at this step. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
@@ -222,7 +222,7 @@ Summarise total space recovered across all operations. Optionally call `disk_sca
 
 - **Never delete outside home directory** — `delete_files` enforces this at the skill level and will return an error for any blocked path; do not attempt to work around it
 - **Never delete system directories** — see `references/safe-paths.md` for the full blocked list on macOS and Windows
-- **Dry-run is automatic** — do NOT pass `dryRun: true/false` to `delete_files`; G4 substitutes the value per the binding contract (Step 10 prose explains this). The user always sees the dry-run preview + consent gate before any deletion runs.
+- **Dry-run is automatic** — do NOT pass `dryRun: true/false` to `delete_files`; the dry-run preview + consent gate is applied automatically before any deletion runs.
 - **Downloads folder** — always warn the user explicitly before deleting the entire Downloads folder; offer to scan it with `get_large_files` first so they can choose individual files
 - **macOS Library** — `~/Library` contains application support files; do not recommend deleting it wholesale; only specific cache sub-folders if the user requests
 - **Empty disk_scan output** — if `disk_scan` returns an empty entry list (permission-denied root), try calling `get_large_files` on the home directory as a fallback

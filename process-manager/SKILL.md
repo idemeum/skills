@@ -21,11 +21,15 @@ metadata:
       - get_cpu_temperature
   maxAggregateRisk: medium
   userLabel: "Computer running slow or app frozen"
+    # Examples anchor on a process/CPU/memory/boot cause, NOT bare "slow" (collides
+    # with disk-cleanup) and NOT a bare app crash (collides with software-reinstall).
+    # The frozen-app example is TRANSIENT — hung right now, recoverable by kill/
+    # restart; a crash-every-launch is software-reinstall, an Outlook crash is email.
   examples:
-    - "my computer is very slow"
-    - "an app is frozen and not responding"
-    - "my Mac is sluggish and unresponsive"
-    - "everything is running slowly today"
+    - "my computer is slow even with plenty of free disk space"
+    - "an app is frozen with a spinning beachball right now"
+    - "my Mac's fan is loud and apps are sluggish"
+    - "my computer takes forever to boot up"
     - "an application is using too much CPU or memory"
   pill:
     label: Fix Performance

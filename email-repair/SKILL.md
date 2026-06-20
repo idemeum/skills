@@ -25,11 +25,14 @@ metadata:
       - get_top_consumers
   maxAggregateRisk: high
   userLabel: "Email not working"
+    # Crash/freeze examples stay EMAIL-scoped (Outlook/Mail + a mail action) so they
+    # don't read as a generic app crash — a crash-every-launch is software-reinstall,
+    # a one-off frozen app is process-manager.
   examples:
     - "my email is not sending or receiving"
-    - "my email app keeps crashing"
+    - "Outlook crashes whenever I open my inbox"
     - "I keep getting asked for my email password"
-    - "Outlook keeps freezing"
+    - "Outlook freezes when sending or receiving mail"
     - "email stopped working this morning"
   pill:
     label: Fix Email

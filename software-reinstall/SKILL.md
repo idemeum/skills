@@ -26,12 +26,15 @@ metadata:
       - check_mdm_enrollment
   maxAggregateRisk: high
   userLabel: "App crashing or needs reinstall"
+    # Crash/freeze examples anchor on PERSISTENCE — crashes every launch / won't
+    # launch / stays broken after a restart — the reinstall signal. A one-off
+    # frozen app is process-manager; an email/Outlook crash is email-repair.
   examples:
     - "an app keeps crashing every time I open it"
     - "my application is corrupted and won't launch"
     - "software is behaving strangely and needs a fresh install"
     - "I need to reinstall an application cleanly"
-    - "the app keeps freezing and crashing"
+    - "the app is still broken even after restarting it"
   pill:
     label: App Issue
     goal: An app is crashing, won't launch, or is behaving incorrectly — check what's wrong, try non-destructive fixes (preferences, cache, permissions), and either guide me through a reinstall via Self Service / IT, or escalate
