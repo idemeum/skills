@@ -75,10 +75,10 @@ Do NOT use this skill for process or memory issues — use the `process-manager`
 Call `disk_scan` on the user home directory to list every immediate child folder and file sorted largest first.
 
 **Step 2 — Find large files**
-Call `get_large_files` **once** on the home directory with `minSizeBytes: 100000000` (100 MB) and `limit: 10`. The tool returns `output.files: [{ path, size, sizeHuman, modified }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
+Call `get_large_files` **once** on the home directory with `minSizeBytes: 100000000` (100 MB) and `limit: 10`. Do NOT iterate per folder — one call only.
 
 **Step 3 — Find duplicate files**
-Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` and `topDeletableLimit: 10`. The tool returns `output.topDeletables: [{ path, sizeBytes }]` for Steps 9 and 10 to consume. Do NOT iterate per folder.
+Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` and `topDeletableLimit: 10`. Do NOT iterate per folder — one call only.
 
 **Step 4 — Check old downloads**
 Call `find_old_downloads` with `olderThanDays: 90` and `minSizeMb: 50` to list stale downloads ≥50 MB. Installers (.dmg, .pkg, .exe) older than 90 days are almost always safe to remove.
