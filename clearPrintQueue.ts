@@ -28,7 +28,11 @@ export const meta = {
     "Cancels all pending and stuck print jobs. " +
     "Use when the print queue is jammed and jobs cannot be removed through normal means.",
   riskLevel:       "medium",
-  destructive:     false,
+  // Cancelling jobs is irreversible (queued work is lost), so destructive:true.
+  // This is also what makes G4 auto-fire the dry-run preview + consent flow
+  // (autoTriggerDryRun = supportsDryRun && (riskLevel>=high || destructive)).
+  // Without it, the tool's dryRun:true default wins and the cancel never runs.
+  destructive:     true,
   requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["system"],

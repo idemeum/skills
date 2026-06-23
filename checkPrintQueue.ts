@@ -18,6 +18,7 @@ import { exec }         from "child_process";
 import { promisify }    from "util";
 import { z }            from "zod";
 import { formatBytes }  from "./_shared/formatBytes";
+import { parsePrinterStatuses, HALTED_STATUSES } from "./_shared/lpstatStatus";
 
 const execAsync = promisify(exec);
 
@@ -87,12 +88,16 @@ async function checkPrintQueueDarwin(printerName?: string): Promise<PrintJob[]> 
   // stopped/disabled is effectively HELD (stuck behind a halted queue). Derive
   // that from `lpstat -p` so stuckCount is meaningful on macOS instead of always
   // 0 (previously every darwin job was hardcoded "queued").
+  // Derive halted printers via the shared canonical parser so this stays in
+  // lockstep with list_printers (the old inline /...is\s+(stopped|disabled)/
+  // regex missed "disabled since" → paused printers were never marked halted,
+  // so their jobs counted as "queued" and stuckCount stayed 0). See
+  // _shared/lpstatStatus.ts.
   const halted = new Set<string>();
   try {
     const { stdout: pOut } = await execAsync("lpstat -p 2>/dev/null", { maxBuffer: 1 * 1024 * 1024 });
-    for (const l of pOut.split("\n")) {
-      const m = l.match(/^printer\s+(\S+)\s+is\s+(?:stopped|disabled)/i);
-      if (m) halted.add(m[1]);
+    for (const [name, status] of parsePrinterStatuses(pOut)) {
+      if (HALTED_STATUSES.has(status)) halted.add(name);
     }
   } catch { /* best-effort */ }
 

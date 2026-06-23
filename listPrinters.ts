@@ -19,6 +19,8 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
+import { parsePrinterStatuses } from "./_shared/lpstatStatus";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -115,17 +117,17 @@ async function listPrintersDarwin(): Promise<ListPrintersResult> {
     }
   }
 
-  // Parse lpstat -p output
-  // Lines: "printer NAME is idle.  enabled since ..."
-  //        "printer NAME is stopped.  Reason: ..."
+  // Parse lpstat -p output via the shared canonical parser (handles the
+  // "disabled since" / no-"is" wording that the old inline regex missed —
+  // see _shared/lpstatStatus.ts). Kept in lockstep with check_print_queue.
   const printers: PrinterEntry[] = [];
+  const statuses = parsePrinterStatuses(lpstatOut);
   const printerLines = lpstatOut.split("\n").filter((l) => l.startsWith("printer "));
   for (const line of printerLines) {
-    const nameMatch   = line.match(/^printer\s+(\S+)\s/);
-    const statusMatch = line.match(/is\s+(idle|stopped|processing|disabled)/i);
+    const nameMatch = line.match(/^printer\s+(\S+)\s/);
     if (!nameMatch) continue;
     const name   = nameMatch[1];
-    const status = statusMatch ? statusMatch[1] : "unknown";
+    const status = statuses.get(name) ?? "unknown";
 
     // Resolve canonical type + the host from the device URI. The URI is read
     // but only the host (IP/hostname) is surfaced — the full URI carries printer

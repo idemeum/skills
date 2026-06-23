@@ -31,13 +31,18 @@ export const meta = {
     "Use when printers are not discoverable, queue management is broken, " +
     "or after adding/removing printers.",
   riskLevel:       "medium",
-  destructive:     false,
+  // Restarting the print service interrupts any in-flight job and resets system
+  // print state, so destructive:true. This also makes G4 auto-fire the dry-run
+  // preview + consent flow (autoTriggerDryRun = supportsDryRun && (riskLevel>=high
+  // || destructive)); without it the tool's dryRun:true default wins and the
+  // restart never runs.
+  destructive:     true,
   requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["system"],
   auditRequired:   true,
   escalationHint:  {
-    darwin: "sudo launchctl stop org.cups.cupsd && sudo launchctl start org.cups.cupsd",
+    darwin: "sudo launchctl kickstart -k system/org.cups.cupsd",
     win32:  "Restart-Service Spooler -Force  # run from elevated PowerShell",
   },
   schema: {
@@ -85,9 +90,13 @@ async function restartCupsDarwin(dryRun: boolean): Promise<RestartCupsResult> {
   let restarted = false;
   if (!dryRun) {
     try {
-      await execAsync("sudo launchctl stop org.cups.cupsd");
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      await execAsync("sudo launchctl start org.cups.cupsd");
+      // `launchctl kickstart -k system/org.cups.cupsd` restarts the daemon in
+      // one call. The older `launchctl stop`/`start` pair silently no-ops for
+      // protected system daemons on macOS 14.4+ (Sonoma) and later — even as
+      // root — so it can't be relied on. kickstart -k is the supported restart
+      // path. Needs root: provided by the privileged helper daemon (the direct
+      // `sudo` here is only reached on a non-helper/elevated path).
+      await execAsync("sudo launchctl kickstart -k system/org.cups.cupsd");
       restarted = true;
     } catch {
       restarted = false;
