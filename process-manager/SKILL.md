@@ -54,16 +54,16 @@ Do NOT use this skill for disk space issues — use the `disk-cleanup` skill ins
 ## Steps
 
 **Step 1 — Capture top resource consumers**
-Call `get_top_consumers` with `metric: "combined"` and `limit: 10`. Returns `output.processes: [{ pid, name, cpuPercent, memoryMb, memoryHuman, combinedScore }]`. `memoryHuman` is pre-formatted in binary units (matches Activity Monitor / Task Manager); substitute verbatim in card rows, never recompute from `memoryMb`.
+Call `get_top_consumers` with `metric: "combined"` and `limit: 10`. `memoryHuman` is pre-formatted in binary units (matches Activity Monitor / Task Manager); substitute it verbatim in card rows, never recompute from `memoryMb`. (The agent's own and system processes are already excluded by the tool.)
 
 **Step 2 — Check memory pressure**
-Call `get_memory_pressure`. Returns `output.pressureLevel` (`"normal"` | `"warn"` | `"critical"`), pre-formatted `output.totalRamHuman`, `output.usedRamHuman`, `output.swapUsedHuman` (binary units — match Activity Monitor / Task Manager; substitute verbatim, never recompute). Pressure `"warn"` or `"critical"` means the system is swapping — even low-CPU processes will feel sluggish.
+Call `get_memory_pressure`. `pressureLevel` is `"normal"` | `"warn"` | `"critical"` — `"warn"`/`"critical"` means the system is swapping, so even low-CPU processes feel sluggish. The RAM figures (`totalRamHuman` / `usedRamHuman` / `swapUsedHuman`) are pre-formatted in binary units (Activity Monitor / Task Manager); substitute verbatim, never recompute.
 
 **Step 3 — Check CPU temperature**
 Call `get_cpu_temperature`. Returns `output.cpuTempC` (number or null) and `output.isThrottling` (boolean or null). Throttling kicks in above 90°C — no amount of process-killing fixes a thermal problem.
 
 **Step 4 — List startup items**
-Call `get_startup_items`. Returns `output.loginItems: [{ name, path, type }]` (Apple system agents excluded by default). Always run this step — Step 5's card needs it for the "Disable startup items" category; if there are no *disableable* items the category is simply dropped from the card.
+Call `get_startup_items` (Apple system agents and the agent's own autostart are excluded by the tool). Always run this step — Step 5's card needs it for the "Disable startup items" category; if there are no *disableable* items the category is simply dropped from the card.
 
 **Step 5 — Present consolidated findings + offer actions**
 
@@ -107,10 +107,10 @@ Returns `{ selected, selectedTargets }` — `selectedTargets` maps each selected
 
 Step 5 returns `output.selectedTargets` — a map of each selected category id → the **exact items the classifier assigned** to it (`{ pid, name }` for processes, `{ name }` for startup items). **Act on these directly — do NOT re-derive the list.** This guarantees the executed set equals what the user saw and consented to. If `selectedTargets` is absent (the classifier couldn't run), do NOT guess targets — skip the correctives and surface the diagnostics for the user / IT.
 
-For each selected category id, iterate `output.selectedTargets[id]`:
+For each selected category id, act on `output.selectedTargets[id]`:
 - `"restart-helpers"` → `restart_process` with `{ pid, name }` per target. **MUST pass `name`** — without it the tool kills the process but cannot relaunch. The tool `kill -TERM`s the PID, waits 1.5s, then `open -a "<name>"`. Consent gate fires before each (no dry-run support).
 - `"kill-runaway-cpu"` and `"kill-runaway-memory"` → `kill_process` with `{ pid, signal: "TERM" }` per target. Do NOT pass `dryRun` — G4 substitutes it. (Dedupe a pid that appears in both before the second kill.)
-- `"disable-startup"` → `disable_startup_item` with `{ name }` per target. G4 manages dry-run + consent.
+- `"disable-startup"` → call `disable_startup_item` **once** with `{ names: [<every `name` in `selectedTargets["disable-startup"]`>] }` — **batched, never one call per item**. Do NOT pass `dryRun`. G4 fires a single dry-run preview (listing all items) + a single consent for the whole set.
 
 Each corrective step sets `inputsFrom: [{ step: <step-5-index>, field: "selectedTargets" }]` and a `Condition:` clause testing whether its category id is a key in `selectedTargets`. Skip silently otherwise. If a target terminated between Step 1 and Step 6 (the user lingered at the gate), the tool returns "no matching processes found" — treat as a no-op and continue.
 

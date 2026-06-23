@@ -31,15 +31,23 @@ export const meta = {
     "at startup. Use to reduce boot time or stop unwanted background apps. " +
     "Does not uninstall the application.",
   riskLevel:       "medium",
-  destructive:     false,
+  // Removing a login item changes the user's startup config (reversible by
+  // re-adding). destructive:true so G4 auto-fires ONE dry-run preview (listing
+  // every item in the batch) + ONE consent — without it the preview never fires
+  // and the tool's dryRun:true default leaves the real removal up to the executor.
+  destructive:     true,
   requiresConsent: true,
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
   schema: {
-    name: z
-      .string()
-      .describe("Exact name of the startup item to disable"),
+    // Batched: one call removes every named item, so the user sees a single
+    // dry-run preview of the full set + a single confirmation (never one gate
+    // per item). Caller passes all selected startup items at once.
+    names: z
+      .array(z.string().min(1))
+      .min(1)
+      .describe("Exact names of the startup items to disable, in one batch"),
     dryRun: z
       .boolean()
       .optional()
@@ -55,6 +63,15 @@ interface DisableResult {
   disabled: boolean;
   dryRun:   boolean;
   message:  string;
+}
+
+interface DisableStartupItemResult {
+  platform:     NodeJS.Platform;
+  dryRun:       boolean;
+  results:      DisableResult[];
+  /** Items removed (real run) or that WOULD be removed (dry run). */
+  affectedCount: number;
+  message:      string;
 }
 
 // -- PowerShell helper --------------------------------------------------------
@@ -170,27 +187,46 @@ if ($key -and $key.PSObject.Properties['${safeName}']) { 'found' } else { 'notfo
 // -- Exported run function ----------------------------------------------------
 
 export async function run({
-  name,
+  names,
   dryRun = true,
 }: {
-  name:    string;
+  names:   string[];
   dryRun?: boolean;
-}): Promise<DisableResult> {
-  if (!name || !name.trim()) {
-    throw new Error("[disable_startup_item] 'name' is required and must not be empty.");
+}): Promise<DisableStartupItemResult> {
+  const list = (names ?? []).map(n => n?.trim()).filter(Boolean);
+  if (list.length === 0) {
+    throw new Error("[disable_startup_item] 'names' is required and must contain at least one non-empty name.");
   }
 
   const platform = os.platform();
-  if (platform === "win32") {
-    return disableStartupItemWin32(name, dryRun);
+  const disableOne = platform === "win32" ? disableStartupItemWin32 : disableStartupItemDarwin;
+
+  // Sequential (not parallel): osascript/registry edits to login items can race.
+  const results: DisableResult[] = [];
+  for (const name of list) {
+    results.push(await disableOne(name, dryRun));
   }
-  return disableStartupItemDarwin(name, dryRun);
+
+  // affectedCount: removed (real) or would-remove (dry run = found items).
+  const affectedCount = dryRun
+    ? results.filter(r => r.found).length
+    : results.filter(r => r.disabled).length;
+  const names_ = results.filter(r => (dryRun ? r.found : r.disabled)).map(r => r.name);
+  const message = dryRun
+    ? (affectedCount > 0
+        ? `Dry run: would remove ${affectedCount} startup item(s): ${names_.join(", ")}.`
+        : "Dry run: none of the named startup items were found.")
+    : (affectedCount > 0
+        ? `Removed ${affectedCount} of ${list.length} startup item(s): ${names_.join(", ")}.`
+        : "No startup items were removed (none found, or removal failed — see results).");
+
+  return { platform, dryRun, results, affectedCount, message };
 }
 
 // -- Smoke test ---------------------------------------------------------------
 
 if (false) {
-  run({ name: "SomeApp" })
+  run({ names: ["SomeApp"] })
     .then(r => console.log(JSON.stringify(r, null, 2)))
     .catch((err: Error) => { console.error(err.message); process.exit(1); });
 }

@@ -20,6 +20,8 @@ import { promisify } from "util";
 import { z }         from "zod";
 import * as fs       from "fs/promises";
 
+import { isAgentSelfStartupItem } from "./_shared/processIdentity";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -181,9 +183,15 @@ export async function run({
   includeSystem?: boolean;
 } = {}) {
   const platform  = os.platform();
-  const loginItems = platform === "win32"
+  const scanned = platform === "win32"
     ? await getStartupItemsWin32()
     : await getStartupItemsDarwin(includeSystem);
+
+  // Never surface the agent's OWN autostart entry — disabling it would stop the
+  // agent from launching at login (self-harm). Mirrors the self-exclusion
+  // get_top_consumers applies to the agent's own process. Always filtered,
+  // regardless of includeSystem.
+  const loginItems = scanned.filter((i) => !isAgentSelfStartupItem(i.name));
 
   return {
     platform,
