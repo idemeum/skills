@@ -7,7 +7,7 @@
  *
  * Platform strategy
  * -----------------
- * darwin  networksetup -listnetworkserviceorder / -deletelocation
+ * darwin  networksetup -setnetworkserviceenabled "<service>" off → on (bounce)
  * win32   PowerShell netsh int ip reset && netsh winsock reset (reboot required)
  *
  * Smoke test
@@ -36,22 +36,32 @@ export const meta = {
   affectedScope:   ["network", "system"],
   auditRequired:   true,
   escalationHint:  {
-    darwin: "sudo networksetup -deletelocation Automatic && sudo networksetup -createlocation Automatic populate && sudo networksetup -switchtolocation Automatic",
+    darwin: "sudo networksetup -setnetworkserviceenabled '<service>' off && sudo networksetup -setnetworkserviceenabled '<service>' on  # substitute the service name, e.g. Wi-Fi",
     win32:  "netsh int ip reset && netsh winsock reset  # run from elevated Command Prompt; reboot afterwards",
   },
   schema: {
+    // snake_case `interface` matches the privileged helper's struct Params field
+    // (required). macOS: network SERVICE name ("Wi-Fi", "Ethernet"). Windows:
+    // interface name. G4 forwards executor params verbatim to the helper.
+    interface: z
+      .string()
+      .describe(
+        "Network service/interface to reset. macOS: service name (e.g. " +
+        "\"Wi-Fi\", \"Ethernet\"). Windows: interface name. Pass the active " +
+        "interface from get_network_interfaces.",
+      ),
     dryRun: z
       .boolean()
       .optional()
-      .describe("If true, show current network locations without modifying. Default: true"),
+      .describe("If true, show what would be reset without modifying. Default: true"),
   },
 } as const;
 
 // -- Types --------------------------------------------------------------------
 
 interface ResetResult {
-  locations:      string[];
-  removed:        string[];
+  interface:      string;
+  reset:          boolean;
   dryRun:         boolean;
   rebootRequired: boolean;
   message:        string;
@@ -70,85 +80,56 @@ async function runPS(script: string): Promise<string> {
 
 // -- darwin implementation ----------------------------------------------------
 
-async function resetDarwin(dryRun: boolean): Promise<ResetResult> {
-  // List current network locations
-  let locations: string[] = [];
-  try {
-    const { stdout } = await execAsync("networksetup -listlocations 2>/dev/null");
-    locations = stdout.trim().split("\n").filter(Boolean);
-  } catch {
-    locations = [];
-  }
-
-  const customLocations = locations.filter(l => l.toLowerCase() !== "automatic");
-
+async function resetDarwin(iface: string, dryRun: boolean): Promise<ResetResult> {
+  // Match the privileged helper: bounce the named network SERVICE off→on, which
+  // tears down and rebuilds its config (DHCP lease, routes) without the heavier
+  // location surgery the old local path did. No reboot needed.
   if (dryRun) {
     return {
-      locations,
-      removed:        [],
+      interface:      iface,
+      reset:          false,
       dryRun:         true,
       rebootRequired: false,
-      message:        `Found ${locations.length} network location(s). Custom locations: ${customLocations.join(", ") || "none"}. Run with dryRun=false to remove custom locations.`,
+      message:        `Dry run: would disable then re-enable network service "${iface}" (networksetup -setnetworkserviceenabled off/on). Run with dryRun=false to apply.`,
     };
   }
 
-  // Remove custom locations (keep "Automatic")
-  const removed: string[] = [];
-  for (const loc of customLocations) {
-    try {
-      const safeLoc = loc.replace(/'/g, "'\\''");
-      await execAsync(`networksetup -deletelocation '${safeLoc}' 2>/dev/null`);
-      removed.push(loc);
-    } catch { /* continue */ }
+  const safeSvc = iface.replace(/'/g, "'\\''");
+  try {
+    await execAsync(`networksetup -setnetworkserviceenabled '${safeSvc}' off 2>/dev/null`);
+    await new Promise((r) => setTimeout(r, 1500));
+    await execAsync(`networksetup -setnetworkserviceenabled '${safeSvc}' on 2>/dev/null`);
+    return {
+      interface:      iface,
+      reset:          true,
+      dryRun:         false,
+      rebootRequired: false,
+      message:        `Network service "${iface}" reset (disabled then re-enabled).`,
+    };
+  } catch (e) {
+    return {
+      interface:      iface,
+      reset:          false,
+      dryRun:         false,
+      rebootRequired: false,
+      message:        `Failed to reset network service "${iface}": ${(e as Error).message}. Check the service name with get_network_interfaces.`,
+    };
   }
-
-  // Ensure "Automatic" exists
-  if (!locations.map(l => l.toLowerCase()).includes("automatic")) {
-    try {
-      await execAsync("networksetup -createlocation Automatic populate 2>/dev/null");
-      await execAsync("networksetup -switchlocation Automatic 2>/dev/null");
-    } catch { /* ignore */ }
-  } else {
-    try {
-      await execAsync("networksetup -switchlocation Automatic 2>/dev/null");
-    } catch { /* ignore */ }
-  }
-
-  return {
-    locations,
-    removed,
-    dryRun:         false,
-    rebootRequired: false,
-    message:        removed.length > 0
-      ? `Removed ${removed.length} custom location(s): ${removed.join(", ")}. Switched to Automatic location.`
-      : "No custom locations to remove. Switched to Automatic location.",
-  };
 }
 
 // -- win32 implementation -----------------------------------------------------
 
-async function resetWin32(dryRun: boolean): Promise<ResetResult> {
-  // Get current config info
-  const ps = `
-$ErrorActionPreference = 'SilentlyContinue'
-@{
-  adapters = (Get-NetAdapter | Select-Object -ExpandProperty Name)
-} | ConvertTo-Json -Compress`.trim();
-
-  let adapters: string[] = [];
-  try {
-    const raw     = await runPS(ps);
-    const parsed  = JSON.parse(raw) as { adapters: string[] };
-    adapters = parsed.adapters ?? [];
-  } catch { /* ignore */ }
-
+async function resetWin32(iface: string, dryRun: boolean): Promise<ResetResult> {
+  // Windows reset is the global TCP/IP + Winsock stack reset; `netsh` takes no
+  // interface argument, so `iface` is accepted for contract parity with the
+  // helper but the operation is system-wide (matches the helper's platform note).
   if (dryRun) {
     return {
-      locations:      adapters,
-      removed:        [],
+      interface:      iface,
+      reset:          false,
       dryRun:         true,
       rebootRequired: true,
-      message:        "Dry run: would run 'netsh int ip reset' and 'netsh winsock reset'. A reboot is required after reset. Run with dryRun=false to execute.",
+      message:        "Dry run: would run 'netsh int ip reset' and 'netsh winsock reset' (system-wide). A reboot is required after reset. Run with dryRun=false to execute.",
     };
   }
 
@@ -162,8 +143,8 @@ $ErrorActionPreference = 'SilentlyContinue'
   } catch (e) { errors.push(`winsock reset: ${(e as Error).message}`); }
 
   return {
-    locations:      adapters,
-    removed:        [],
+    interface:      iface,
+    reset:          errors.length === 0,
     dryRun:         false,
     rebootRequired: true,
     message:        errors.length > 0
@@ -175,14 +156,19 @@ $ErrorActionPreference = 'SilentlyContinue'
 // -- Exported run function ----------------------------------------------------
 
 export async function run({
+  interface: iface,
   dryRun = true,
 }: {
-  dryRun?: boolean;
-} = {}): Promise<ResetResult & { platform: string }> {
+  interface: string;
+  dryRun?:   boolean;
+}): Promise<ResetResult & { platform: string }> {
+  if (!iface || !iface.trim()) {
+    throw new Error("[reset_network_settings] 'interface' is required (service/interface name).");
+  }
   const platform = os.platform();
   const result   = platform === "win32"
-    ? await resetWin32(dryRun)
-    : await resetDarwin(dryRun);
+    ? await resetWin32(iface, dryRun)
+    : await resetDarwin(iface, dryRun);
 
   return { ...result, platform };
 }
@@ -190,7 +176,7 @@ export async function run({
 // -- CLI smoke test -----------------------------------------------------------
 
 if (false) {
-  run({})
+  run({ interface: "Wi-Fi" })
     .then(r => console.log(JSON.stringify(r, null, 2)))
     .catch((err: Error) => { console.error(err.message); process.exit(1); });
 }

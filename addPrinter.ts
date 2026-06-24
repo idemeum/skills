@@ -42,20 +42,25 @@ export const meta = {
     win32:  "Add-PrinterPort -Name \"<name>_Port\" -PrinterHostAddress \"<host>\"; Add-Printer -Name \"<name>\" -PortName \"<name>_Port\" -DriverName \"Microsoft IPP Class Driver\"  # run from elevated PowerShell",
   },
   schema: {
-    name: z
+    // Keys match the privileged helper's struct Params exactly (snake_case):
+    // `printer_name`, `device_uri`, `driver_name`. G4 forwards executor params
+    // verbatim to the helper (HELPER-IPC-PROTOCOL.md / HELPER-HANDLERS.md). The
+    // caller supplies a COMPOSED device URI rather than host+protocol so the
+    // local dry-run path and the helper's real run agree on one input shape.
+    printer_name: z
       .string()
       .describe("Display name for the printer"),
-    host: z
+    device_uri: z
       .string()
-      .describe("IP address or hostname of the printer"),
-    protocol: z
-      .enum(["ipp", "lpd", "socket"])
-      .optional()
-      .describe("Protocol. Default: ipp (recommended for modern printers)"),
-    driverPpd: z
+      .describe(
+        "Full device URI. Compose from the printer's IP/hostname: " +
+        "`ipp://<host>/ipp/print` (recommended), `lpd://<host>/`, or " +
+        "`socket://<host>:9100`. Scheme must be ipp / lpd / socket.",
+      ),
+    driver_name: z
       .string()
       .optional()
-      .describe("Path to PPD driver file. Omit to use IPP Everywhere (auto-driver)"),
+      .describe("PPD file path or driver model. Omit for IPP Everywhere / the Microsoft IPP Class Driver (auto-driver)."),
   },
 } as const;
 
@@ -81,26 +86,21 @@ async function runPS(script: string): Promise<string> {
 
 // -- Helpers ------------------------------------------------------------------
 
-function buildUri(host: string, protocol: "ipp" | "lpd" | "socket"): string {
-  switch (protocol) {
-    case "lpd":    return `lpd://${host}/`;
-    case "socket": return `socket://${host}:9100`;
-    default:       return `ipp://${host}/ipp/print`;
-  }
+/** Extract the host from a device URI (e.g. ipp://host/ipp/print → host). */
+function hostFromUri(uri: string): string | null {
+  return uri.match(/^[a-z]+:\/\/(?:[^@/\s]*@)?([^/:\s]+)/i)?.[1] ?? null;
 }
 
 // -- darwin implementation ----------------------------------------------------
 
 async function addPrinterDarwin(
-  name:       string,
-  host:       string,
-  protocol:   "ipp" | "lpd" | "socket",
-  driverPpd?: string,
+  name:        string,
+  uri:         string,
+  driverName?: string,
 ): Promise<AddPrinterResult> {
-  const uri         = buildUri(host, protocol);
   const safeName    = name.replace(/'/g, "'\\''");
-  const driverPart  = driverPpd
-    ? `-P '${driverPpd.replace(/'/g, "'\\''")}'`
+  const driverPart  = driverName
+    ? `-P '${driverName.replace(/'/g, "'\\''")}'`
     : "-m everywhere";
 
   const cmd = `lpadmin -p '${safeName}' -E -v '${uri}' ${driverPart}`;
@@ -125,12 +125,14 @@ async function addPrinterDarwin(
 // -- win32 implementation -----------------------------------------------------
 
 async function addPrinterWin32(
-  name:       string,
-  host:       string,
-  protocol:   "ipp" | "lpd" | "socket",
-  _driverPpd?: string,
+  name:         string,
+  uri:          string,
+  _driverName?: string,
 ): Promise<AddPrinterResult> {
-  const uri        = buildUri(host, protocol);
+  const host       = hostFromUri(uri);
+  if (!host) {
+    return { name, uri, added: false, message: `Could not parse a host from device URI "${uri}".` };
+  }
   const safeName   = name.replace(/'/g, "''");
   const safeHost   = host.replace(/'/g, "''");
   const safePort   = `${safeName}_Port`;
@@ -168,31 +170,29 @@ Add-Printer -Name '${safeName}' -DriverName 'Microsoft IPP Class Driver' -PortNa
 // -- Exported run function ----------------------------------------------------
 
 export async function run({
-  name,
-  host,
-  protocol  = "ipp",
-  driverPpd,
+  printer_name: name,
+  device_uri:   uri,
+  driver_name:  driverName,
 }: {
-  name:       string;
-  host:       string;
-  protocol?:  "ipp" | "lpd" | "socket";
-  driverPpd?: string;
+  printer_name: string;
+  device_uri:   string;
+  driver_name?: string;
 }) {
-  // Expand ~ in driverPpd so the LLM can pass "~/Downloads/HP.ppd" naturally.
+  // Expand ~ in driver_name so the LLM can pass "~/Downloads/HP.ppd" naturally.
   // lpadmin -P treats the path literally; without expansion the call would
   // fail with "PPD file not found" on a path like "<cwd>/~/Downloads/HP.ppd".
-  const resolvedPpd = expandTilde(driverPpd);
+  const resolvedDriver = expandTilde(driverName);
 
   const platform = os.platform();
   return platform === "win32"
-    ? addPrinterWin32(name, host, protocol, resolvedPpd)
-    : addPrinterDarwin(name, host, protocol, resolvedPpd);
+    ? addPrinterWin32(name, uri, resolvedDriver)
+    : addPrinterDarwin(name, uri, resolvedDriver);
 }
 
 // -- Smoke test ---------------------------------------------------------------
 
 if (false) {
-  run({ name: "TestPrinter", host: "192.168.1.100" })
+  run({ printer_name: "TestPrinter", device_uri: "ipp://192.168.1.100/ipp/print" })
     .then(r => console.log(JSON.stringify(r, null, 2)))
     .catch((err: Error) => { console.error(err.message); process.exit(1); });
 }
