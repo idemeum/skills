@@ -6,7 +6,7 @@
  *
  * Platform strategy
  * -----------------
- * darwin  `cancel -a [printerName]` — cancels all jobs for a printer or all
+ * darwin  `cancel -a` — cancels all jobs across all queues
  * win32   PowerShell Get-PrintJob | Remove-PrintJob
  *
  * Smoke test
@@ -42,10 +42,11 @@ export const meta = {
     win32:  "Stop-Service Spooler -Force; Remove-Item C:\\Windows\\System32\\spool\\PRINTERS\\* -Force; Start-Service Spooler  # run from elevated PowerShell",
   },
   schema: {
-    printerName: z
-      .string()
-      .optional()
-      .describe("Printer name to clear. Omit to clear all queues"),
+    // No per-printer targeting: this tool always clears ALL queues. The
+    // privileged helper daemon's clear_print_queue accepts exactly `{}`
+    // (deny_unknown_fields), and the local dry-run preview must match the
+    // helper's clear-all real run, so a `printerName` param would (a) be
+    // rejected by the helper and (b) make the preview disagree with the action.
     dryRun: z
       .boolean()
       .optional()
@@ -79,17 +80,12 @@ async function runPS(script: string): Promise<string> {
 // -- darwin implementation ----------------------------------------------------
 
 async function clearPrintQueueDarwin(
-  dryRun:       boolean,
-  printerName?: string,
+  dryRun: boolean,
 ): Promise<ClearPrintQueueResult> {
-  // First enumerate jobs
-  const listCmd = printerName
-    ? `lpstat -o '${printerName.replace(/'/g, "'\\''")}'`
-    : "lpstat -o";
-
+  // Enumerate jobs across all queues.
   let lpstatOut = "";
   try {
-    const { stdout } = await execAsync(listCmd);
+    const { stdout } = await execAsync("lpstat -o");
     lpstatOut = stdout;
   } catch (err) {
     lpstatOut = (err as { stdout?: string }).stdout ?? "";
@@ -103,10 +99,7 @@ async function clearPrintQueueDarwin(
 
   if (!dryRun) {
     try {
-      const cancelCmd = printerName
-        ? `cancel -a '${printerName.replace(/'/g, "'\\''")}'`
-        : "cancel -a";
-      await execAsync(cancelCmd);
+      await execAsync("cancel -a");   // all queues, all users
     } catch {
       // Non-fatal — queue may already be empty
     }
@@ -128,17 +121,10 @@ async function clearPrintQueueDarwin(
 // -- win32 implementation -----------------------------------------------------
 
 async function clearPrintQueueWin32(
-  dryRun:       boolean,
-  printerName?: string,
+  dryRun: boolean,
 ): Promise<ClearPrintQueueResult> {
-  // Enumerate jobs
-  const listPs = printerName
-    ? `
-$ErrorActionPreference = 'SilentlyContinue'
-Get-PrintJob -PrinterName '${printerName.replace(/'/g, "''")}' |
-  Select-Object Id,DocumentName |
-  ConvertTo-Json -Depth 2 -Compress`.trim()
-    : `
+  // Enumerate jobs across all printers.
+  const listPs = `
 $ErrorActionPreference = 'SilentlyContinue'
 $jobs = Get-Printer | ForEach-Object {
   $n = $_.Name
@@ -158,16 +144,12 @@ $jobs | ConvertTo-Json -Depth 2 -Compress`.trim();
 
   const jobs     = jobItems.map((j) => String(j.DocumentName ?? j.Id ?? "")).filter(Boolean);
   const printers = [...new Set(
-    jobItems.map((j) => String(j.PrinterName ?? printerName ?? "")).filter(Boolean),
+    jobItems.map((j) => String(j.PrinterName ?? "")).filter(Boolean),
   )];
 
   if (!dryRun && jobItems.length > 0) {
     try {
-      const cancelPs = printerName
-        ? `
-$ErrorActionPreference = 'SilentlyContinue'
-Get-PrintJob -PrinterName '${printerName.replace(/'/g, "''")}' | Remove-PrintJob`.trim()
-        : `
+      const cancelPs = `
 $ErrorActionPreference = 'SilentlyContinue'
 Get-Printer | ForEach-Object {
   Get-PrintJob -PrinterName $_.Name -ErrorAction SilentlyContinue | Remove-PrintJob
@@ -192,16 +174,14 @@ Get-Printer | ForEach-Object {
 // -- Exported run function ----------------------------------------------------
 
 export async function run({
-  printerName,
   dryRun = true,
 }: {
-  printerName?: string;
-  dryRun?:      boolean;
+  dryRun?: boolean;
 } = {}) {
   const platform = os.platform();
   return platform === "win32"
-    ? clearPrintQueueWin32(dryRun, printerName)
-    : clearPrintQueueDarwin(dryRun, printerName);
+    ? clearPrintQueueWin32(dryRun)
+    : clearPrintQueueDarwin(dryRun);
 }
 
 // -- Smoke test ---------------------------------------------------------------

@@ -75,7 +75,8 @@ Call `get_wifi_info`. Poor signal (RSSI < -70 dBm, `linkQuality: "poor"`) explai
 `Condition:` only act on the result if Step 3 returned an active `type: "Wi-Fi"` interface. On Ethernet the tool returns `isConnected: false` cleanly — report "not applicable" and proceed.
 
 **Step 5 — Renew DHCP lease**
-Call `renew_dhcp_lease`, then re-call `get_network_interfaces` to confirm a valid IP.
+Call `renew_dhcp_lease` with `interface` set to the **name of the active interface** from Step 3's `get_network_interfaces` output (e.g. `en0`). **MUST pass `interface` — do NOT omit it.** The corrective runs through the privileged helper, which requires a specific interface (renewing "all" is unsafe on Windows); omitting it makes the helper reject the call. Then re-call `get_network_interfaces` to confirm a valid IP.
+`Inputs:` interface name from Step 3's `get_network_interfaces` output (`interfaces[].name` of the active interface).
 `Condition:` only if Step 3 shows the active interface has no IPv4 or an APIPA `169.254.` address. Skip on a healthy lease — renew briefly bounces the interface.
 
 **Step 6 — Flush DNS cache**

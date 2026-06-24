@@ -73,7 +73,7 @@ It tests ports 9100 (raw), 631 (IPP), 80 (admin). `output.isReachable` is true w
 
 **Step 5 — Clear stuck jobs (lightest corrective)**
 **Condition:** only if Step 2 returned `output.stuckCount > 0` (jobs that won't progress — held/error/paused). A queue with only healthy in-progress jobs (`stuckCount` 0) is not cleared.
-Call `clear_print_queue` — **do NOT pass `dryRun`**. The dry-run preview + consent gate is applied automatically (the user sees which jobs would be cancelled before any are). Admin-gated → runs via the helper daemon; if the helper is unavailable, see Privilege handling for the self-service queue-clear.
+Call `clear_print_queue` with **no arguments** — it clears **all** queues (there is no per-printer targeting; do NOT pass `printerName` or `dryRun`). The dry-run preview + consent gate is applied automatically (the user sees which jobs would be cancelled before any are). Admin-gated → runs via the helper daemon; if the helper is unavailable, see Privilege handling for the self-service queue-clear.
 
 **Step 6 — Verify the queue cleared**
 **Condition:** only if Step 5 ran.
