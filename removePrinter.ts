@@ -39,7 +39,9 @@ export const meta = {
     win32:  "Remove-Printer -Name \"<printerName>\"  # run from elevated PowerShell",
   },
   schema: {
-    printerName: z
+    // snake_case to match the privileged helper's struct Params field
+    // (`printer_name`); G4 forwards executor params verbatim to the helper.
+    printer_name: z
       .string()
       .describe("Exact printer name to remove (get names from list_printers)"),
     dryRun: z
@@ -160,11 +162,11 @@ async function removePrinterWin32(
 // -- Exported run function ----------------------------------------------------
 
 export async function run({
-  printerName,
+  printer_name: printerName,
   dryRun = true,
 }: {
-  printerName: string;
-  dryRun?:     boolean;
+  printer_name: string;
+  dryRun?:      boolean;
 }) {
   const platform = os.platform();
   return platform === "win32"
@@ -175,7 +177,7 @@ export async function run({
 // -- Smoke test ---------------------------------------------------------------
 
 if (false) {
-  run({ printerName: "TestPrinter" })
+  run({ printer_name: "TestPrinter" })
     .then(r => console.log(JSON.stringify(r, null, 2)))
     .catch((err: Error) => { console.error(err.message); process.exit(1); });
 }

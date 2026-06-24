@@ -44,12 +44,15 @@ export const meta = {
   // summarizer Output:, and RAG embeddings. The value still reaches the
   // tool boundary (Zod validates and the OS command receives it); only
   // downstream records / replays / LLM contexts see the redaction.
-  sensitiveParams: ["newPassword"] as const,
+  // snake_case `new_password` to match the helper's struct Params field; the
+  // sensitiveParams name MUST track the schema key or runtime redaction stops
+  // protecting the secret.
+  sensitiveParams: ["new_password"] as const,
   schema: {
     username: z
       .string()
       .describe("Username whose password to reset"),
-    newPassword: z
+    new_password: z
       .string()
       .describe("New password to set"),
     dryRun: z
@@ -218,15 +221,15 @@ Write-Output "OK"`.trim();
 
 export async function run({
   username,
-  newPassword,
+  new_password: newPassword,
   dryRun = true,
 }: {
-  username:    string;
-  newPassword: string;
-  dryRun?:     boolean;
+  username:     string;
+  new_password: string;
+  dryRun?:      boolean;
 }) {
   if (!username) throw new Error("[reset_local_password] username is required");
-  if (!newPassword) throw new Error("[reset_local_password] newPassword is required");
+  if (!newPassword) throw new Error("[reset_local_password] new_password is required");
 
   const platform = os.platform();
 
@@ -240,7 +243,7 @@ export async function run({
 // -- CLI smoke test -----------------------------------------------------------
 
 if (false) {
-  run({ username: "testuser", newPassword: "TestPass123!", dryRun: true })
+  run({ username: "testuser", new_password: "TestPass123!", dryRun: true })
     .then(r => console.log(JSON.stringify(r, null, 2)))
     .catch((err: Error) => { console.error(err.message); process.exit(1); });
 }
