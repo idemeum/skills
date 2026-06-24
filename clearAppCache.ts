@@ -16,8 +16,6 @@
 import * as fs       from "fs/promises";
 import * as os       from "os";
 import * as nodePath from "path";
-import { exec }      from "child_process";
-import { promisify } from "util";
 import { z }         from "zod";
 
 import {
@@ -26,9 +24,8 @@ import {
   isWin32BrowserVendorDir,
 } from "./_shared/browserCaches";
 import { DEV_CACHE_DIR_NAMES, isDevCacheDir } from "./_shared/devCaches";
+import { getDirSizeBytes } from "./_shared/dirSize";
 import type { Footprint } from "./_shared/footprint";
-
-const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -187,27 +184,10 @@ async function clearAppCacheDarwin(
 
 // -- win32 implementation -----------------------------------------------------
 
-async function getDirSizeMbWin32(dirPath: string): Promise<number> {
-  try {
-    const encoded = Buffer.from(
-      `(Get-ChildItem -LiteralPath '${dirPath.replace(/'/g, "''")}' -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum`,
-      "utf16le",
-    ).toString("base64");
-    const { stdout } = await execAsync(
-      `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
-      { maxBuffer: 5 * 1024 * 1024 },
-    );
-    const bytes = parseFloat(stdout.trim());
-    // SI/decimal MB to match _shared/formatBytes.ts + Explorer.
-    return isNaN(bytes) ? 0 : Math.round((bytes / 1_000_000) * 100) / 100;
-  } catch {
-    return 0;
-  }
-}
-
 async function clearAppCacheWin32(
-  appName: string | undefined,
-  dryRun:  boolean,
+  appName:    string | undefined,
+  dryRun:     boolean,
+  deadlineMs: number,
 ): Promise<{ caches: CacheEntry[]; totalSizeMb: number; deleted: boolean; freedMb: number }> {
   const localAppData = process.env["LOCALAPPDATA"] ?? nodePath.join(os.homedir(), "AppData", "Local");
   const tempDir      = process.env["TEMP"]         ?? nodePath.join(os.homedir(), "AppData", "Local", "Temp");
@@ -238,11 +218,10 @@ async function clearAppCacheWin32(
   }
 
   const caches: CacheEntry[] = await Promise.all(
-    all.map(async ({ name, fullPath }) => ({
-      name,
-      path:   fullPath,
-      sizeMb: await getDirSizeMbWin32(fullPath),
-    })),
+    all.map(async ({ name, fullPath }) => {
+      const { sizeBytes } = await getDirSizeBytes(fullPath, deadlineMs);
+      return { name, path: fullPath, sizeMb: Math.round((sizeBytes / 1_000_000) * 100) / 100 };
+    }),
   );
 
   caches.sort((a, b) => b.sizeMb - a.sizeMb);
@@ -276,16 +255,25 @@ async function clearAppCacheWin32(
 
 // -- Exported run function ----------------------------------------------------
 
-export async function run({
-  appName,
-  dryRun = true,
-}: {
-  appName?: string;
-  dryRun?:  boolean;
-} = {}) {
+interface RunCtx { deadlineMs?: number }
+
+export async function run(
+  {
+    appName,
+    dryRun = true,
+  }: {
+    appName?: string;
+    dryRun?:  boolean;
+  } = {},
+  ctx?: RunCtx,
+) {
+  const ceilingMs   = ctx?.deadlineMs ?? (Date.now() + 60_000);
+  const remainingMs = Math.max(0, ceilingMs - Date.now());
+  const internalDeadlineMs = Date.now() + Math.floor(remainingMs * 0.9);
+
   const platform = os.platform();
   const result   = platform === "win32"
-    ? await clearAppCacheWin32(appName, dryRun)
+    ? await clearAppCacheWin32(appName, dryRun, internalDeadlineMs)
     : await clearAppCacheDarwin(appName, dryRun);
 
   return {

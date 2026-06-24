@@ -112,7 +112,7 @@ Get-Process | ForEach-Object {
   [PSCustomObject]@{
     pid      = [int]$_.Id
     name     = $_.ProcessName
-    cpu      = [Math]::Round([double]($_.CPU ?? 0), 2)
+    cpu      = [Math]::Round([double]($_.CPU -as [double]), 2)
     memoryMb = [Math]::Round($_.WorkingSet64 / 1MB, 1)
   }
 } | ConvertTo-Json -Depth 2 -Compress`.trim();

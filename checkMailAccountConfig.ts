@@ -253,9 +253,9 @@ foreach ($profile in $profiles) {
     Where-Object { $_.GetValue('Account Name') -ne $null }
   foreach ($acct in $accounts) {
     $results += [PSCustomObject]@{
-      email      = [string]($acct.GetValue('Email') ?? $acct.GetValue('Account Name') ?? '')
-      imapServer = [string]($acct.GetValue('IMAP Server') ?? '')
-      smtpServer = [string]($acct.GetValue('SMTP Server') ?? '')
+      email      = [string]( if ($acct.GetValue('Email')) { $acct.GetValue('Email') } elseif ($acct.GetValue('Account Name')) { $acct.GetValue('Account Name') } else { '' } )
+      imapServer = [string]( if ($acct.GetValue('IMAP Server')) { $acct.GetValue('IMAP Server') } else { '' } )
+      smtpServer = [string]( if ($acct.GetValue('SMTP Server')) { $acct.GetValue('SMTP Server') } else { '' } )
       port       = $null
       ssl        = $null
     }

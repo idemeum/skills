@@ -22,6 +22,9 @@ import * as crypto   from "crypto";
 import { z }         from "zod";
 
 import { expandTilde } from "./_shared/expandTilde";
+import { Semaphore }   from "./_shared/semaphore";
+
+const _statSem = process.platform === "win32" ? new Semaphore(32) : null;
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -166,6 +169,7 @@ async function walk(
         await walk(full, minBytes, extensions, acc, depth + 1, stats, deadlineMs);
       } else if (e.isFile()) {
         if (extensions && !extensions.has(nodePath.extname(e.name).toLowerCase())) return;
+        if (_statSem) await _statSem.acquire();
         try {
           const stat = await fsp.stat(full);
           if (stat.size >= minBytes) {
@@ -173,7 +177,7 @@ async function walk(
           }
         } catch {
           // skip inaccessible files
-        }
+        } finally { _statSem?.release(); }
       }
     }),
   );

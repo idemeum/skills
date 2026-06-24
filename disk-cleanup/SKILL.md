@@ -30,6 +30,7 @@ metadata:
       - get_large_files
       - find_duplicate_files
       - find_old_downloads
+      - get_trash_info
   maxAggregateRisk: high
   userLabel: "Running out of disk space"
   examples:

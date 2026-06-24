@@ -20,6 +20,9 @@ import { z }         from "zod";
 
 import { expandTilde } from "./_shared/expandTilde";
 import { formatBytes } from "./_shared/formatBytes";
+import { Semaphore }   from "./_shared/semaphore";
+
+const _statSem = process.platform === "win32" ? new Semaphore(32) : null;
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -135,6 +138,7 @@ async function walk(
         if (SKIP_DIRS.has(e.name)) return;
         await walk(full, minSize, acc, depth + 1, stats);
       } else if (e.isFile()) {
+        if (_statSem) await _statSem.acquire();
         try {
           const stat = await fs.stat(full);
           if (stat.size >= minSize) {
@@ -146,6 +150,7 @@ async function walk(
             });
           }
         } catch { /* unreadable file — skip */ }
+        finally { _statSem?.release(); }
       }
     }),
   );

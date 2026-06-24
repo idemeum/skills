@@ -22,7 +22,7 @@ import * as fs       from "fs/promises";
 import * as os       from "os";
 import * as nodePath from "path";
 
-import { execAsync, isDarwin, isWin32 } from "./_shared/platform";
+import { isDarwin, isWin32 } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 import { formatBytes } from "./_shared/formatBytes";
 import { DARWIN_BROWSER_CACHE_DIR_NAMES, isWin32BrowserVendorDir } from "./_shared/browserCaches";
@@ -75,22 +75,6 @@ export interface GetAppCacheInfoResult {
 
 // -- Helpers ------------------------------------------------------------------
 
-async function getDirSizeBytesWin32(dirPath: string): Promise<number> {
-  try {
-    const encoded = Buffer.from(
-      `(Get-ChildItem -LiteralPath '${dirPath.replace(/'/g, "''")}' -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum`,
-      "utf16le",
-    ).toString("base64");
-    const { stdout } = await execAsync(
-      `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
-      { maxBuffer: 5 * 1024 * 1024 },
-    );
-    const bytes = parseFloat(stdout.trim());
-    return isNaN(bytes) ? 0 : Math.round(bytes);
-  } catch {
-    return 0;
-  }
-}
 
 // -- darwin -------------------------------------------------------------------
 
@@ -146,7 +130,7 @@ async function getAppCacheInfoDarwin(deadlineMs: number): Promise<GetAppCacheInf
 
 // -- win32 --------------------------------------------------------------------
 
-async function getAppCacheInfoWin32(): Promise<GetAppCacheInfoResult> {
+async function getAppCacheInfoWin32(deadlineMs: number): Promise<GetAppCacheInfoResult> {
   const localAppData = process.env["LOCALAPPDATA"] ?? nodePath.join(os.homedir(), "AppData", "Local");
   const tempDir      = process.env["TEMP"]         ?? nodePath.join(localAppData, "Temp");
 
@@ -165,26 +149,30 @@ async function getAppCacheInfoWin32(): Promise<GetAppCacheInfoResult> {
     }
     for (const d of dirents) {
       if (!d.isDirectory() || seen.has(d.name.toLowerCase())) continue;
-      // Exclude browser vendor dirs (hold profile data, not just cache, and
-      // clear_app_cache deletes top-level dirs wholesale) and dev cache dirs
-      // (pip/Yarn) — owned by clear_browser_cache / clear_dev_cache.
-      // See _shared/browserCaches.ts and _shared/devCaches.ts.
       if (isWin32BrowserVendorDir(d.name) || isDevCacheDir(d.name)) continue;
       seen.add(d.name.toLowerCase());
       all.push({ name: d.name, fullPath: nodePath.join(root, d.name) });
     }
   }
 
+  let anyPartial = false;
   const caches: AppCacheEntry[] = await Promise.all(
-    all.map(async ({ name, fullPath }) => ({
-      name,
-      path:      fullPath,
-      sizeBytes: await getDirSizeBytesWin32(fullPath),
-    })),
+    all.map(async ({ name, fullPath }) => {
+      const { sizeBytes, partial } = await getDirSizeBytesShared(fullPath, deadlineMs);
+      if (partial) anyPartial = true;
+      return { name, path: fullPath, sizeBytes };
+    }),
   );
 
   caches.sort((a, b) => b.sizeBytes - a.sizeBytes);
   const totalBytes = caches.reduce((s, c) => s + c.sizeBytes, 0);
+
+  if (anyPartial) {
+    errors.push({
+      scope:   "deadline",
+      message: "Cache scan exceeded the per-tool deadline; sizes are partial.",
+    });
+  }
 
   return {
     platform: "win32",
@@ -211,7 +199,7 @@ export async function run(
   const internalDeadlineMs = Date.now() + Math.floor(remainingMs * 0.9);
 
   if (isDarwin()) return getAppCacheInfoDarwin(internalDeadlineMs);
-  if (isWin32())  return getAppCacheInfoWin32();
+  if (isWin32())  return getAppCacheInfoWin32(internalDeadlineMs);
   return {
     platform: os.platform(),
     caches:   [],

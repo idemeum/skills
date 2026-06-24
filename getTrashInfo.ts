@@ -180,7 +180,7 @@ $shell = New-Object -ComObject Shell.Application
 $bin   = $shell.Namespace(0xA)
 $items = $bin.Items()
 [PSCustomObject]@{
-  bytes = [long](($items | ForEach-Object { $_.Size } | Measure-Object -Sum).Sum ?? 0)
+  bytes = [long]( ($items | ForEach-Object { $_.Size } | Measure-Object -Sum).Sum -as [long] )
   items = [int]$items.Count
 } | ConvertTo-Json -Compress`.trim();
 

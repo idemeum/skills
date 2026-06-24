@@ -21,6 +21,7 @@ import { z }         from "zod";
 import { loggedExec } from "./_shared/platform";
 import { expandTilde } from "./_shared/expandTilde";
 import { formatBytes } from "./_shared/formatBytes";
+import { getDirSizeBytes } from "./_shared/dirSize";
 
 // Re-export so existing test imports (`import { formatBytes } from "./diskScan"`)
 // continue to resolve.  No production consumer imports formatBytes from this
@@ -156,44 +157,40 @@ async function scanDarwin(scanPath: string): Promise<Entry[]> {
 
 // -- win32 implementation -----------------------------------------------------
 
-async function scanWin32(scanPath: string): Promise<Entry[]> {
-  const ps = `
-$ErrorActionPreference = 'SilentlyContinue'
-$items = Get-ChildItem -LiteralPath '${scanPath.replace(/'/g, "''")}'
-$out = foreach ($item in $items) {
-  if ($item.PSIsContainer) {
-    $bytes = (Get-ChildItem -LiteralPath $item.FullName -Recurse -File |
-              Measure-Object -Property Length -Sum).Sum
-    if ($null -eq $bytes) { $bytes = 0 }
-  } else {
-    $bytes = $item.Length
-  }
-  [PSCustomObject]@{
-    name      = $item.Name
-    path      = $item.FullName
-    size      = [long]$bytes
-    # SI / decimal units to match _shared/formatBytes.ts (and Windows
-    # Explorer modern display). PowerShell 1GB / 1MB / 1KB literals are
-    # BINARY (1024-based), so we use explicit decimal constants instead.
-    sizeHuman = if ($bytes -ge 1000000000)   { '{0:N1} GB' -f ($bytes / 1000000000) }
-                elseif ($bytes -ge 1000000)  { '{0:N1} MB' -f ($bytes / 1000000)    }
-                elseif ($bytes -ge 1000)     { '{0:N1} KB' -f ($bytes / 1000)       }
-                else                          { "$bytes B" }
-    type      = if ($item.PSIsContainer) { 'directory' } else { 'file' }
-  }
-}
-$out | Sort-Object size -Descending | ConvertTo-Json -Depth 2 -Compress
-`.trim();
-
-  const raw = await runPS(ps);
-  if (!raw) return [];
-  const parsed = JSON.parse(raw) as Entry | Entry[];
-  return Array.isArray(parsed) ? parsed : [parsed];
+async function scanWin32(scanPath: string, deadlineMs: number): Promise<Entry[]> {
+  const dirents = await fs.readdir(scanPath, { withFileTypes: true });
+  const results = await Promise.all(
+    dirents.map(async (e): Promise<Entry> => {
+      const full = nodePath.join(scanPath, e.name);
+      if (e.isDirectory()) {
+        const { sizeBytes } = await getDirSizeBytes(full, deadlineMs);
+        return {
+          name: e.name, path: full, size: sizeBytes,
+          sizeHuman: formatBytes(sizeBytes), type: "directory",
+        };
+      }
+      const stat = await fs.stat(full).catch(() => null);
+      const size = stat?.size ?? 0;
+      return {
+        name: e.name, path: full, size,
+        sizeHuman: formatBytes(size), type: "file",
+      };
+    }),
+  );
+  return results.sort((a, b) => b.size - a.size);
 }
 
 // -- Exported run function ----------------------------------------------------
 
-export async function run({ path: inputPath = os.homedir() }: { path?: string }) {
+interface RunCtx { deadlineMs?: number }
+
+export async function run(
+  { path: inputPath = os.homedir() }: { path?: string },
+  ctx?: RunCtx,
+) {
+  const ceilingMs   = ctx?.deadlineMs ?? (Date.now() + 60_000);
+  const remainingMs = Math.max(0, ceilingMs - Date.now());
+  const deadlineMs  = Date.now() + Math.floor(remainingMs * 0.9);
   // Expand ~ / ~/ before resolve() — see _shared/expandTilde.ts for the
   // background on why this is necessary across every path-accepting tool.
   const scanPath = nodePath.resolve(expandTilde(inputPath) ?? inputPath);
@@ -217,7 +214,7 @@ export async function run({ path: inputPath = os.homedir() }: { path?: string })
 
   const platform = os.platform();
   const entries  = platform === "win32"
-    ? await scanWin32(scanPath)
+    ? await scanWin32(scanPath, deadlineMs)
     : await scanDarwin(scanPath);
 
   // ── Partial-result detection ────────────────────────────────────────────────

@@ -138,7 +138,7 @@ Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit
   [PSCustomObject]@{
     pid        = [int]$_.Id
     name       = $_.ProcessName
-    cpuPercent = [Math]::Round([double]($_.CPU ?? 0), 2)
+    cpuPercent = [Math]::Round([double]($_.CPU -as [double]), 2)
     memoryMb   = [Math]::Round($_.WorkingSet64 / 1MB, 1)
   }
 } | ConvertTo-Json -Depth 2 -Compress`.trim();

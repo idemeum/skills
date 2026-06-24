@@ -22,6 +22,8 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
+import { getDirSizeBytes } from "./_shared/dirSize";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -89,18 +91,8 @@ type ToolName = typeof ALL_TOOLS[number];
 async function getDirSizeMb(dirPath: string): Promise<number> {
   try {
     if (os.platform() === "win32") {
-      // PowerShell for directory size
-      const encoded = Buffer.from(
-        `(Get-ChildItem -LiteralPath '${dirPath.replace(/'/g, "''")}' -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum`,
-        "utf16le",
-      ).toString("base64");
-      const { stdout } = await execAsync(
-        `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
-        { maxBuffer: 10 * 1024 * 1024 },
-      );
-      const bytes = parseInt(stdout.trim(), 10);
-      // SI/decimal MB to match _shared/formatBytes.ts + Explorer.
-      return isNaN(bytes) ? 0 : Math.round((bytes / 1_000_000) * 10) / 10;
+      const { sizeBytes } = await getDirSizeBytes(dirPath);
+      return isNaN(sizeBytes) ? 0 : Math.round((sizeBytes / 1_000_000) * 10) / 10;
     } else {
       const safePath = dirPath.replace(/'/g, "'\\''");
       const { stdout } = await execAsync(
