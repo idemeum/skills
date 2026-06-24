@@ -7,31 +7,38 @@
  *
  * Platform strategy
  * -----------------
- * darwin  Three-step probe (no single command works post-Sequoia):
+ * darwin  Probe sequence (no single CLI works post-Sequoia):
  *           1. `networksetup -listallhardwareports` — discover the Wi-Fi
  *              device (typically en0 but not guaranteed)
  *           2. `ifconfig <device>` — confirm the interface is UP+RUNNING with
  *              an inet address (the authoritative isConnected signal)
- *           3. `system_profiler SPAirPortDataType` — rich per-network details
- *              (SSID, channel, band, RSSI, security)
- *         The legacy `airport -I` was deprecated in macOS 14.4 and now returns
- *         only a deprecation warning with no key:value data — DO NOT USE.
- *         The SSID is reported as `<redacted>` unless the calling app holds
- *         CoreLocation authorization (NSLocationWhenInUseUsageDescription +
- *         user grant).  When redacted, `ssid` is null and `ssidAvailable` is
- *         false — connectivity reporting is still accurate via ifconfig.
+ *           3. CoreWLAN via JXA (`osascript -l JavaScript`) — PRIMARY signal
+ *              source. RSSI / noise / channel / band / txRate / security are
+ *              NOT gated behind Location Services, so this returns real signal
+ *              data even when the calling app lacks the CoreLocation grant.
+ *           4. `system_profiler SPAirPortDataType` — FALLBACK only (used when
+ *              the CoreWLAN probe fails to produce an RSSI).
+ *         The legacy `airport -I` was deprecated in macOS 14.4 (returns only a
+ *         deprecation warning) — DO NOT USE. `system_profiler`'s "Current
+ *         Network Information" block (SSID *and* signal) is itself gated behind
+ *         CoreLocation on macOS 14+, so relying on it alone returned all-null
+ *         signal on machines where the agent lacks the location grant — which
+ *         is exactly why CoreWLAN is now primary. SSID / BSSID remain
+ *         location-gated on EVERY API; when withheld, `ssid` is null and
+ *         `ssidAvailable` is false while RSSI / linkQuality are still accurate.
  * win32   PowerShell `netsh wlan show interfaces` — parses text output
  *
  * Smoke test
  *   npx tsx -r dotenv/config mcp/skills/getWifiInfo.ts
  */
 
-import * as os       from "os";
-import { exec }      from "child_process";
-import { promisify } from "util";
-import { z }         from "zod";
+import * as os               from "os";
+import { exec, execFile }    from "child_process";
+import { promisify }         from "util";
+import { z }                 from "zod";
 
-const execAsync = promisify(exec);
+const execAsync     = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -158,6 +165,78 @@ async function probeWifiLinkDarwin(device: string): Promise<{
     return { up, hasIp: !!ipv4Match, ipv4: ipv4Match?.[1] ?? null };
   } catch {
     return { up: false, hasIp: false, ipv4: null };
+  }
+}
+
+// CoreWLAN enum → human label maps (stable across macOS versions).
+// CWChannelBand: 1=2.4GHz, 2=5GHz, 3=6GHz (0=unknown).
+const CW_BAND: Record<number, string> = { 1: "2.4 GHz", 2: "5 GHz", 3: "6 GHz" };
+// CWSecurity: the values the field uses in practice; unmapped → null.
+const CW_SECURITY: Record<number, string> = {
+  0: "None", 1: "WEP",
+  2: "WPA Personal", 3: "WPA/WPA2 Personal", 4: "WPA2 Personal",
+  6: "WPA Enterprise", 7: "WPA/WPA2 Enterprise", 8: "WPA2 Enterprise",
+  10: "WPA3 Personal", 11: "WPA3 Enterprise", 12: "WPA3 Transition",
+};
+
+interface CoreWlanWifiInfo {
+  ssid:       string | null;
+  bssid:      string | null;
+  rssi:       number | null;
+  noise:      number | null;
+  txRateMbps: number | null;
+  channel:    number | null;
+  band:       string | null;
+  security:   string | null;
+}
+
+/**
+ * PRIMARY darwin signal source. Loads CoreWLAN in-process via JXA and reads the
+ * current interface. RSSI / noise / channel / band / txRate / security are NOT
+ * gated behind Location Services (verified: returns real values while ssid /
+ * bssid come back null without the grant), so this works even when the agent
+ * lacks the CoreLocation authorization that `system_profiler` / `airport`
+ * require post-macOS 14. Uses execFile (no shell) so the `$` JXA bridge global
+ * isn't touched by shell expansion. Returns null if osascript / CoreWLAN fails.
+ */
+async function getWifiInfoFromCoreWLAN(): Promise<CoreWlanWifiInfo | null> {
+  const jxa = `
+    ObjC.import('CoreWLAN');
+    var i = $.CWWiFiClient.sharedWiFiClient.interface;
+    function n(v){ v = (v && v.js !== undefined) ? v.js : v; var x = Number(v); return isNaN(x) ? null : x; }
+    function s(v){ return v ? ObjC.unwrap(v) : null; }
+    var ch = i.wlanChannel;
+    JSON.stringify({
+      ssid: s(i.ssid), bssid: s(i.bssid),
+      rssi: n(i.rssiValue), noise: n(i.noiseMeasurement), txRate: n(i.transmitRate),
+      channel: ch ? n(ch.channelNumber) : null,
+      band: ch ? n(ch.channelBand) : null,
+      security: n(i.security)
+    });
+  `.replace(/\n\s*/g, " ").trim();
+
+  try {
+    const { stdout } = await execFileAsync(
+      "osascript", ["-l", "JavaScript", "-e", jxa], { timeout: 5_000 },
+    );
+    const r = JSON.parse(stdout.trim()) as {
+      ssid: string | null; bssid: string | null;
+      rssi: number | null; noise: number | null; txRate: number | null;
+      channel: number | null; band: number | null; security: number | null;
+    };
+    // CoreWLAN reports 0 for rssi/noise/txRate when not associated — treat as null.
+    return {
+      ssid:       r.ssid || null,
+      bssid:      r.bssid || null,
+      rssi:       r.rssi  && r.rssi  !== 0 ? r.rssi  : null,
+      noise:      r.noise && r.noise !== 0 ? r.noise : null,
+      txRateMbps: r.txRate && r.txRate > 0 ? r.txRate : null,
+      channel:    r.channel && r.channel > 0 ? r.channel : null,
+      band:       r.band != null ? (CW_BAND[r.band] ?? null) : null,
+      security:   r.security != null ? (CW_SECURITY[r.security] ?? null) : null,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -302,27 +381,32 @@ async function getWifiInfoDarwin(): Promise<WifiInfoResult> {
   const link = await probeWifiLinkDarwin(device);
   if (!link.up || !link.hasIp) return empty(device);
 
-  // Step 2 — interface is up; pull rich details.  system_profiler may fail
-  // (privacy permission, transient I/O) — when that happens we still report
-  // isConnected: true, just without channel/band/RSSI enrichment.
-  const info = await getWifiInfoFromSystemProfiler();
+  // Step 2 — interface is up; pull rich details. CoreWLAN is primary (signal
+  // works without the CoreLocation grant); system_profiler is consulted only as
+  // a fallback when CoreWLAN yields no RSSI. Either way isConnected stays true.
+  const cw = await getWifiInfoFromCoreWLAN();
+  const sp = (!cw || cw.rssi === null) ? await getWifiInfoFromSystemProfiler() : null;
+
+  const rssi   = cw?.rssi  ?? sp?.rssi  ?? null;
+  const noise  = cw?.noise ?? null; // only CoreWLAN exposes noise
+  const ssid   = cw?.ssid  ?? sp?.ssid ?? null;
+  const channel = cw?.channel ?? sp?.channel ?? null;
 
   return {
     device,
-    ssid:          info?.ssid ?? null,
-    // SSID-available is true only when system_profiler returned a real name.
-    // When system_profiler itself failed, we don't know — surface as false
-    // (caller should treat as "unable to obtain" rather than "redacted").
-    ssidAvailable: info?.ssidAvailable ?? false,
-    bssid:         null, // BSSID is also gated behind CoreLocation; not parsed.
-    rssi:          info?.rssi ?? null,
-    noise:         null, // Not exposed by system_profiler.
-    snr:           null,
-    channel:       info?.channel ?? null,
-    band:          info?.band ?? null,
-    security:      info?.security ?? null,
-    txRateMbps:    info?.txRateMbps ?? null,
-    linkQuality:   computeLinkQuality(info?.rssi ?? null),
+    ssid,
+    // We got the SSID iff a real name came back (location-gated on every API).
+    ssidAvailable: Boolean(ssid),
+    bssid:         cw?.bssid ?? null, // also location-gated; null without the grant
+    rssi,
+    noise,
+    snr:           rssi !== null && noise !== null ? rssi - noise : null,
+    channel,
+    band:          cw?.band ?? sp?.band
+                     ?? (channel !== null ? (channel <= 14 ? "2.4 GHz" : "5 GHz") : null),
+    security:      cw?.security ?? sp?.security ?? null,
+    txRateMbps:    cw?.txRateMbps ?? sp?.txRateMbps ?? null,
+    linkQuality:   computeLinkQuality(rssi),
     isConnected:   true, // Link is UP+RUNNING with an IP — that's connected.
     platform:      "darwin",
   };

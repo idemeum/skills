@@ -57,6 +57,12 @@ interface NetworkInterface {
 interface RunResult {
   platform:    string;
   interfaces:  NetworkInterface[];
+  /** The interface that carries the default route — i.e. the primary internet
+   *  uplink (`en0`, `Ethernet`, …). null when there is NO default route (no
+   *  internet path: cable out, DHCP failed to a usable gateway, etc.). This is
+   *  the deterministic "which interface is my connection" signal — prefer it
+   *  over scanning `interfaces[]` by hand. */
+  primaryInterface: string | null;
   activeCount: number;
   total:       number;
 }
@@ -118,6 +124,29 @@ function classifyInterface(
   return "Other";
 }
 
+/**
+ * The interface carrying the default route — the primary internet uplink.
+ * `route -n get default` prints `  interface: en0`. Returns null when there is
+ * no default route (no usable internet path).
+ */
+async function getDefaultRouteInterfaceDarwin(): Promise<string | null> {
+  try {
+    const { stdout } = await execAsync("route -n get default 2>/dev/null", { timeout: 5_000 });
+    return stdout.match(/interface:\s*(\S+)/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getDefaultRouteInterfaceWin32(): Promise<string | null> {
+  try {
+    const ps = `(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1).InterfaceAlias`;
+    return (await runPS(ps)) || null;
+  } catch {
+    return null;
+  }
+}
+
 async function getInterfacesDarwin(includeInactive: boolean): Promise<NetworkInterface[]> {
   const [ifconfigResult, deviceTypeMap] = await Promise.all([
     execAsync("ifconfig -a", { maxBuffer: 10 * 1024 * 1024 }),
@@ -133,16 +162,27 @@ async function getInterfacesDarwin(includeInactive: boolean): Promise<NetworkInt
     if (!nameMatch) continue;
     const name = nameMatch[1];
 
-    const flags   = block.match(/flags=\S+\s*<([^>]*)>/)?.[1] ?? "";
-    const isUp    = flags.split(",").includes("UP");
-    const status: NetworkInterface["status"] = isUp ? "active" : "inactive";
-
-    if (!includeInactive && status === "inactive") continue;
-
     const ipv4Match = block.match(/inet (\d+\.\d+\.\d+\.\d+)/);
     const ipv6Match = block.match(/inet6 ([a-f0-9:]+)/);
     const macMatch  = block.match(/ether ([0-9a-f:]{17})/i);
     const mtuMatch  = block.match(/mtu (\d+)/);
+
+    // Operational state, NOT the administrative `UP` flag. The UP flag is set on
+    // nearly every interface (loopback, idle VPN tunnels, cable-less Ethernet
+    // ports), which made `activeCount` meaningless (21/21) and left the SKILL
+    // unable to pick the real uplink. The ifconfig `status:` line is the carrier
+    // signal for Ethernet/Wi-Fi (en0 active, cable-less en1-6 inactive);
+    // interfaces with no status line (tunnels, loopback) are "active" only if
+    // they actually hold a routable address.
+    const statusLine = block.match(/\bstatus:\s*(active|inactive)\b/)?.[1] as
+      | NetworkInterface["status"]
+      | undefined;
+    const ipv6 = ipv6Match?.[1] ?? null;
+    const hasRoutableAddr = Boolean(ipv4Match) || Boolean(ipv6 && !ipv6.startsWith("fe80"));
+    const status: NetworkInterface["status"] =
+      statusLine ?? (hasRoutableAddr ? "active" : "inactive");
+
+    if (!includeInactive && status === "inactive") continue;
 
     result.push({
       name,
@@ -208,14 +248,20 @@ export async function run({
 }: {
   includeInactive?: boolean;
 } = {}): Promise<RunResult> {
-  const platform   = os.platform();
-  const interfaces = platform === "win32"
-    ? await getInterfacesWin32(includeInactive)
-    : await getInterfacesDarwin(includeInactive);
+  const platform = os.platform();
+  const [interfaces, primaryInterface] = await Promise.all([
+    platform === "win32"
+      ? getInterfacesWin32(includeInactive)
+      : getInterfacesDarwin(includeInactive),
+    platform === "win32"
+      ? getDefaultRouteInterfaceWin32()
+      : getDefaultRouteInterfaceDarwin(),
+  ]);
 
   return {
     platform,
     interfaces,
+    primaryInterface,
     activeCount: interfaces.filter(i => i.status === "active").length,
     total:       interfaces.length,
   };

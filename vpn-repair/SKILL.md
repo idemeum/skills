@@ -59,8 +59,10 @@ Do NOT use if there's **no internet at all** — run the `network-reset` skill f
 **Step 4 — VPN server reachability**
 `check_connectivity` with the VPN server hostname as target. `Condition:` only if Step 3 showed internet up AND Step 1 showed VPN NOT connected. Skip if already connected (Step 9 handles "connected but not routing") or internet is down.
 
-**Step 5 — Certificate**
-`check_certificate_expiry` on the VPN server hostname (port 443, or 8443 for some SSL VPNs). **If the result has an `error` field, the probe couldn't read a cert (port blocked / wrong port) — inconclusive, NOT expired; only trust `isExpired` when `error` is absent.** Client certs expire separately and can't be checked here — ask if the user got a renewal notice.
+**Step 5 — Certificate (SSL/TLS VPNs only)**
+`Condition:` only for **SSL/TLS VPNs** — Step 2's `profiles[].protocol` (or Step 1's vendor client) indicates SSL/TLS, e.g. AnyConnect, GlobalProtect, Zscaler. **Skip entirely for WireGuard / IKEv2 / IPsec / L2TP** — they authenticate with keys/PSK, not a TLS server cert, so this probe is meaningless (and their native port has no TLS listener).
+Call `check_certificate_expiry` with `host` = the VPN server **hostname only** (`inputsFrom: [{ step: 2, field: "profiles" }]`, `profiles[].server`; **strip any `:port`**), `port: 443`, `fallbackPorts: [8443]`. **Use TLS ports only — never the VPN's own connection port (e.g. WireGuard 51821, IKEv2 500/4500); probing it returns `ECONNREFUSED`, not a cert.**
+**If the result has an `error` field, the probe couldn't read a cert (port blocked / not a TLS VPN) — inconclusive, NOT expired; only trust `isExpired` when `error` is absent.** Client certs expire separately and can't be checked here — ask if the user got a renewal notice.
 
 **Step 6 — Network extensions (survey all)**
 `check_network_extension` with **no argument** — lists every VPN/security extension (system + app). Do NOT pass a vendor name; the survey returns all and Step 7 inspects them. Entries have `name`/`identifier`/`state`/`type`; result also carries `allActivated`.
@@ -82,14 +84,16 @@ options:
 `Condition:` only if Step 2 returned `profiles.length > 1`. `wait_for_user_ack`, one option per profile (top 4 by MRU else alphabetical; 4th = "Other (tell me in chat)" if more). `inputsFrom: [{ step: 2, field: "profiles" }]`. `"other"` → `request_user_input` for the exact name. One profile → use directly; zero → Step 9's vendor path.
 
 **Step 9 — Reconnect**
-Call `reconnect_vpn` with `profileName` — `inputsFrom`: Step 8 if it ran (`{ step: 8, field: "choice" }`), else the single profile (`{ step: 2, field: "profiles" }`); fallback if Step 2 was empty, Step 1's `activeConnections[].name`. G4 fires consent + dry-run preview. **Warn in the rationale:** *"if your VPN carries all traffic, you may briefly lose contact with me while it reconnects — I'll resume once you're back."*
+Call `reconnect_vpn` with `profileName` — `inputsFrom`: Step 8 if it ran (`{ step: 8, field: "choice" }`), else the single profile (`{ step: 2, field: "profiles" }`); fallback if Step 2 was empty, Step 1's `activeConnections[].name`. Pass ONLY `profileName` — do **NOT** author a `dryRun` param; G4 owns the dry-run preview + consent gates and an injected `dryRun: true` would silently no-op the reconnect. **Warn in the rationale:** *"if your VPN carries all traffic, you may briefly lose contact with me while it reconnects — I'll resume once you're back."*
+
+The tool **waits for the tunnel to settle** before returning, so trust its result: `reconnected === true` AND `newStatus === "Connected"` is a real success → continue to Step 11. If `reconnected === false` (e.g. `newStatus` is `"Connecting"`/`"Disconnected"`), the tunnel did NOT come up — surface the returned `message` verbatim, do **NOT** run Steps 11–13, and go to Step 10 (let the user finish any sign-in / MFA) or escalate to IT.
 
 `Condition:` (a) Step 1 `isConnected === true` with an `activeConnections[]` entry `status` `"Connected"`/`"Active"` and the symptom is "connected but resources unreachable", OR (b) Steps 4–6 surfaced a fixable issue (server reachable, cert OK/inconclusive, extension approved). Skip and escalate to IT if Steps 4–6 found an unresolvable issue (server down, cert expired, extension blocked).
 
 **Vendor VPNs (scoped):** if the target is a vendor client (Step 1 `installedClients`, no matching native profile) OR `reconnect_vpn` returns `vendorManaged`, it does NOT reconnect — surface the returned `message` verbatim (reconnect via the vendor client; expect a browser sign-in on SAML VPNs) and go to Step 10. Do NOT drive a vendor client through `reconnect_vpn`.
 
 **Step 10 — Confirm reconnection (vendor / browser-auth path)**
-`Condition:` only if Step 9 returned `vendorManaged` (or the user was guided to reconnect manually). `wait_for_user_ack`: *"Reconnect via your VPN client (complete any browser sign-in), then tell me when you're back online."* options `{ reconnected, couldnt-connect }`. Bridges the window where a full-tunnel/SAML reconnect cuts the agent's own connection. Skip for a clean native success.
+`Condition:` only if Step 9 returned `vendorManaged`, OR a native reconnect did not settle (`reconnected === false` / `newStatus` still `"Connecting"`), OR the user was guided to reconnect manually. `wait_for_user_ack`: *"Reconnect via your VPN client (complete any browser sign-in), then tell me when you're back online."* options `{ reconnected, couldnt-connect }`. Bridges the window where a full-tunnel/SAML reconnect cuts the agent's own connection, or where a native tunnel needs the user to finish MFA. Skip for a clean native success (`reconnected === true`).
 
 **Step 11 — Flush DNS**
 Call `flush_dns_cache` (clears pre-tunnel DNS entries that make internal hostnames resolve to external IPs). `Condition:` only if a reconnect succeeded (Step 9 native success or Step 10 `"reconnected"`).

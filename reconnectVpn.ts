@@ -40,6 +40,12 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["network"],
   auditRequired:   true,
+  // `scutil --nc start` is fire-and-forget; the darwin path polls for the
+  // tunnel to actually settle to Connected (up to ~25 s) instead of reporting
+  // the transient "Connecting" as success. Raise the ceiling above the 60 s
+  // default headroom so the disconnect + pause + start + poll chain never races
+  // the G4 deadline.
+  timeoutMs:       90_000,
   schema: {
     profileName: z
       .string()
@@ -75,6 +81,31 @@ async function runPS(script: string): Promise<string> {
     { maxBuffer: 20 * 1024 * 1024, timeout: 30_000 },
   );
   return stdout.trim();
+}
+
+// -- darwin status helper -----------------------------------------------------
+
+/**
+ * Read the current connection state of a native (scutil) profile from
+ * `scutil --nc list`. Lines look like:
+ *   `* (Connected)    <UUID> ... "ProfileName" [type]`
+ *   `  (Disconnected) <UUID> ... "ProfileName" [type]`
+ * Returns the state word ("Connected" / "Connecting" / "Disconnected" /
+ * "Disconnecting" / "Invalid") or null if the profile/line isn't found.
+ */
+async function readNativeStatus(profileName: string): Promise<string | null> {
+  try {
+    const { stdout } = await execAsync("scutil --nc list 2>/dev/null", {
+      maxBuffer: 5 * 1024 * 1024,
+      timeout: 5_000,
+    });
+    for (const line of stdout.split("\n")) {
+      if (line.includes(`"${profileName}"`)) {
+        return line.match(/\((\w+)\)/)?.[1] ?? null;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
 }
 
 // -- darwin implementation ----------------------------------------------------
@@ -146,37 +177,49 @@ async function reconnectVpnDarwin(
   // Brief pause to allow teardown
   await new Promise((res) => setTimeout(res, 2000));
 
-  // Reconnect
+  // Reconnect. NOTE: `scutil --nc start` is fire-and-forget — it accepts the
+  // request and returns immediately, BEFORE the tunnel is up. A status read here
+  // almost always catches the transient "Connecting" state, so we must NOT treat
+  // a successful start as a successful reconnect.
   try {
     await execAsync(`scutil --nc start "${safeName}" 2>/dev/null`, {
       maxBuffer: 1 * 1024 * 1024,
       timeout: 30_000,
     });
-    reconnected = true;
   } catch (err) {
     throw new Error(
       `[reconnect_vpn] Failed to start profile "${profileName}": ${(err as Error).message}`,
     );
   }
 
-  // Check new status
-  let newStatus: string | null = null;
-  try {
-    const { stdout } = await execAsync("scutil --nc list 2>/dev/null", {
-      maxBuffer: 5 * 1024 * 1024,
-      timeout: 5_000,
-    });
-    const lines = stdout.split("\n");
-    for (const line of lines) {
-      if (line.includes(`"${profileName}"`)) {
-        const match = line.match(/\((\w+)\)/);
-        if (match) newStatus = match[1];
-        break;
-      }
-    }
-  } catch { /* ignore */ }
+  // Poll until the connection settles to Connected (real success), a terminal
+  // failure state, or the deadline elapses (still Connecting → stuck). This is
+  // what makes "reconnected" mean the tunnel is actually up rather than merely
+  // "start was accepted" — and stops the skill from advancing to DNS-flush /
+  // routing-verification on a half-established tunnel.
+  const DEADLINE_MS = 25_000;
+  const POLL_MS     = 1_500;
+  const startedAt   = Date.now();
+  let newStatus = await readNativeStatus(profileName);
+  while (Date.now() - startedAt < DEADLINE_MS) {
+    if (newStatus === "Connected") break;                       // success
+    if (newStatus === "Disconnected" || newStatus === "Invalid") break; // terminal failure
+    await new Promise((res) => setTimeout(res, POLL_MS));
+    newStatus = await readNativeStatus(profileName);
+  }
 
-  return { profileName, disconnected, reconnected, dryRun: false, newStatus };
+  reconnected = newStatus === "Connected";
+  const waited = Math.round((Date.now() - startedAt) / 1000);
+  const message = reconnected
+    ? `VPN profile "${profileName}" reconnected — status: Connected.`
+    : newStatus === "Connecting" || newStatus === null
+      ? `VPN profile "${profileName}" is still establishing the tunnel (status: ${newStatus ?? "unknown"}) after ${waited}s. ` +
+        "It may be waiting on credentials/MFA, a vendor app or system extension, or an unresponsive server. " +
+        "Check your VPN client's menu-bar icon and complete any sign-in, or try again."
+      : `VPN profile "${profileName}" did not connect — status: ${newStatus}. ` +
+        "Toggle Disconnect → Connect from the VPN menu-bar icon, or escalate to IT if it persists.";
+
+  return { profileName, disconnected, reconnected, dryRun: false, newStatus, message };
 }
 
 // -- win32 implementation -----------------------------------------------------

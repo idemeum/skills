@@ -48,11 +48,15 @@ export const meta = {
   schema: {
     host: z
       .string()
-      .describe("Hostname to check (e.g. 'mail.company.com', 'vpn.example.com')"),
+      .describe("Hostname to check (e.g. 'mail.company.com', 'vpn.example.com'). Hostname ONLY — never include a port."),
     port: z
       .number()
       .optional()
-      .describe("Port number. Default: 443"),
+      .describe("Primary TLS port to try first. Default: 443. Must be a TLS-listening port — never the VPN's own connection port (e.g. WireGuard 51821, IKEv2 500/4500), which has no TLS listener."),
+    fallbackPorts: z
+      .array(z.number())
+      .optional()
+      .describe("Additional TLS ports to try, in order, if `port` yields no cert (connection refused / handshake failure). E.g. [8443] for SSL VPNs. The result reports the port that actually returned a cert."),
   },
 } as const;
 
@@ -144,41 +148,73 @@ async function checkCertificate(host: string, port: number): Promise<CertResult>
 export async function run({
   host,
   port = 443,
+  fallbackPorts,
 }: {
-  host:  string;
-  port?: number;
+  host:           string;
+  port?:          number;
+  fallbackPorts?: number[];
 }) {
   // Validate host — reject anything that looks like shell injection
   if (!/^[a-zA-Z0-9.\-]+$/.test(host)) {
     throw new Error(`[check_certificate_expiry] Invalid hostname: ${host}`);
   }
-  if (port < 1 || port > 65535) {
-    throw new Error(`[check_certificate_expiry] Invalid port: ${port}`);
+
+  // Ordered, de-duplicated list of ports to try. The primary `port` first, then
+  // any `fallbackPorts` — so an SSL VPN whose cert lives on 8443 is still found
+  // when 443 refuses, in a single tool call.
+  const ports = [port, ...(fallbackPorts ?? [])].filter(
+    (p, i, arr) => arr.indexOf(p) === i,
+  );
+  for (const p of ports) {
+    if (p < 1 || p > 65535) {
+      throw new Error(`[check_certificate_expiry] Invalid port: ${p}`);
+    }
   }
 
   const platform = os.platform();
-  try {
-    const result = await checkCertificate(host, port);
-    return { platform, ...result };
-  } catch (err) {
-    return {
-      platform,
-      host,
-      port,
-      subject:         "unknown",
-      issuer:          "unknown",
-      validFrom:       "unknown",
-      validTo:         "unknown",
-      daysUntilExpiry: -1,
-      // Connection/handshake failure — the host was unreachable or did not
-      // speak implicit TLS on this port. That is NOT an expired certificate;
-      // surfacing isExpired:true here caused a false "cert expired" diagnosis
-      // (e.g. an SMTP host probed on 443). Callers branch on `error`.
-      isExpired:       false,
-      isExpiringSoon:  false,
-      error:           (err as Error).message,
-    };
+  let last: CertResult & { error: string } = {
+    host,
+    port,
+    subject:         "unknown",
+    issuer:          "unknown",
+    validFrom:       "unknown",
+    validTo:         "unknown",
+    daysUntilExpiry: -1,
+    isExpired:       false,
+    isExpiringSoon:  false,
+    error:           "No ports tried",
+  };
+
+  for (const p of ports) {
+    try {
+      const result = await checkCertificate(host, p);
+      // First port that returns a readable cert wins. A cert-less response
+      // (result.error set, e.g. "No certificate returned") falls through to the
+      // next fallback port.
+      if (!result.error) return { platform, ...result };
+      last = { ...result, error: result.error };
+    } catch (err) {
+      // Connection/handshake failure on THIS port — the host was unreachable or
+      // did not speak implicit TLS here. That is NOT an expired certificate;
+      // surfacing isExpired:true caused a false "cert expired" diagnosis (e.g.
+      // an SMTP host probed on 443). Record it and try the next fallback port.
+      last = {
+        host,
+        port:            p,
+        subject:         "unknown",
+        issuer:          "unknown",
+        validFrom:       "unknown",
+        validTo:         "unknown",
+        daysUntilExpiry: -1,
+        isExpired:       false,
+        isExpiringSoon:  false,
+        error:           (err as Error).message,
+      };
+    }
   }
+
+  // Every port failed — return the last failure. Callers branch on `error`.
+  return { platform, ...last };
 }
 
 // -- CLI smoke test -----------------------------------------------------------

@@ -65,19 +65,19 @@ Call `check_connectivity` (default targets 8.8.8.8, 1.1.1.1, google.com). Classi
 - All reachable → layer-3 is up, but ICMP success does NOT prove HTTP(S) works. Do NOT declare success — let Steps 7–8 (proxy/firewall) run first; skip the DHCP/DNS correctives.
 
 **Step 3 — Inspect interfaces**
-Call `get_network_interfaces`. `type` and `ipv4` feed Steps 4–5:
-- No active interface → hardware/driver issue; stop and escalate.
-- Active interface with 169.254.x.x → DHCP failure (Step 5).
-- Active interface with valid IPv4 → routing/proxy/firewall (Steps 7–8).
+Call `get_network_interfaces` → `primaryInterface` (the default-route uplink — the deterministic "which interface is my connection"; do NOT hand-scan `interfaces[]`), `interfaces[]` (`name`/`type`/`status`/`ipv4`), `activeCount`. The **target interface** for Steps 4–5 is `primaryInterface` when non-null; if `primaryInterface` is null (no default route), fall back to the active physical interface (`status === "active"` AND `type` is `"Wi-Fi"` or `"Ethernet"` — ignore loopback, tunnels, `awdl0`/`llw0`). Classify:
+- `primaryInterface` null AND no active physical interface → hardware/driver issue or link fully down; stop and escalate.
+- Target interface has `169.254.x.x` or no IPv4 → DHCP failure (Step 5).
+- Target interface has a valid (non-`169.254`) IPv4 → routing/proxy/firewall (Steps 7–8).
 
 **Step 4 — Wi-Fi signal (if Wi-Fi)**
 Call `get_wifi_info`. Poor signal (RSSI < -70 dBm, `linkQuality: "poor"`) explains intermittent drops — advise moving closer to the router before software fixes.
 `Condition:` only act on the result if Step 3 returned an active `type: "Wi-Fi"` interface. On Ethernet the tool returns `isConnected: false` cleanly — report "not applicable" and proceed.
 
 **Step 5 — Renew DHCP lease**
-Call `renew_dhcp_lease` with `interface` set to the **name of the active interface** from Step 3's `get_network_interfaces` output (e.g. `en0`). **MUST pass `interface` — do NOT omit it.** The corrective runs through the privileged helper, which requires a specific interface (renewing "all" is unsafe on Windows); omitting it makes the helper reject the call. Then re-call `get_network_interfaces` to confirm a valid IP.
-`Inputs:` interface name from Step 3's `get_network_interfaces` output (`interfaces[].name` of the active interface).
-`Condition:` only if Step 3 shows the active interface has no IPv4 or an APIPA `169.254.` address. Skip on a healthy lease — renew briefly bounces the interface.
+Call `renew_dhcp_lease` with `interface` set to Step 3's **target interface** — `primaryInterface` when set, otherwise the active physical interface (`status: "active"`, `type` `Wi-Fi`/`Ethernet`); in the APIPA case `primaryInterface` is usually null, so use the active physical interface. **MUST pass `interface` — do NOT omit it.** The corrective runs through the privileged helper, which requires a specific interface (renewing "all" is unsafe on Windows); omitting it makes the helper reject the call. The helper returns `new_ip: null` (it does not probe), so **re-call `get_network_interfaces` afterward and confirm the target interface now has a valid non-`169.254` IPv4** — that re-check, not the corrective's own result, is the success signal.
+`inputsFrom:` `[{ step: 3, field: "primaryInterface" }]` (fall back to the active physical `interfaces[].name` when null).
+`Condition:` only if Step 3's target interface has no IPv4 or an APIPA `169.254.` address. Skip on a healthy lease — renew briefly bounces the interface.
 
 **Step 6 — Flush DNS cache**
 Call `flush_dns_cache`, then re-call `check_connectivity` on google.com to verify.
