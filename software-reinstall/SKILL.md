@@ -157,9 +157,9 @@ Replaces the chat-narrate "Confirm with the user where the official download URL
 `Condition:` only run if Step 11 returned a non-empty `value`. Call `download_installer` with `url` from Step 11 (`inputsFrom: [{ step: 11, field: "value" }]`). The tool rejects non-HTTPS URLs automatically and validates the SHA-256 checksum if supplied. Files downloaded via Node.js `https.get()` do NOT receive the macOS Gatekeeper quarantine attribute, so the checksum validation is the primary integrity assurance.
 
 **Step 13 — Run the installer**
-`Condition:` only run if Step 12 returned `success: true`. Call `run_installer` with `installerPath` from Step 12 (`inputsFrom: [{ step: 12, field: "installerPath" }]`). G4 auto-triggers the dry-run preview (`high + destructive: true + supportsDryRun: true`) showing the exact command (e.g. `installer -pkg <path> -target /` for a .pkg, `msiexec /i <path> /qn /norestart` for an .msi), followed by the consent gate.
+`Condition:` only run if Step 12 returned `success: true`. Call `run_installer` with `installer_path` set to Step 12's `localPath` output (`inputsFrom: [{ step: 12, field: "localPath" }]`). **Param keys are snake_case (`installer_path`, `installer_type`)** — the tool routes through the privileged helper, whose wire contract is snake_case. G4 auto-triggers the dry-run preview (`high + destructive: true + supportsDryRun: true`) showing the exact command (e.g. `installer -pkg <path> -target /` for a .pkg, `msiexec /i <path> /qn /norestart` for an .msi), followed by the consent gate.
 
-The `installerType` parameter is optional — when omitted, the tool auto-detects from the file extension. Supply it explicitly only when the extension is ambiguous (defence-in-depth against type-confusion). Allowed values: `pkg`, `dmg`, `msi`, `exe`.
+The `installer_type` parameter is optional — when omitted, the tool auto-detects from the file extension. Supply it explicitly only when the extension is ambiguous (defence-in-depth against type-confusion). Allowed values: `pkg`, `dmg`, `msi`, `exe`.
 
 Routes through the privileged helper daemon for non-admin users (helper allowlist contains `run_installer`). With the helper available (default), completes silently for **all users — admin and non-admin alike**.
 

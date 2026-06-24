@@ -57,14 +57,19 @@ export const meta = {
       "msiexec /i <path>.msi /qn /norestart  # for .msi; .exe varies per vendor (try /S for silent install)",
   },
   schema: {
-    installerPath: z
+    // snake_case keys: this tool routes its real run through the privileged
+    // helper, whose `struct Params` is snake_case (`installer_path`,
+    // `installer_type`) per the documented wire contract (HELPER-IPC-PROTOCOL.md
+    // / HELPER-HANDLERS.md). G4 forwards executor params verbatim, so the schema
+    // keys MUST match the helper field names exactly.
+    installer_path: z
       .string()
       .min(1)
       .describe(
         "Absolute path to the installer file on disk.  Typically the " +
         "filePath returned by a prior download_installer call.",
       ),
-    installerType: z
+    installer_type: z
       .enum(["pkg", "dmg", "msi", "exe"])
       .optional()
       .describe(
@@ -129,13 +134,13 @@ function plannedCommandFor(
 // -- Exported run function ----------------------------------------------------
 
 export async function run({
-  installerPath,
-  installerType,
+  installer_path: installerPath,
+  installer_type: installerType,
   dryRun = true,
 }: {
-  installerPath:  string;
-  installerType?: "pkg" | "dmg" | "msi" | "exe";
-  dryRun?:        boolean;
+  installer_path:  string;
+  installer_type?: "pkg" | "dmg" | "msi" | "exe";
+  dryRun?:         boolean;
 }): Promise<RunInstallerResult> {
   // Resolve the installer type (explicit or auto-detected).
   const resolvedType = installerType ?? detectInstallerType(installerPath);
@@ -218,7 +223,7 @@ export async function run({
 // -- Smoke test ---------------------------------------------------------------
 
 if (false) {
-  run({ installerPath: "/tmp/example.pkg" })
+  run({ installer_path: "/tmp/example.pkg" })
     .then(r => console.log(JSON.stringify(r, null, 2)))
     .catch((err: Error) => { console.error(err.message); process.exit(1); });
 }
