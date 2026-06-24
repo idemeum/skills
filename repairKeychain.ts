@@ -25,6 +25,16 @@ import { z }         from "zod";
 
 const execAsync = promisify(exec);
 
+// Every keychain command is fast (list / show-info / lock / rename). Cap each so
+// a wedged subprocess can never hang the run, and thread the executor's
+// AbortSignal so Stop / the G4 deadline can actually kill the child. Without
+// both, `security unlock-keychain` (the old repair path) blocked indefinitely on
+// an interactive password dialog and could not be cancelled.
+const KEYCHAIN_TIMEOUT_MS = 10_000;
+
+/** Optional run-context handed in by the G4 executor (signal + deadline). */
+interface ToolCtx { signal?: AbortSignal; deadlineMs?: number }
+
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
@@ -43,7 +53,7 @@ export const meta = {
   schema: {
     action: z
       .enum(["check", "repair", "reset"])
-      .describe("check=status only, repair=run Keychain First Aid, reset=delete and recreate login keychain (destructive)"),
+      .describe("check=status only, repair=lock the login keychain so the next app access re-prompts once with the current password (non-interactive; clears a post-password-change desync), reset=move the login keychain aside so macOS recreates it (destructive)"),
     dryRun: z
       .boolean()
       .optional()
@@ -63,11 +73,11 @@ interface KeychainResult {
 
 // -- PowerShell helper --------------------------------------------------------
 
-async function runPS(script: string): Promise<string> {
+async function runPS(script: string, signal?: AbortSignal): Promise<string> {
   const encoded = Buffer.from(script, "utf16le").toString("base64");
   const { stdout } = await execAsync(
     `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
-    { maxBuffer: 10 * 1024 * 1024 },
+    { maxBuffer: 10 * 1024 * 1024, timeout: KEYCHAIN_TIMEOUT_MS, signal },
   );
   return stdout.trim();
 }
@@ -77,6 +87,7 @@ async function runPS(script: string): Promise<string> {
 async function repairKeychainDarwin(
   action: "check" | "repair" | "reset",
   dryRun: boolean,
+  signal?: AbortSignal,
 ): Promise<KeychainResult> {
   const loginKeychainPath = nodePath.join(
     os.homedir(), "Library", "Keychains", "login.keychain-db",
@@ -87,7 +98,7 @@ async function repairKeychainDarwin(
   try {
     const { stdout } = await execAsync(
       "security list-keychains 2>/dev/null",
-      { maxBuffer: 1 * 1024 * 1024 },
+      { maxBuffer: 1 * 1024 * 1024, timeout: KEYCHAIN_TIMEOUT_MS, signal },
     );
     keychains = stdout
       .trim()
@@ -103,7 +114,7 @@ async function repairKeychainDarwin(
     try {
       const { stdout } = await execAsync(
         `security show-keychain-info '${loginKeychainPath.replace(/'/g, `'\\''`)}' 2>&1`,
-        { maxBuffer: 1 * 1024 * 1024, shell: "/bin/bash" },
+        { maxBuffer: 1 * 1024 * 1024, shell: "/bin/bash", timeout: KEYCHAIN_TIMEOUT_MS, signal },
       );
       status = stdout.trim() || "ok";
     } catch (err) {
@@ -119,28 +130,36 @@ async function repairKeychainDarwin(
   }
 
   if (action === "repair") {
-    // Attempt to unlock the login keychain (Keychain First Aid equivalent)
+    // LOCK (not unlock) the login keychain. `security unlock-keychain` without a
+    // password opens an interactive GUI dialog and blocks the run forever in a
+    // non-TTY context — and we must never handle the user's password. Locking
+    // needs no password, never prompts, and is the right gentle repair for the
+    // common "password change desynced the keychain → repeated prompts" case:
+    // after a lock, the next app that needs a keychain item triggers ONE normal
+    // macOS unlock dialog where the user enters their CURRENT login password,
+    // re-syncing the keychain.
     try {
       await execAsync(
-        `security unlock-keychain '${loginKeychainPath.replace(/'/g, `'\\''`)}' 2>/dev/null`,
-        { maxBuffer: 1 * 1024 * 1024, shell: "/bin/bash" },
+        `security lock-keychain '${loginKeychainPath.replace(/'/g, `'\\''`)}' 2>/dev/null`,
+        { maxBuffer: 1 * 1024 * 1024, shell: "/bin/bash", timeout: KEYCHAIN_TIMEOUT_MS, signal },
       );
       return {
         action,
         keychains,
-        status:   "unlock attempted",
+        status:   "login keychain locked",
         repaired: true,
         message:
-          "Attempted to unlock the login keychain. If prompted for a password, " +
-          "enter your current login password. If issues persist, consider a reset.",
+          "Locked the login keychain. The next app that needs it will prompt once " +
+          "for your CURRENT login password — enter it to re-sync. If prompts persist " +
+          "afterward, run a reset.",
       };
     } catch (err) {
       return {
         action,
         keychains,
-        status:   "unlock failed",
+        status:   "lock failed",
         repaired: false,
-        message:  `Unlock failed: ${(err as Error).message}. Try a reset instead.`,
+        message:  `Could not lock the login keychain: ${(err as Error).message}. Try a reset instead.`,
       };
     }
   }
@@ -195,6 +214,7 @@ async function repairKeychainDarwin(
 
 async function repairKeychainWin32(
   action: "check" | "repair" | "reset",
+  signal?: AbortSignal,
 ): Promise<KeychainResult> {
   if (action === "check") {
     // List Windows Credential Manager entries
@@ -203,7 +223,7 @@ async function repairKeychainWin32(
     try {
       const { stdout } = await execAsync(
         "cmdkey /list 2>nul",
-        { maxBuffer: 2 * 1024 * 1024 },
+        { maxBuffer: 2 * 1024 * 1024, timeout: KEYCHAIN_TIMEOUT_MS, signal },
       );
       keychains = stdout
         .split("\n")
@@ -219,7 +239,7 @@ async function repairKeychainWin32(
       const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
 (vaultcmd /listcreds:"Windows Credentials" 2>&1) -join "|"`.trim();
-      const vaultOut = await runPS(ps);
+      const vaultOut = await runPS(ps, signal);
       if (vaultOut) status += `. Vault: ${vaultOut.substring(0, 200)}`;
     } catch {
       // ignore
@@ -248,20 +268,23 @@ $ErrorActionPreference = 'SilentlyContinue'
 
 // -- Exported run function ----------------------------------------------------
 
-export async function run({
-  action,
-  dryRun = true,
-}: {
-  action: "check" | "repair" | "reset";
-  dryRun?: boolean;
-}) {
+export async function run(
+  {
+    action,
+    dryRun = true,
+  }: {
+    action: "check" | "repair" | "reset";
+    dryRun?: boolean;
+  },
+  ctx: ToolCtx = {},
+) {
   if (!action) throw new Error("[repair_keychain] action is required");
 
   const platform = os.platform();
 
   const result = platform === "win32"
-    ? await repairKeychainWin32(action)
-    : await repairKeychainDarwin(action, dryRun);
+    ? await repairKeychainWin32(action, ctx.signal)
+    : await repairKeychainDarwin(action, dryRun, ctx.signal);
 
   return { platform, dryRun, ...result };
 }

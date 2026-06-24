@@ -60,6 +60,11 @@ interface RebuildMailIndexResult {
   filesFound:      string[];
   filesRemoved:    string[];
   mailWasRunning:  boolean;
+  /** True when macOS denied access to ~/Library/Mail with EPERM/EACCES — a Full
+   *  Disk Access (TCC) block, NOT a missing/absent index. Mirrors
+   *  reset_app_preferences so the skill can route to FDA guidance instead of
+   *  misreporting "no index files / Mail still running". */
+  tccBlocked:      boolean;
   dryRun:          boolean;
   message:         string;
 }
@@ -90,6 +95,17 @@ async function rebuildMailIndexDarwin(dryRun: boolean): Promise<RebuildMailIndex
     }
   }
 
+  // EPERM/EACCES anywhere under ~/Library/Mail means Full Disk Access is not
+  // granted (TCC), NOT that the index is absent. We must NOT conflate the two:
+  // swallowing it would misreport a permission block as "no index / Mail still
+  // running". (Note `fs.access(F_OK)`/stat is itself often NOT TCC-gated even
+  // when the dir is — so the block can first surface at unlink time.)
+  let tccBlocked = false;
+  const isPermDenied = (e: unknown) => {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    return code === "EPERM" || code === "EACCES";
+  };
+
   // Find envelope index files — try V10, V9, V8 in order
   const filesFound: string[] = [];
   for (const version of ["V10", "V9", "V8"]) {
@@ -103,8 +119,9 @@ async function rebuildMailIndexDarwin(dryRun: boolean): Promise<RebuildMailIndex
       try {
         await fs.access(f);
         filesFound.push(f);
-      } catch {
-        // File does not exist — skip
+      } catch (err) {
+        if (isPermDenied(err)) tccBlocked = true; // permission block, not absence
+        // else ENOENT — file does not exist — skip
       }
     }
     if (filesFound.length > 0) break; // Stop at first version that has files
@@ -117,20 +134,29 @@ async function rebuildMailIndexDarwin(dryRun: boolean): Promise<RebuildMailIndex
         await fs.unlink(f);
         filesRemoved.push(f);
       } catch (err) {
-        // Collect errors but continue
+        if (isPermDenied(err)) tccBlocked = true; // surface — never swallow EPERM
+        // continue removing the remaining files regardless
       }
     }
   }
 
-  const message = dryRun
-    ? filesFound.length > 0
-      ? `Found ${filesFound.length} envelope index file(s). Run with dryRun=false to remove them and trigger a rebuild.`
-      : "No envelope index files found. Mail index may already be absent or stored in an unexpected location."
-    : filesRemoved.length > 0
-      ? `Removed ${filesRemoved.length} file(s). Mail will rebuild its index on next launch.`
-      : "No files were removed. Check that Mail is not running and the files exist.";
+  const tccMsg =
+    "macOS denied access to ~/Library/Mail (Full Disk Access not granted). " +
+    "Grant it in System Settings → Privacy & Security → Full Disk Access, then retry.";
 
-  return { filesFound, filesRemoved, mailWasRunning, dryRun, message };
+  const message = tccBlocked
+    ? (dryRun
+        ? `Could not read the Mail index — ${tccMsg}`
+        : `Could not remove the Mail index — ${tccMsg}`)
+    : dryRun
+      ? filesFound.length > 0
+        ? `Found ${filesFound.length} envelope index file(s). Run with dryRun=false to remove them and trigger a rebuild.`
+        : "No envelope index files found. Mail index may already be absent or stored in an unexpected location."
+      : filesRemoved.length > 0
+        ? `Removed ${filesRemoved.length} file(s). Mail will rebuild its index on next launch.`
+        : "No files were removed. Check that Mail is not running and the files exist.";
+
+  return { filesFound, filesRemoved, mailWasRunning, tccBlocked, dryRun, message };
 }
 
 // -- win32 implementation -----------------------------------------------------
@@ -140,6 +166,7 @@ async function rebuildMailIndexWin32(_dryRun: boolean): Promise<RebuildMailIndex
     filesFound:     [],
     filesRemoved:   [],
     mailWasRunning: false,
+    tccBlocked:     false,
     dryRun:         _dryRun,
     message:
       "Apple Mail is macOS only. For Outlook on Windows, use repair_outlook_database.",
