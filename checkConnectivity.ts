@@ -122,11 +122,11 @@ async function checkConnectivityWin32(
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
 $results = @()
-foreach ($host in @(${targetList})) {
-  $pings = Test-Connection -ComputerName $host -Count ${count} -ErrorAction SilentlyContinue
+foreach ($h in @(${targetList})) {
+  $pings = Test-Connection -ComputerName $h -Count ${count} -ErrorAction SilentlyContinue
   if ($null -eq $pings -or $pings.Count -eq 0) {
     $results += [PSCustomObject]@{
-      host       = $host
+      host       = $h
       reachable  = $false
       packetLoss = 100
       avgRttMs   = $null
@@ -136,18 +136,26 @@ foreach ($host in @(${targetList})) {
     $loss       = [Math]::Round((1 - ($received / ${count})) * 100, 1)
     $avgRtt     = if ($received -gt 0) { [Math]::Round(($pings | Where-Object { $_.StatusCode -eq 0 } | Measure-Object ResponseTime -Average).Average, 2) } else { $null }
     $results += [PSCustomObject]@{
-      host       = $host
+      host       = $h
       reachable  = ($received -gt 0)
       packetLoss = $loss
       avgRttMs   = $avgRtt
     }
   }
 }
-$results | ConvertTo-Json -Depth 2 -Compress`.trim();
+if ($results.Count -eq 0) { '[]' } else { ConvertTo-Json -InputObject @($results) -Depth 2 -Compress }`.trim();
 
-  const raw    = await runPS(ps);
-  const parsed = JSON.parse(raw) as TargetResult | TargetResult[];
-  const arr    = Array.isArray(parsed) ? parsed : [parsed];
+  const raw = await runPS(ps);
+  if (!raw || raw === "null") {
+    return targets.map((host) => ({ host, reachable: false, packetLoss: 100, avgRttMs: null }));
+  }
+  let parsed: TargetResult | TargetResult[];
+  try {
+    parsed = JSON.parse(raw) as TargetResult | TargetResult[];
+  } catch {
+    return targets.map((host) => ({ host, reachable: false, packetLoss: 100, avgRttMs: null }));
+  }
+  const arr = Array.isArray(parsed) ? parsed : [parsed];
 
   // Re-add any filtered-out invalid hosts as unreachable
   return targets.map((host) => {

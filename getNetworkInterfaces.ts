@@ -216,8 +216,13 @@ $addrs | ConvertTo-Json -Depth 2 -Compress`.trim();
     PrefixLength:    number;
   }
 
-  const parsed = JSON.parse(raw) as WinAddr | WinAddr[];
-  const addrs  = Array.isArray(parsed) ? parsed : [parsed];
+  let addrs: WinAddr[];
+  try {
+    const parsed = JSON.parse(raw) as WinAddr | WinAddr[];
+    addrs = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
 
   // Group by interface alias
   const map = new Map<string, NetworkInterface>();

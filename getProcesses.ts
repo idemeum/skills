@@ -118,8 +118,13 @@ Get-Process | ForEach-Object {
 } | ConvertTo-Json -Depth 2 -Compress`.trim();
 
   const raw    = await runPS(ps);
-  const parsed = JSON.parse(raw) as ProcessEntry | ProcessEntry[];
-  return Array.isArray(parsed) ? parsed : [parsed];
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ProcessEntry | ProcessEntry[];
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
 }
 
 // -- Sorting ------------------------------------------------------------------

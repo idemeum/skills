@@ -172,8 +172,25 @@ $obj = [PSCustomObject]@{
 $obj | ConvertTo-Json -Compress`.trim();
 
   const raw = await runPS(ps);
-  const parsed = JSON.parse(raw) as AccountInfo;
-  return parsed;
+  if (!raw) {
+    return {
+      username: os.userInfo().username,
+      domain: null,
+      message: "Unable to read full account info.",
+      note: "PowerShell returned no data.",
+    } as unknown as AccountInfo;
+  }
+  try {
+    const parsed = JSON.parse(raw) as AccountInfo;
+    return parsed;
+  } catch {
+    return {
+      username: os.userInfo().username,
+      domain: null,
+      message: "Unable to read full account info.",
+      note: "PowerShell returned no data.",
+    } as unknown as AccountInfo;
+  }
 }
 
 // -- Exported run function ----------------------------------------------------

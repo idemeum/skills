@@ -171,8 +171,12 @@ $results | ConvertTo-Json -Depth 2 -Compress`.trim();
 
   const raw = await runPS(ps);
   if (!raw) return [];
-  const parsed = JSON.parse(raw) as StartupItem | StartupItem[];
-  return Array.isArray(parsed) ? parsed : [parsed];
+  try {
+    const parsed = JSON.parse(raw) as StartupItem | StartupItem[];
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
 }
 
 // -- Exported run function ----------------------------------------------------

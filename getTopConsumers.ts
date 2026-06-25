@@ -145,8 +145,13 @@ Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit
 
   const raw    = await runPS(ps);
   if (!raw) return [];
-  const parsed = JSON.parse(raw) as Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">[] | Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">;
-  const rawArr = Array.isArray(parsed) ? parsed : [parsed];
+  let rawArr: Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">[];
+  try {
+    const parsed = JSON.parse(raw) as Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">[] | Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">;
+    rawArr = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
   // Never surface the agent's own process(es) (no exec path on win32 — match by name/pid).
   const arr    = rawArr.filter(r => !isAgentSelf(r.name, r.pid));
 

@@ -174,8 +174,25 @@ if (-not $neverExpires -and $expiresOn) {
 } | ConvertTo-Json -Compress`.trim();
 
   const raw    = await runPS(ps);
-  const parsed = JSON.parse(raw) as PasswordExpiryInfo;
-  return parsed;
+  if (!raw) {
+    return {
+      daysUntilExpiry: null,
+      expiryDate: null,
+      message: "Unable to read password expiry info.",
+      note: "PowerShell returned no data.",
+    } as unknown as PasswordExpiryInfo;
+  }
+  try {
+    const parsed = JSON.parse(raw) as PasswordExpiryInfo;
+    return parsed;
+  } catch {
+    return {
+      daysUntilExpiry: null,
+      expiryDate: null,
+      message: "Unable to read password expiry info.",
+      note: "PowerShell returned no data.",
+    } as unknown as PasswordExpiryInfo;
+  }
 }
 
 // -- Exported run function ----------------------------------------------------

@@ -156,8 +156,14 @@ $ErrorActionPreference = 'SilentlyContinue'
 Get-Package | Select-Object Name, Version, Source | ConvertTo-Json -Depth 2 -Compress`.trim();
 
   const raw    = await runPS(ps);
-  const parsed = JSON.parse(raw) as WinPackage | WinPackage[];
-  const pkgs   = Array.isArray(parsed) ? parsed : [parsed];
+  if (!raw) return [];
+  let pkgs: WinPackage[];
+  try {
+    const parsed = JSON.parse(raw) as WinPackage | WinPackage[];
+    pkgs = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
 
   return pkgs
     .filter((pkg) => {

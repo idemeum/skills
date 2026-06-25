@@ -266,9 +266,14 @@ $results | ConvertTo-Json -Depth 2 -Compress`.trim();
   const raw = await runPS(ps);
   if (!raw) return [];
 
-  const parsed = JSON.parse(raw) as AccountInfo | AccountInfo[];
-  const all    = (Array.isArray(parsed) ? parsed : [parsed])
-    .filter(a => a.email);
+  let all: AccountInfo[];
+  try {
+    const parsed = JSON.parse(raw) as AccountInfo | AccountInfo[];
+    all = (Array.isArray(parsed) ? parsed : [parsed])
+      .filter(a => a.email);
+  } catch {
+    return [];
+  }
 
   if (filterEmail) {
     return all.filter(a => a.email.toLowerCase().includes(filterEmail.toLowerCase()));

@@ -209,8 +209,13 @@ async function killProcessWin32(
     return { matched: [], killed: false, dryRun, signal, message: "No matching processes found." };
   }
 
-  const parsed  = JSON.parse(raw) as { Id: number; ProcessName: string } | { Id: number; ProcessName: string }[];
-  const arr     = Array.isArray(parsed) ? parsed : [parsed];
+  let arr: { Id: number; ProcessName: string }[];
+  try {
+    const parsed = JSON.parse(raw) as { Id: number; ProcessName: string } | { Id: number; ProcessName: string }[];
+    arr = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return { matched: [], killed: false, dryRun, signal, message: "No matching processes found." };
+  }
   const matched: MatchedProcess[] = arr.map(p => ({ pid: p.Id, name: p.ProcessName }));
 
   for (const m of matched) {

@@ -164,13 +164,35 @@ try {
 } | ConvertTo-Json -Compress`.trim();
 
   const raw  = await runPS(ps);
-  const data = JSON.parse(raw) as {
+  if (!raw) {
+    return {
+      pressureLevel: "unknown",
+      totalRamHuman: "unknown",
+      usedRamHuman: "unknown",
+      swapUsedHuman: "unknown",
+      message: "Unable to read memory pressure.",
+      note: "PowerShell returned no data.",
+    } as unknown as MemoryPressureResult;
+  }
+  let data: {
     totalKb:       number;
     freeKb:        number;
     pagingTotalKb: number;
     pagingFreeKb:  number;
     pagesSec:      number;
   };
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return {
+      pressureLevel: "unknown",
+      totalRamHuman: "unknown",
+      usedRamHuman: "unknown",
+      swapUsedHuman: "unknown",
+      message: "Unable to read memory pressure.",
+      note: "PowerShell returned no data.",
+    } as unknown as MemoryPressureResult;
+  }
 
   const totalRamMb  = Math.round(data.totalKb / 1024);
   const freeRamMb   = Math.round(data.freeKb  / 1024);
