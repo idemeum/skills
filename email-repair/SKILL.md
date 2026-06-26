@@ -11,6 +11,7 @@ allowed-tools:
   - check_mail_permissions
   - get_cached_credentials_count
   - repair_keychain
+  - purge_cached_credentials
   - rebuild_mail_index
   - repair_outlook_database
   - reset_app_preferences
@@ -99,10 +100,11 @@ validator: "^[A-Za-z0-9.\\-]+$"
 Empty value → end politely ("I can't test mail-server connectivity without a hostname — try restarting your client or contact IT").
 
 **Step 4 — Test mail-server connectivity**
-Call `check_smtp_connectivity` with the SMTP host from Step 1 (`output.accounts[].smtpServer`), the Step 2 mapping, or Step 3. It tests ports 587 / 465 / 25.
+`Condition:` skip if no SMTP host is available (Step 1 returned `smtpServer: null` or `""` for all accounts AND Steps 2–3 provided no host). This happens on Windows with Exchange/M365 accounts that use EWS/MAPI over HTTPS rather than SMTP — surface "SMTP not configured; account likely uses Exchange/EWS" and continue to Step 6.
+Otherwise call `check_smtp_connectivity` with the SMTP host from Step 1 (`output.accounts[].smtpServer`), the Step 2 mapping, or Step 3. It tests ports 587 / 465 / 25.
 
 **Step 5 — Check the mail-server certificate**
-Call `check_certificate_expiry` with the same host as Step 4 and **`port: 465`** (the implicit-TLS submission port; the `443` default and STARTTLS `587` don't serve a direct handshake and return `output.error`). Read it as: `output.isExpired === true` with **no** `output.error` = genuinely expired cert (a real cause); any `output.error` = could-not-verify (inconclusive — do NOT report "expired").
+`Condition:` skip if Step 4 was skipped (no SMTP host). When Step 4 ran, call `check_certificate_expiry` with the same host and **`port: 465`** (the implicit-TLS submission port; the `443` default and STARTTLS `587` don't serve a direct handshake and return `output.error`). Read it as: `output.isExpired === true` with **no** `output.error` = genuinely expired cert (a real cause); any `output.error` = could-not-verify (inconclusive — do NOT report "expired").
 
 **Step 6 — Check the client isn't hung**
 Call `get_top_consumers` with `metric: "combined"`, `limit: 10`. If `output.processes` contains `Mail` / `Microsoft Outlook` / `Outlook` with `cpuPercent > 20` OR `memoryMb > 500`, the hung process is the cause — route to the `process-manager` skill, don't continue correctives.
@@ -129,9 +131,13 @@ options:
 **Condition:** only if Step 8 `choice === "auth-or-send"`.
 Call `get_cached_credentials_count` with the mail-server domains from Step 1 (e.g. `imap.gmail.com`). `output.totalCount > 0` means stale credentials may be cached — informs the Step 10 re-auth. Read-only, no gate.
 
-**Step 10 — Credential / re-auth fix** *(lightest corrective; the most common cause)*
-**Condition:** only if Step 8 `choice === "auth-or-send"`.
+**Step 10 — Credential / re-auth fix (macOS)** *(lightest corrective; the most common cause)*
+`Condition:` only if Step 8 `choice === "auth-or-send"` AND `output.platform === "darwin"` from Step 1.
 Call `repair_keychain` with `action: "repair"` — this **locks** the login keychain so the next app access re-prompts once with the current password (non-interactive; clears a post-password-change desync). G4 gates it. After it runs (`output.repaired`), guide the user to re-enter their password / remove and re-add the account using the provider's "Sign in with Google/Microsoft" flow. **In the rationale**, add: if this is a **work / SSO account** (corporate Okta / Entra / Google sign-in), the password lives at the identity provider and no client-side repair helps — point them to the `cloud-idp-password-reset` skill.
+
+**Step 10b — Credential / re-auth fix (Windows)** *(lightest corrective; the most common cause)*
+`Condition:` only if Step 8 `choice === "auth-or-send"` AND `output.platform === "win32"` from Step 1.
+Call `purge_cached_credentials` with `domains` set to the SMTP/IMAP server hostnames from Step 1 (e.g. `["imap.gmail.com", "smtp.gmail.com"]`). This removes stale Windows Credential Manager entries so Outlook re-prompts once with the current password. G4 gates it (`supportsDryRun: true` — preview shows what would be deleted). After it runs, guide the user to re-enter their Outlook credentials. **In the rationale**, add: if this is a **work / SSO account** (corporate Okta / Entra / Microsoft sign-in), the password lives at the identity provider — point them to the `cloud-idp-password-reset` skill.
 
 **Step 11 — Rebuild mail index (Apple Mail)**
 **Condition:** only if `output.client === "mail"` AND (Step 8 `choice === "index-corrupt"` OR `choice === "client-crashing"` OR Step 7's permission fix ran).
@@ -181,5 +187,5 @@ All tools run in user space (no admin). When the cause is server-side or IT-mana
 ## Edge cases
 
 - **Connectivity fine but still failing** = almost always credentials/auth → Step 10 (TCP success does not validate credentials).
-- **Exchange / EWS:** Outlook-for-Mac uses EWS, not IMAP/SMTP, so `check_smtp_connectivity` is irrelevant — check the Exchange host on port 443 instead.
+- **Exchange / EWS (macOS and Windows):** Outlook configured with Exchange or M365 uses EWS/MAPI over HTTPS, not IMAP/SMTP. `check_mail_account_config` returns empty `smtpServer`/`imapServer` for these accounts. Steps 4–5 are skipped (see conditions above). To check the Exchange server's cert, use `check_certificate_expiry` with `outlook.office365.com` and `port: 443`.
 - **Corporate mail over VPN:** an internal Exchange host needs VPN connected first; check with `check_vpn_status` if the host is internal.
