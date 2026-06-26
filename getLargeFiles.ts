@@ -22,7 +22,21 @@ import { expandTilde } from "./_shared/expandTilde";
 import { formatBytes } from "./_shared/formatBytes";
 import { Semaphore }   from "./_shared/semaphore";
 
-const _statSem = process.platform === "win32" ? new Semaphore(32) : null;
+const _statSem    = process.platform === "win32" ? new Semaphore(32) : null;
+
+// fs.realpath on Windows uses GetFinalPathNameByHandleW which can emit the
+// \\?\ extended-length path prefix for paths involving reparse points or
+// junction points. Strip it so scannedPath / files[].path are consistent
+// with each other and compatible with downstream tools (delete_files etc.).
+function stripWin32ExtendedPrefix(p: string): string {
+  return process.platform === "win32" && p.startsWith("\\\\?\\") ? p.slice(4) : p;
+}
+// On Windows, readdir calls are also dispatched to the libuv thread pool and
+// compounded by Defender / OneDrive per-entry overhead. Without a cap the
+// Promise.allSettled fan-out launches thousands of concurrent readdirs on a
+// deep home tree — saturating the pool and causing 60 s+ timeouts. macOS is
+// unaffected (fast VFS, no Defender) so the cap is Windows-only.
+const _readdirSem = process.platform === "win32" ? new Semaphore(16) : null;
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -116,6 +130,7 @@ async function walk(
   if (depth > MAX_DEPTH) return;
   stats.dirsVisited++;
 
+  if (_readdirSem) await _readdirSem.acquire();
   let entries: import("fs").Dirent<string>[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -125,6 +140,8 @@ async function walk(
     // ignored silently as before.
     if (isPermissionError(err)) stats.dirsPermissionDenied++;
     return;
+  } finally {
+    _readdirSem?.release();
   }
 
   await Promise.allSettled(
@@ -192,7 +209,7 @@ export async function run({
   // but fs.readdir would walk the symlink target.
   let realScanPath: string;
   try {
-    realScanPath = await fs.realpath(scanPath);
+    realScanPath = stripWin32ExtendedPrefix(await fs.realpath(scanPath));
   } catch {
     throw new Error(`[get_large_files] Path not accessible: ${scanPath}`);
   }
@@ -200,7 +217,7 @@ export async function run({
   const home     = os.homedir();
   // Also resolve home so that macOS /var/folders symlinks are handled correctly
   // (on macOS os.homedir() can return /Users/x while realpath gives the same).
-  const realHome = await fs.realpath(home).catch(() => home);
+  const realHome = stripWin32ExtendedPrefix(await fs.realpath(home).catch(() => home));
 
   const rel = nodePath.relative(realHome, realScanPath);
   if (rel.startsWith("..") || nodePath.isAbsolute(rel)) {

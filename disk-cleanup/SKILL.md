@@ -26,7 +26,6 @@ allowed-tools:
 metadata:
   prerequisites:
     before-corrective:
-      - disk_scan
       - get_large_files
       - find_duplicate_files
       - find_old_downloads
@@ -73,7 +72,7 @@ Do NOT use this skill for process or memory issues — use the `process-manager`
 ## Steps
 
 **Step 1 — Identify large top-level folders**
-Call `disk_scan` on the user home directory to list every immediate child folder and file sorted largest first.
+Call `disk_scan` on the user home directory to list every immediate child folder and file sorted largest first. **Windows only:** omit the `path` argument entirely — do NOT construct or guess a path on Windows; explicit paths there often resolve to the app install directory (`C:\Program Files\…`) rather than the user home, which the tool will reject. On macOS, passing the home directory path explicitly is fine.
 
 **Step 2 — Find large files**
 Call `get_large_files` **once** on the home directory with `minSizeBytes: 100000000` (100 MB) and `limit: 10`. Do NOT iterate per folder — one call only.
@@ -215,7 +214,7 @@ For each category id in Step 9's `selected` output, call the relevant tool. Do N
 Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `Condition:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
 
 **Step 11 — Final report**
-Summarise total space recovered across all operations. Optionally call `disk_scan` again on the home directory to show the updated sizes.
+Summarise total space recovered across all operations. This is the LAST step — do NOT include it before Step 10. After all cleanups in Step 10 are complete, you MAY call `disk_scan` once more to show the updated folder sizes, but only if at least one corrective step actually ran. Apply the same Windows-only path rule from Step 1 (omit `path` on Windows; explicit path is fine on macOS). Do NOT add a second `disk_scan` anywhere in the diagnostic phase — Step 1 is the only diagnostic disk_scan.
 
 ---
 
