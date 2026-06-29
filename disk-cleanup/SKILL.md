@@ -214,7 +214,7 @@ For each category id in Step 9's `selected` output, call the relevant tool. Do N
 Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `Condition:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
 
 **Step 11 — Final report**
-Summarise total space recovered across all operations. This is the LAST step — do NOT include it before Step 10. After all cleanups in Step 10 are complete, you MAY call `disk_scan` once more to show the updated folder sizes, but only if at least one corrective step actually ran. Apply the same Windows-only path rule from Step 1 (omit `path` on Windows; explicit path is fine on macOS). Do NOT add a second `disk_scan` anywhere in the diagnostic phase — Step 1 is the only diagnostic disk_scan.
+Call `get_disk_usage` to show the current free space on the volume (fast, no recursive walk). Then summarise total space recovered by aggregating the bytes-freed values from each Step 10 corrective tool's output already in the scratchpad. Do NOT call `disk_scan` here — it is slow, redundant with Step 1, and produces a second plan entry that the plan-order gate blocks until all diagnostic steps complete.
 
 ---
 

@@ -97,39 +97,59 @@ export interface GetDiskUsageResult {
  *   Filesystem    1024-blocks      Used    Available Capacity  iused      ifree %iused  Mounted on
  *   /dev/disk3s5  971350180  823521820   140183448    86%       ...
  *
- * We parse the second numeric line.  The "Capacity" column is a
- * percent string but we recompute from used + total so it's always a
- * float (df's percent rounds to integer).
+ * We parse the second numeric line and read the Available column (parts[3])
+ * directly for freeBytes — NOT total-used.  On APFS, snapshots/purgeable
+ * space and metadata consume blocks that appear in neither Used nor Available,
+ * so total-used overstates free space.  usagePercent mirrors df's Capacity
+ * column: used/(used+available).
  */
 function parseDarwinDfOutput(stdout: string, volume: string): GetDiskUsageResult {
   const lines = stdout.trim().split("\n");
   if (lines.length < 2) {
     throw new Error(`get_disk_usage: unexpected df output for ${volume}: ${stdout.slice(0, 200)}`);
   }
-  // Split on whitespace, drop the filesystem device name (column 0)
-  // and the mount-point columns (last 1+).  The first 5 numeric
-  // columns are: 1024-blocks, Used, Available, Capacity, iused.
-  const parts = lines[1].split(/\s+/);
-  if (parts.length < 5) {
-    throw new Error(`get_disk_usage: unexpected df row format: ${lines[1]}`);
+  // When the device path is long, df wraps it onto its own line and puts
+  // the numeric columns on the next line (lines[2]).  Detect by counting
+  // tokens — a valid data line has ≥5 columns.
+  let dataLine = lines[1];
+  if (lines.length >= 3 && lines[1].trim().split(/\s+/).length < 5) {
+    dataLine = lines[2];
   }
-  const blocks1k = parseInt(parts[1], 10);
-  const used1k   = parseInt(parts[2], 10);
-  if (Number.isNaN(blocks1k) || Number.isNaN(used1k) || blocks1k <= 0) {
-    throw new Error(`get_disk_usage: could not parse df numbers from: ${lines[1]}`);
+  const parts = dataLine.trim().split(/\s+/);
+  // When df wraps a long device name, the continuation line has no device
+  // prefix — parts[0] is the first number, not a path.  Detect by checking
+  // whether parts[0] starts with "/" (device path) and shift accordingly.
+  const col   = parts[0].startsWith("/") ? 1 : 0; // column offset
+  if (parts.length < col + 4) {
+    throw new Error(`get_disk_usage: unexpected df row format: ${dataLine}`);
+  }
+  const blocks1k = parseInt(parts[col],     10); // 1024-blocks (total)
+  const used1k   = parseInt(parts[col + 1], 10); // Used
+  const avail1k  = parseInt(parts[col + 2], 10); // Available — NOT total-used
+  if (Number.isNaN(blocks1k) || Number.isNaN(used1k) || Number.isNaN(avail1k) || blocks1k <= 0) {
+    throw new Error(`get_disk_usage: could not parse df numbers from: ${dataLine.trim()}`);
   }
 
   const totalBytes = blocks1k * 1024;
-  const usedBytes  = used1k   * 1024;
-  const freeBytes  = totalBytes - usedBytes;
+  const freeBytes  = avail1k  * 1024;
+  // On APFS, `df /` reports only the sealed system snapshot volume — its Used
+  // column (16-20 GB) omits user data, swap, preboot, and other APFS volumes
+  // that share the same free-space pool.  The only reliable cross-volume
+  // figure is total − available, which matches what Finder and About This Mac
+  // display.
+  const usedBytes  = totalBytes - freeBytes;
+
+  const usagePercent = totalBytes > 0
+    ? round1((usedBytes / totalBytes) * 100)
+    : 0;
 
   return {
-    platform:     "darwin",
+    platform: "darwin",
     volume,
-    usagePercent: round1((usedBytes / totalBytes) * 100),
-    totalGb:      round1(totalBytes / 1_000_000_000),
-    usedGb:       round1(usedBytes  / 1_000_000_000),
-    freeGb:       round1(freeBytes  / 1_000_000_000),
+    usagePercent,
+    totalGb:  round1(totalBytes / 1_000_000_000),
+    usedGb:   round1(usedBytes  / 1_000_000_000),
+    freeGb:   round1(freeBytes  / 1_000_000_000),
   };
 }
 
