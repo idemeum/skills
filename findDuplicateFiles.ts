@@ -108,6 +108,11 @@ const SKIP_DIRS = new Set([
   // macOS app sandbox roots — not user-meaningful "duplicates", and they
   // dominate ~/Library walk time. Same set used by the cache scanners.
   "Containers", "Group Containers", "Caches",
+  // Windows-only: Store/UWP app sandboxes (Packages) contain cross-app
+  // duplicate components (Edge WebView, etc.) that must not be deleted, and
+  // DirectX shader cache (D3DSCache) is system-generated noise. Skipping
+  // both cuts walk time significantly on Windows home directories.
+  ...(process.platform === "win32" ? ["Packages", "D3DSCache"] : []),
 ]);
 
 // On Windows HDDs, 16 concurrent readers cause disk-head thrashing — each
@@ -223,7 +228,7 @@ export async function run(
   const home = os.homedir();
 
   // Expand ~ / ~/ before resolve() — see _shared/expandTilde.ts.
-  const scanPath = nodePath.resolve(expandTilde(inputPath) ?? home);
+  const scanPath = nodePath.resolve(expandTilde(inputPath || home) ?? home);
 
   // Security: restrict scan to within home directory
   const rel = nodePath.relative(home, scanPath);

@@ -72,7 +72,7 @@ export async function runPS(script: string, tag = "ps"): Promise<string> {
   const encoded = Buffer.from(script, "utf16le").toString("base64");
   const { stdout } = await loggedExec(
     `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
-    { tag: `disk_scan:${tag}`, maxBuffer: 20 * 1024 * 1024, timeoutMs: 30_000 },
+    { tag: `disk_scan:${tag}`, maxBuffer: 20 * 1024 * 1024, timeoutMs: 60_000 },
   );
   return stdout.trim();
 }
@@ -115,7 +115,7 @@ async function scanDarwin(scanPath: string): Promise<Entry[]> {
     const safePath = scanPath.replace(/'/g, `'\\''`);
     ({ stdout } = await loggedExec(
       `du -sk '${safePath}'/*`,
-      { tag: "disk_scan:du", maxBuffer: 20 * 1024 * 1024, timeoutMs: 30_000 },
+      { tag: "disk_scan:du", maxBuffer: 20 * 1024 * 1024, timeoutMs: 60_000 },
     ));
   } catch (err) {
     // A timeout-killed du leaves only the entries that finished quickly in
@@ -126,7 +126,7 @@ async function scanDarwin(scanPath: string): Promise<Entry[]> {
     const e = err as { stdout?: string; killed?: boolean; signal?: string };
     if (e.killed || e.signal) {
       throw new Error(
-        `[disk_scan] du timed out after 30s scanning ${scanPath} — ` +
+        `[disk_scan] du timed out after 60s scanning ${scanPath} — ` +
         `partial results suppressed to avoid misleading the cleanup planner.`,
       );
     }
@@ -193,7 +193,11 @@ export async function run(
   const deadlineMs  = Date.now() + Math.floor(remainingMs * 0.9);
   // Expand ~ / ~/ before resolve() — see _shared/expandTilde.ts for the
   // background on why this is necessary across every path-accepting tool.
-  const scanPath = nodePath.resolve(expandTilde(inputPath) ?? inputPath);
+  // Treat empty string the same as omitted — nodePath.resolve("") returns
+  // process.cwd() (the app install dir) rather than home, which always fails
+  // the home-directory safety check.
+  const effectivePath = inputPath || os.homedir();
+  const scanPath = nodePath.resolve(expandTilde(effectivePath) ?? effectivePath);
 
   // Security: restrict scanning to within the user home directory.
   // Prevents Claude from being directed to scan /etc, /var, or other

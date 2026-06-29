@@ -54,6 +54,10 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  // Full recursive walk + stat across the home directory. On Windows with
+  // Defender/OneDrive overhead this can take 40–60 s on a populated home;
+  // 180 s matches find_duplicate_files which does the same walk plus hashing.
+  timeoutMs:       180_000,
   schema: {
     path: z
       .string()
@@ -96,6 +100,10 @@ const SKIP_DIRS = new Set([
   ".Trash", ".Trashes",                      // macOS trash (user + per-volume)
   "$Recycle.Bin", "System Volume Information", "Windows",
   "Program Files", "Program Files (x86)",
+  // Windows-only: Store/UWP app sandboxes (134+ dirs, thousands of entries
+  // per app — Teams alone has ~3,800) and DirectX shader cache. Neither
+  // contains user-meaningful large files.
+  ...(process.platform === "win32" ? ["Packages", "D3DSCache"] : []),
 ]);
 
 // formatBytes is imported from _shared/formatBytes.
@@ -197,7 +205,8 @@ export async function run({
   // Expand ~ / ~/ — nodePath.resolve treats "~" as a literal segment
   // relative to cwd, producing a non-existent path the executor LLM has
   // to spot and retry around.  See mcp/skills/_shared/expandTilde.ts.
-  const scanPath = nodePath.resolve(expandTilde(inputPath) ?? inputPath);
+  const effectivePath = inputPath || os.homedir();
+  const scanPath = nodePath.resolve(expandTilde(effectivePath) ?? effectivePath);
 
   // Security: restrict scanning to within the user home directory.
   // Prevents Claude from being directed to scan /etc, /var, or other
