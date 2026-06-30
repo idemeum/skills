@@ -22,7 +22,7 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
-import { enumerateVendorVpnProfilesDarwin } from "./_shared/vpnProfiles";
+import { enumerateVendorVpnProfilesDarwin, WIN32_VPN_VENDOR_PROCS } from "./_shared/vpnProfiles";
 
 const execAsync = promisify(exec);
 
@@ -139,33 +139,76 @@ async function getVpnProfilesDarwin(): Promise<GetVpnProfilesResult> {
 // -- win32 implementation -----------------------------------------------------
 
 async function getVpnProfilesWin32(): Promise<GetVpnProfilesResult> {
+  const procListPs = WIN32_VPN_VENDOR_PROCS
+    .map((e) => `[PSCustomObject]@{proc='${e.proc}';label='${e.label}'}`)
+    .join(",\n  ");
+
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
+
+# Native RAS-registered profiles (IKEv2, SSTP, PPTP, L2TP)
 $all = @()
-try { $all += Get-VpnConnection -ErrorAction SilentlyContinue } catch {}
+try { $all += Get-VpnConnection              -ErrorAction SilentlyContinue } catch {}
 try { $all += Get-VpnConnection -AllUserConnection -ErrorAction SilentlyContinue } catch {}
-$all | Select-Object Name,ServerAddress,TunnelType,AuthenticationMethod,ConnectionStatus,RememberCredential |
-  ConvertTo-Json -Depth 3 -Compress`.trim();
+$rasProfiles = @($all | Select-Object Name,ServerAddress,TunnelType,AuthenticationMethod,ConnectionStatus)
+
+# Vendor VPN clients that do NOT register via Get-VpnConnection
+$vpnProcMap = @(
+  ${procListPs}
+)
+$vendorClients = @()
+foreach ($e in $vpnProcMap) {
+  if (Get-Process -Name $e.proc -ErrorAction SilentlyContinue) {
+    if (-not ($vendorClients -contains $e.label)) { $vendorClients += $e.label }
+  }
+}
+
+[PSCustomObject]@{
+  rasProfiles   = $rasProfiles
+  vendorClients = $vendorClients
+} | ConvertTo-Json -Depth 4 -Compress`.trim();
 
   const raw = await runPS(ps);
   if (!raw) return { profiles: [] };
 
-  let parsed: unknown;
+  let parsed: {
+    rasProfiles:   Array<Record<string, unknown>> | null;
+    vendorClients: string[] | null;
+  };
   try {
     parsed = JSON.parse(raw);
   } catch {
     return { profiles: [] };
   }
 
-  const arr = Array.isArray(parsed) ? parsed : [parsed];
-  const profiles: VpnProfile[] = (arr as Record<string, unknown>[]).map((c) => ({
-    name:        String(c.Name        ?? "Unknown"),
-    type:        String(c.TunnelType  ?? "VPN"),
-    server:      c.ServerAddress ? String(c.ServerAddress) : null,
-    protocol:    c.TunnelType    ? String(c.TunnelType)    : null,
-    isConnected: String(c.ConnectionStatus) === "Connected",
-    lastUsed:    null,
-  }));
+  const profiles: VpnProfile[] = [];
+
+  // Native RAS profiles
+  for (const c of (parsed.rasProfiles ?? [])) {
+    profiles.push({
+      name:        String(c["Name"]             ?? "Unknown"),
+      type:        String(c["TunnelType"]        ?? "VPN"),
+      server:      c["ServerAddress"] ? String(c["ServerAddress"]) : null,
+      protocol:    c["TunnelType"]    ? String(c["TunnelType"])    : null,
+      isConnected: String(c["ConnectionStatus"]) === "Connected",
+      lastUsed:    null,
+    });
+  }
+
+  // Vendor-managed clients (ProtonVPN, NordVPN, etc.) — reconnect_vpn cannot
+  // drive these; the planner must guide the user to use the vendor app.
+  for (const label of (parsed.vendorClients ?? [])) {
+    if (!profiles.some((p) => p.name === label)) {
+      profiles.push({
+        name:        label,
+        type:        "vendor-managed",
+        server:      null,
+        protocol:    null,
+        isConnected: false,
+        lastUsed:    null,
+      });
+    }
+  }
 
   return { profiles };
 }

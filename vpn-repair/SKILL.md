@@ -50,8 +50,8 @@ Do NOT use if there's **no internet at all** — run the `network-reset` skill f
 **Step 1 — VPN status**
 `check_vpn_status` → `activeConnections[]` (`name`, `status`), `isConnected`, `installedClients[]` (vendor clients by process, e.g. "Cisco AnyConnect", "Palo Alto GlobalProtect"). Tells you if the target is a **native profile** or a **vendor client**.
 
-**Step 2 — Native profiles**
-`get_vpn_profiles` → native macOS (scutil) profiles only (`profiles[].name`, `.server`). Vendor clients usually don't appear here — they surface via Step 1's `installedClients`.
+**Step 2 — VPN profiles**
+`get_vpn_profiles` → on macOS: native scutil profiles; on Windows: native RAS-registered profiles (IKEv2/SSTP/PPTP) **plus** vendor-managed entries for any running third-party client (ProtonVPN, NordVPN, Mullvad, Tailscale, etc.) that does not register via the Windows VPN stack. Vendor-managed entries have `type: "vendor-managed"` — `reconnect_vpn` cannot drive them; Step 9 will return `vendorManaged` and guide the user to the vendor app. Vendor clients also surface via Step 1's `installedClients`.
 
 **Step 3 — Base internet**
 `check_connectivity` (8.8.8.8, 1.1.1.1, google.com). No internet at all → VPN can't connect; switch to `network-reset`.

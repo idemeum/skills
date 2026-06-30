@@ -20,6 +20,8 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
+import { WIN32_VPN_VENDOR_PROCS } from "./_shared/vpnProfiles";
+
 const execAsync = promisify(exec);
 
 // -- Meta ---------------------------------------------------------------------
@@ -185,22 +187,54 @@ async function checkVpnStatusDarwin(): Promise<VpnStatusResult> {
 // -- win32 implementation -----------------------------------------------------
 
 async function checkVpnStatusWin32(): Promise<VpnStatusResult> {
+  // Build the proc-label pairs inline so they don't need a separate PS file.
+  const procListPs = WIN32_VPN_VENDOR_PROCS
+    .map((e) => `[PSCustomObject]@{proc='${e.proc}';label='${e.label}'}`)
+    .join(",\n  ");
+
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
-$vpnConns = @()
-try {
-  $vpnConns = Get-VpnConnection -AllUserConnection -ErrorAction SilentlyContinue
-  $vpnConns += Get-VpnConnection -ErrorAction SilentlyContinue
-} catch {}
-$adapters = Get-NetAdapter | Where-Object { $_.InterfaceDescription -match 'VPN|Tunnel|TAP|WireGuard|WARP' }
-$result = [PSCustomObject]@{
-  vpnConnections = $vpnConns | Select-Object Name,ServerAddress,TunnelType,ConnectionStatus | ConvertTo-Json -Depth 2 -Compress
-  vpnAdapters    = $adapters | Select-Object Name,InterfaceDescription,Status | ConvertTo-Json -Depth 2 -Compress
+
+# 1. Native RAS-registered connections (IKEv2, SSTP, PPTP, L2TP).
+$rasConns = @()
+try { $rasConns += Get-VpnConnection -AllUserConnection -ErrorAction SilentlyContinue } catch {}
+try { $rasConns += Get-VpnConnection              -ErrorAction SilentlyContinue } catch {}
+
+# 2. VPN adapters that are currently UP — catches WireGuard/OpenVPN/TAP-based
+#    clients (ProtonVPN, NordVPN, Mullvad, Tailscale, etc.) that do NOT
+#    register via Get-VpnConnection. Only UP adapters represent a live tunnel.
+$vpnAdaptersUp = @(Get-NetAdapter | Where-Object {
+  ($_.InterfaceDescription -match 'WireGuard|TAP-Windows|TAP |ProtonVPN|NordVPN|ExpressVPN|Mullvad|Tailscale|WARP|Tunnel|OpenVPN') -and
+  $_.Status -eq 'Up'
+} | ForEach-Object {
+  $ip = (Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+         Select-Object -First 1).IPAddress
+  [PSCustomObject]@{ name=$_.Name; description=$_.InterfaceDescription; ip=[string]$ip }
+})
+
+# 3. Process scan — identifies which vendor VPN client is installed/running.
+$vpnProcMap = @(
+  ${procListPs}
+)
+$detectedClients = @()
+foreach ($e in $vpnProcMap) {
+  if (Get-Process -Name $e.proc -ErrorAction SilentlyContinue) {
+    if (-not ($detectedClients -contains $e.label)) { $detectedClients += $e.label }
+  }
 }
-$result | ConvertTo-Json -Depth 3 -Compress`.trim();
+
+[PSCustomObject]@{
+  rasConnections  = @($rasConns | Select-Object Name,ServerAddress,TunnelType,ConnectionStatus)
+  vpnAdaptersUp   = $vpnAdaptersUp
+  detectedClients = $detectedClients
+} | ConvertTo-Json -Depth 4 -Compress`.trim();
 
   const raw = await runPS(ps);
-  let parsed: { vpnConnections: string; vpnAdapters: string };
+  let parsed: {
+    rasConnections:  Array<{ Name: string; ServerAddress: string | null; TunnelType: string | null; ConnectionStatus: string }> | null;
+    vpnAdaptersUp:   Array<{ name: string; description: string; ip: string | null }> | null;
+    detectedClients: string[] | null;
+  };
   try {
     parsed = JSON.parse(raw);
   } catch {
@@ -209,35 +243,31 @@ $result | ConvertTo-Json -Depth 3 -Compress`.trim();
 
   const connections: VpnConnection[] = [];
 
-  if (parsed.vpnConnections) {
-    try {
-      const conns = JSON.parse(parsed.vpnConnections);
-      const arr   = Array.isArray(conns) ? conns : [conns];
-      for (const c of arr) {
-        connections.push({
-          name:       c.Name ?? "Unknown",
-          type:       c.TunnelType ?? "VPN",
-          interface:  "",
-          assignedIp: null,
-          status:     c.ConnectionStatus ?? "Unknown",
-        });
-      }
-    } catch { /* ignore parse errors */ }
+  // Native RAS connections
+  for (const c of (parsed.rasConnections ?? [])) {
+    connections.push({
+      name:       c.Name       ?? "Unknown",
+      type:       c.TunnelType ?? "VPN",
+      interface:  "",
+      assignedIp: null,
+      status:     c.ConnectionStatus ?? "Unknown",
+    });
   }
 
-  const installedClients: string[] = [];
-  if (parsed.vpnAdapters) {
-    try {
-      const adapters = JSON.parse(parsed.vpnAdapters);
-      const arr      = Array.isArray(adapters) ? adapters : [adapters];
-      for (const a of arr) {
-        if (a.InterfaceDescription && !installedClients.includes(a.InterfaceDescription)) {
-          installedClients.push(a.InterfaceDescription);
-        }
-      }
-    } catch { /* ignore parse errors */ }
+  // UP VPN adapters — each represents a live third-party VPN tunnel
+  for (const a of (parsed.vpnAdaptersUp ?? [])) {
+    if (!connections.some((c) => c.name === a.name)) {
+      connections.push({
+        name:       a.description || a.name,
+        type:       "Tunnel",
+        interface:  a.name,
+        assignedIp: a.ip || null,
+        status:     "Connected",
+      });
+    }
   }
 
+  const installedClients = parsed.detectedClients ?? [];
   const isConnected = connections.some(
     (c) => c.status === "Connected" || c.status === "Active",
   );

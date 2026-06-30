@@ -131,19 +131,33 @@ async function getTopConsumersWin32(
   limit:  number,
   metric: "cpu" | "memory" | "combined",
 ): Promise<ConsumerEntry[]> {
-  const sortProp = metric === "memory" ? "WorkingSet64" : "CPU";
+  // Two-snapshot sampling (1 s apart) so cpuPercent is a live per-interval %.
+  // $_.CPU on Get-Process is TotalProcessorTime.TotalSeconds — cumulative, NOT a
+  // live percentage. Comparing it against a 20% threshold in the classifier gives
+  // completely wrong results (old processes appear "pegged"; idle processes appear 0).
+  // Delta / elapsed / logical-CPU-count gives the same metric Task Manager shows.
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
-Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit} | ForEach-Object {
+$cpuCount = [Math]::Max([Environment]::ProcessorCount, 1)
+$snap = @{}
+Get-Process | ForEach-Object { $snap[[int]$_.Id] = [double]($_.CPU -as [double]) }
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+Start-Sleep -Milliseconds 1000
+$sw.Stop()
+$elapsed = [Math]::Max($sw.Elapsed.TotalSeconds, 0.1)
+$result = @(Get-Process | ForEach-Object {
+  $prev  = if ($snap.ContainsKey([int]$_.Id)) { $snap[[int]$_.Id] } else { [double]($_.CPU -as [double]) }
+  $delta = [Math]::Max([double]($_.CPU -as [double]) - $prev, 0)
   [PSCustomObject]@{
     pid        = [int]$_.Id
     name       = $_.ProcessName
-    cpuPercent = [Math]::Round([double]($_.CPU -as [double]), 2)
+    cpuPercent = [Math]::Round(($delta / $elapsed / $cpuCount) * 100, 2)
     memoryMb   = [Math]::Round($_.WorkingSet64 / 1MB, 1)
   }
-} | ConvertTo-Json -Depth 2 -Compress`.trim();
+})
+$result | ConvertTo-Json -Depth 2 -Compress`.trim();
 
-  const raw    = await runPS(ps);
+  const raw = await runPS(ps);
   if (!raw) return [];
   let rawArr: Omit<ConsumerEntry, "combinedScore" | "isSystem" | "memoryHuman">[];
   try {
@@ -153,12 +167,12 @@ Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit
     return [];
   }
   // Never surface the agent's own process(es) (no exec path on win32 — match by name/pid).
-  const arr    = rawArr.filter(r => !isAgentSelf(r.name, r.pid));
+  const arr = rawArr.filter(r => !isAgentSelf(r.name, r.pid));
 
   const maxCpu = Math.max(...arr.map(r => r.cpuPercent), 1);
   const maxMem = Math.max(...arr.map(r => r.memoryMb), 1);
 
-  return arr.map(r => ({
+  const entries = arr.map(r => ({
     ...r,
     memoryHuman:   formatBytesBinary(r.memoryMb * 1024 * 1024),
     combinedScore: Math.round(
@@ -166,6 +180,14 @@ Get-Process | Sort-Object ${sortProp} -Descending | Select-Object -First ${limit
     ) / 100,
     isSystem:      isSystemProcess(r.name),
   }));
+
+  const sortKey: keyof ConsumerEntry =
+    metric === "cpu"    ? "cpuPercent" :
+    metric === "memory" ? "memoryMb"   : "combinedScore";
+
+  return entries
+    .sort((a, b) => (b[sortKey] as number) - (a[sortKey] as number))
+    .slice(0, limit);
 }
 
 // -- Exported run function ----------------------------------------------------

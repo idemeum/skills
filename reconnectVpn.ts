@@ -18,7 +18,7 @@ import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
 
-import { detectVendorForProfile, type VpnVendor } from "./_shared/vpnProfiles";
+import { detectVendorForProfile, WIN32_VPN_VENDOR_PROCS, type VpnVendor } from "./_shared/vpnProfiles";
 
 const execAsync = promisify(exec);
 
@@ -222,6 +222,53 @@ async function reconnectVpnDarwin(
   return { profileName, disconnected, reconnected, dryRun: false, newStatus, message };
 }
 
+// -- win32 vendor detection ---------------------------------------------------
+
+/**
+ * Checks whether a running process matches any known Windows VPN vendor client.
+ * Returns the vendor label for the first match, or null if none is found.
+ * Used by reconnect_vpn to distinguish "vendor-managed" from "genuinely missing"
+ * when Get-VpnConnection doesn't recognise the profile name.
+ */
+async function detectVendorForProfileWin32(profileName: string): Promise<VpnVendor | null> {
+  // First try a name-based match: if the profile name contains the vendor name
+  // (e.g. "ProtonVPN Free" → ProtonVPN), trust that before spawning PS.
+  const lower = profileName.toLowerCase();
+  for (const { label } of WIN32_VPN_VENDOR_PROCS) {
+    if (lower.includes(label.toLowerCase().split(" ")[0].toLowerCase())) {
+      // Confirm the client is actually installed/running before declaring it vendor-managed.
+      const procEntry = WIN32_VPN_VENDOR_PROCS.find((e) => e.label === label);
+      if (!procEntry) continue;
+      const safeName = procEntry.proc.replace(/'/g, "''");
+      try {
+        const out = await runPS(
+          `if (Get-Process -Name '${safeName}' -ErrorAction SilentlyContinue) { 'running' } else { 'notfound' }`,
+        );
+        if (out.trim() === "running") return label;
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Fallback: scan all known vendor processes; return the first running one.
+  // Covers cases where the profile name doesn't contain the vendor name.
+  const procListPs = WIN32_VPN_VENDOR_PROCS
+    .map((e) => `[PSCustomObject]@{proc='${e.proc}';label='${e.label}'}`)
+    .join(",\n  ");
+  const ps = `
+$ErrorActionPreference = 'SilentlyContinue'
+$map = @(${procListPs})
+foreach ($e in $map) {
+  if (Get-Process -Name $e.proc -ErrorAction SilentlyContinue) { $e.label; break }
+}`.trim();
+  try {
+    const out = await runPS(ps);
+    const found = out.trim();
+    if (found) return found as VpnVendor;
+  } catch { /* ignore */ }
+
+  return null;
+}
+
 // -- win32 implementation -----------------------------------------------------
 
 async function reconnectVpnWin32(
@@ -230,7 +277,7 @@ async function reconnectVpnWin32(
 ): Promise<ReconnectVpnResult> {
   const safeName = profileName.replace(/'/g, "''");
 
-  // Verify profile exists
+  // Verify profile exists in Windows RAS
   const checkPs = `
 $ErrorActionPreference = 'SilentlyContinue'
 $c = Get-VpnConnection -Name '${safeName}' -ErrorAction SilentlyContinue
@@ -239,6 +286,25 @@ if ($c) { 'found' } else { 'notfound' }`.trim();
 
   const checkResult = await runPS(checkPs);
   if (checkResult !== "found") {
+    // Not a native RAS profile. Check whether it's a vendor-managed VPN
+    // (ProtonVPN, NordVPN, etc.) — return accurate guidance instead of a
+    // misleading "Profile not found" (mirrors the darwin detectVendorForProfile path).
+    const vendor = await detectVendorForProfileWin32(profileName);
+    if (vendor) {
+      return {
+        profileName,
+        disconnected:  false,
+        reconnected:   false,
+        dryRun,
+        newStatus:     "vendor-managed — not reconnected",
+        vendorManaged: vendor,
+        message:
+          `"${profileName}" is managed by ${vendor}, which uses its own tunnel driver ` +
+          `(WireGuard/OpenVPN) that Windows cannot reconnect via the built-in VPN stack. ` +
+          `Open the ${vendor} app in the system tray, disconnect, wait 5 seconds, ` +
+          `then click Connect.`,
+      };
+    }
     throw new Error(
       `[reconnect_vpn] Profile not found: "${profileName}". ` +
       "Use get_vpn_profiles to list available profiles.",
