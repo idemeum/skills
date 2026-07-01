@@ -75,6 +75,6 @@ When the user has not described impact severity, default to `medium`.
 
 ## Edge cases
 
-- **Vague user input** — When the accumulated context is sparse (e.g. "something broke"), do your best: category `Other`, urgency `medium`, summary paraphrasing the original goal, affectedSystem `Unknown`, symptoms with at least the user's own words. The form is editable — the user can correct everything.
+- **Vague user input** — When the accumulated context is sparse (e.g. "something broke"), do your best: category `Other`, urgency `medium`, summary paraphrasing the original goal, affectedSystem from the broadest term the user mentioned (e.g. "Computer", "Laptop") — never default to "Unknown" unless the user gave zero context, symptoms with at least the user's own words. The form is editable — the user can correct everything.
 - **User cancels the form** — The gate returns `action: "cancel"`. The run completes with no corrective action and `runStatus` will be `unresolved`. A ticket is still created via the post-execution path but with empty diagnostics.
 - **Ticketing disabled** — The gate injects `ticketingEnabled: false` from deployment config. The card heading changes to informational and the Submit button is hidden, but the user can still copy the structured summary. The run still completes normally.
