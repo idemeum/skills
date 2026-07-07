@@ -1,0 +1,259 @@
+{
+  "skills": [
+    {
+      "skillId": "av-peripheral-repair",
+      "name": "External display, USB, or Bluetooth peripheral problem",
+      "description": "Diagnoses and repairs A/V and peripheral hardware problems including external monitors not detected, AirPods or Bluetooth audio dropping, USB hubs and docks not enumerating, USB-C peripherals losing power, and microphones / cameras not appearing in collab apps. Read-only enumeration where possible; only the Bluetooth-module reset is mutating and gated by G4 dry-run + consent.",
+      "risk": "medium",
+      "allowedTools": [
+        "list_audio_devices",
+        "list_video_devices",
+        "list_usb_devices",
+        "list_bluetooth_devices",
+        "reset_bluetooth_module",
+        "wait_for_user_ack"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "cloud-idp-password-reset",
+      "name": "Reset my Okta/Entra/Google password",
+      "description": "Resets a user's cloud identity provider password (Okta, Microsoft Entra, Google Workspace) and cleans up stale local session state (cached credentials, browser SSO cookies, IDP agent sync, login Keychain) so the user's apps stop presenting the old password. Use when the user says \"I need to reset my Okta/Entra/Google password\", \"I just reset my password and now Outlook/VPN/Teams keeps asking me to sign in\", or similar cloud-IDP sign-in complaints.",
+      "risk": "high",
+      "allowedTools": [
+        "detect_identity_provider",
+        "detect_idp_username",
+        "open_idp_sspr_portal",
+        "request_idemeum_idp_reset",
+        "wait_for_user_ack",
+        "request_user_input",
+        "present_preview",
+        "purge_cached_credentials",
+        "clear_browser_sso_cookies",
+        "resync_idp_agent",
+        "repair_keychain"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "cloud-sync-backup-repair",
+      "name": "OneDrive / iCloud / Dropbox / Time Machine sync or backup problem",
+      "description": "Diagnoses and repairs cloud sync (OneDrive, iCloud Drive, Google Drive, Dropbox) and Time Machine backup problems including stuck queues, stale sync state, missed backups, sync conflicts on slow networks, and credential / token expiry. Read-only probes by default; the only mutating tool is `pause_resume_cloud_sync` and it is reversible. Use when the user reports their cloud files are not syncing, OneDrive shows a red X, or they are unsure when their last backup ran.",
+      "risk": "medium",
+      "allowedTools": [
+        "check_cloud_sync_status",
+        "pause_resume_cloud_sync",
+        "check_timemachine_status",
+        "check_connectivity",
+        "wait_for_user_ack"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "collab-app-repair",
+      "name": "Teams / Slack / Zoom / Webex problem",
+      "description": "Diagnoses and repairs Microsoft Teams, Slack, Zoom, and Cisco Webex problems including media issues (mic, camera, speaker), stuck cache, stale meeting metadata, and search-index failures. Preserves the user's signed-in state — clears app cache and resets A/V device selection without forcing the user to sign back in. Use when the user reports the collab app is misbehaving but their account credentials are still valid.",
+      "risk": "medium",
+      "allowedTools": [
+        "check_collab_app_status",
+        "list_audio_devices",
+        "list_video_devices",
+        "clear_collab_app_cache",
+        "reset_av_device_selection",
+        "restart_process",
+        "check_app_permissions",
+        "wait_for_user_ack"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "disk-cleanup",
+      "name": "Running out of disk space",
+      "description": "Scans disk usage and removes large or temporary files to free space. Use when user reports laptop slowness or low disk space.",
+      "risk": "high",
+      "allowedTools": [
+        "disk_scan",
+        "get_disk_usage",
+        "get_large_files",
+        "find_duplicate_files",
+        "find_old_downloads",
+        "get_app_cache_info",
+        "get_browser_cache_info",
+        "get_dev_cache_info",
+        "get_docker_disk_usage",
+        "get_trash_info",
+        "get_xcode_derived_data_info",
+        "clear_app_cache",
+        "clear_browser_cache",
+        "clear_dev_cache",
+        "prune_docker",
+        "clear_xcode_derived_data",
+        "delete_files",
+        "empty_trash",
+        "present_preview"
+      ],
+      "enabled": true
+    },
+    {
+      "skillId": "email-repair",
+      "name": "Email not working",
+      "description": "Diagnoses and repairs email client issues including account configuration, authentication/credential failures, index corruption, database errors, SMTP/IMAP connectivity failures, and permission problems. Use when user reports email not sending, not receiving, repeated password prompts, missing messages, or client crashes.",
+      "risk": "high",
+      "allowedTools": [
+        "check_mail_account_config",
+        "check_smtp_connectivity",
+        "check_certificate_expiry",
+        "get_top_consumers",
+        "check_mail_permissions",
+        "get_cached_credentials_count",
+        "repair_keychain",
+        "purge_cached_credentials",
+        "rebuild_mail_index",
+        "repair_outlook_database",
+        "reset_app_preferences",
+        "wait_for_user_ack",
+        "request_user_input"
+      ],
+      "enabled": true
+    },
+    {
+      "skillId": "identity-auth-repair",
+      "name": "Login or SSO keeps failing across multiple apps",
+      "description": "Diagnoses and repairs SSO / Kerberos / client-certificate authentication failures. Use when multiple identity-dependent apps (Outlook, VPN, Teams, Slack, corporate web apps) fail simultaneously — the root cause is often a single issue like NTP drift, an expired Kerberos TGT, or an expired client certificate. Fixes the underlying cause so all the downstream apps start working again.",
+      "risk": "medium",
+      "allowedTools": [
+        "check_ntp_status",
+        "sync_system_time",
+        "check_kerberos_ticket",
+        "renew_kerberos_ticket",
+        "list_client_certificates",
+        "check_certificate_expiry",
+        "check_ad_binding",
+        "wait_for_user_ack",
+        "request_user_input"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "network-reset",
+      "name": "No internet or Wi-Fi connection",
+      "description": "Diagnoses and repairs network connectivity issues including no internet access, Wi-Fi problems, DNS failures, DHCP lease errors, misconfigured proxies, and corrupt network settings. Use when user has no or intermittent internet access.",
+      "risk": "medium",
+      "allowedTools": [
+        "check_connectivity",
+        "get_network_interfaces",
+        "get_wifi_info",
+        "renew_dhcp_lease",
+        "flush_dns_cache",
+        "check_proxy_settings",
+        "check_firewall_status",
+        "wait_for_user_ack"
+      ],
+      "enabled": true
+    },
+    {
+      "skillId": "printer-repair",
+      "name": "Printer not working or print queue stuck",
+      "description": "Diagnoses and repairs printing issues including stuck print queues, offline printers, and CUPS/Spooler service failures. Clears jammed queues and restarts the print service; guides self-service + IT escalation for driver/config corruption. Use when a printer is not printing, showing as offline, or the print queue is jammed.",
+      "risk": "medium",
+      "allowedTools": [
+        "list_printers",
+        "check_print_queue",
+        "check_printer_connectivity",
+        "clear_print_queue",
+        "restart_cups",
+        "request_user_input",
+        "wait_for_user_ack"
+      ],
+      "enabled": true
+    },
+    {
+      "skillId": "process-manager",
+      "name": "Computer running slow or app frozen",
+      "description": "Diagnoses and resolves system performance issues caused by runaway processes, memory pressure, thermal throttling, or excessive startup items. Use when user reports high CPU/memory usage, a frozen application, or slow boot times.",
+      "risk": "medium",
+      "allowedTools": [
+        "get_top_consumers",
+        "get_memory_pressure",
+        "get_cpu_temperature",
+        "get_startup_items",
+        "present_preview",
+        "restart_process",
+        "kill_process",
+        "disable_startup_item",
+        "get_disk_usage"
+      ],
+      "enabled": true
+    },
+    {
+      "skillId": "security-agent-repair",
+      "name": "Security or endpoint agent not running",
+      "description": "Diagnoses and repairs endpoint security agent issues including stopped processes, outdated versions, unapproved system extensions, connectivity failures to management consoles, and compliance posture problems. Supports CrowdStrike Falcon, SentinelOne, Jamf Protect, Carbon Black, Cylance, and Microsoft Defender.",
+      "risk": "medium",
+      "allowedTools": [
+        "check_agent_process",
+        "check_agent_heartbeat",
+        "check_sip_status",
+        "check_system_extension",
+        "get_agent_version",
+        "check_connectivity",
+        "check_agent_logs",
+        "restart_process",
+        "check_filevault_status",
+        "check_mdm_enrollment",
+        "wait_for_user_ack"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "software-reinstall",
+      "name": "App crashing or needs reinstall",
+      "description": "Diagnoses application integrity issues and performs clean software reinstallation. Covers signature verification, thorough uninstallation, installer download with checksum validation, silent installation, and MDM-managed reinstalls. Use when an application is crashing, corrupted, or behaving incorrectly and a reinstall is the appropriate resolution.",
+      "risk": "high",
+      "allowedTools": [
+        "list_installed_apps",
+        "check_app_integrity",
+        "check_app_permissions",
+        "check_mdm_enrollment",
+        "query_self_service_catalog",
+        "trigger_self_service_install",
+        "uninstall_app",
+        "download_installer",
+        "run_installer",
+        "reset_app_preferences",
+        "clear_app_cache",
+        "wait_for_user_ack",
+        "request_user_input"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "triage",
+      "name": "Submit issue to IT helpdesk",
+      "description": "Collects structured intake information when no specific skill matches the user's IT request. Presents the issue classified into category, urgency, affected system, and symptoms for user review. Ticket submission is handled by the existing post-execution createTicket() path.",
+      "risk": "low",
+      "allowedTools": [
+        "present_intake_form"
+      ],
+      "enabled": false
+    },
+    {
+      "skillId": "vpn-repair",
+      "name": "VPN not connecting",
+      "description": "Diagnoses and repairs VPN connectivity issues including stale connections, misconfigured profiles, expired certificates, missing network extensions, and DNS leaks. Use when user cannot connect to VPN or VPN appears connected but traffic is not routing.",
+      "risk": "medium",
+      "allowedTools": [
+        "check_vpn_status",
+        "get_vpn_profiles",
+        "check_connectivity",
+        "check_certificate_expiry",
+        "check_network_extension",
+        "reconnect_vpn",
+        "flush_dns_cache",
+        "wait_for_user_ack",
+        "request_user_input"
+      ],
+      "enabled": true
+    }
+  ]
+}
