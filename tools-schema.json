@@ -1755,6 +1755,7 @@
       "destructive": false,
       "requiresConsent": false,
       "supportsDryRun": false,
+      "isUserWaitGate": true,
       "affectedScope": [
         "user"
       ],
@@ -1807,6 +1808,7 @@
       "destructive": false,
       "requiresConsent": false,
       "supportsDryRun": false,
+      "isUserWaitGate": true,
       "affectedScope": [
         "user"
       ],
@@ -2145,6 +2147,7 @@
       "destructive": false,
       "requiresConsent": false,
       "supportsDryRun": false,
+      "isUserWaitGate": true,
       "affectedScope": [
         "user"
       ],
@@ -2572,6 +2575,7 @@
       "destructive": false,
       "requiresConsent": false,
       "supportsDryRun": false,
+      "isUserWaitGate": true,
       "affectedScope": [
         "user"
       ],

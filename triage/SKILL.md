@@ -40,7 +40,7 @@ affectedSystem: "<extracted system>"
 symptoms: ["<symptom 1>", "<symptom 2>"]
 ```
 
-### Classification guide
+### Executor guidance
 
 Extract each field from the user's original request and any clarification answers they provided:
 

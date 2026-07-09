@@ -13,6 +13,7 @@
         "reset_bluetooth_module",
         "wait_for_user_ack"
       ],
+      "steps": 8,
       "enabled": false
     },
     {
@@ -33,6 +34,7 @@
         "resync_idp_agent",
         "repair_keychain"
       ],
+      "steps": 11,
       "enabled": false
     },
     {
@@ -47,6 +49,7 @@
         "check_connectivity",
         "wait_for_user_ack"
       ],
+      "steps": 10,
       "enabled": false
     },
     {
@@ -64,6 +67,7 @@
         "check_app_permissions",
         "wait_for_user_ack"
       ],
+      "steps": 11,
       "enabled": false
     },
     {
@@ -92,6 +96,7 @@
         "empty_trash",
         "present_preview"
       ],
+      "steps": 11,
       "enabled": true
     },
     {
@@ -114,6 +119,7 @@
         "wait_for_user_ack",
         "request_user_input"
       ],
+      "steps": 17,
       "enabled": true
     },
     {
@@ -132,6 +138,7 @@
         "wait_for_user_ack",
         "request_user_input"
       ],
+      "steps": 11,
       "enabled": false
     },
     {
@@ -149,6 +156,7 @@
         "check_firewall_status",
         "wait_for_user_ack"
       ],
+      "steps": 9,
       "enabled": true
     },
     {
@@ -165,6 +173,7 @@
         "request_user_input",
         "wait_for_user_ack"
       ],
+      "steps": 10,
       "enabled": true
     },
     {
@@ -183,6 +192,7 @@
         "disable_startup_item",
         "get_disk_usage"
       ],
+      "steps": 9,
       "enabled": true
     },
     {
@@ -203,6 +213,7 @@
         "check_mdm_enrollment",
         "wait_for_user_ack"
       ],
+      "steps": 13,
       "enabled": false
     },
     {
@@ -225,6 +236,7 @@
         "wait_for_user_ack",
         "request_user_input"
       ],
+      "steps": 18,
       "enabled": false
     },
     {
@@ -235,6 +247,7 @@
       "allowedTools": [
         "present_intake_form"
       ],
+      "steps": 1,
       "enabled": false
     },
     {
@@ -253,6 +266,7 @@
         "wait_for_user_ack",
         "request_user_input"
       ],
+      "steps": 14,
       "enabled": true
     }
   ]
