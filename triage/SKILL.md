@@ -5,6 +5,14 @@ license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
   - present_intake_form
+  - check_connectivity
+  - get_top_consumers
+  - list_installed_apps
+  - list_usb_devices
+  - check_firewall_status
+  - check_mail_account_config
+  - list_printers
+  - get_processes
 metadata:
   maxAggregateRisk: low
   userLabel: "Submit issue to IT helpdesk"
@@ -71,10 +79,26 @@ When the user has not described impact severity, default to `medium`.
 
 **symptoms** — List of specific symptoms the user described, each as a short phrase. If the user's description was vague, extract what you can and include at least one entry. Empty array only when absolutely nothing can be inferred.
 
+**Step 2 — Collect category-specific diagnostics**
+
+After the intake form is submitted, run one diagnostic tool matching the classified category. The planner selects the tool based on the category:
+
+- `Network` → call `check_connectivity`
+- `Software` → call `list_installed_apps`
+- `Hardware` → call `list_usb_devices`
+- `Account/Access` → call `get_processes`
+- `Email` → call `check_mail_account_config`
+- `Printing` → call `list_printers`
+- `Performance` → call `get_top_consumers`
+- `Security` → call `check_firewall_status`
+- `Other` → call `get_processes`
+
+Call the selected tool with default arguments. Only after the intake form is submitted (action is not "cancel").
+
 ---
 
 ## Edge cases
 
-- **Vague user input** — When the accumulated context is sparse (e.g. "something broke"), do your best: category `Other`, urgency `medium`, summary paraphrasing the original goal, affectedSystem from the broadest term the user mentioned (e.g. "Computer", "Laptop") — never default to "Unknown" unless the user gave zero context, symptoms with at least the user's own words. The form is editable — the user can correct everything.
+- **Vague user input** — When the accumulated context is sparse (e.g. "something broke"), do your best: category `Other`, urgency `medium`, summary paraphrasing the original goal, affectedSystem from the broadest term the user mentioned (e.g. "Computer", "Laptop") — never default to "Unknown" unless the user gave zero context, symptoms with at least the user's own words. The form is editable — the user can correct urgency, summary, affected system, and symptoms. Category is read-only (set by the planner's classification) because the diagnostic step is tied to it.
 - **User cancels the form** — The gate returns `action: "cancel"`. The run completes with no corrective action and `runStatus` will be `unresolved`. A ticket is still created via the post-execution path but with empty diagnostics.
 - **Ticketing disabled** — The gate injects `ticketingEnabled: false` from deployment config. The card heading changes to informational and the Submit button is hidden, but the user can still copy the structured summary. The run still completes normally.

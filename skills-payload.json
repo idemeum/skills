@@ -245,9 +245,17 @@
       "description": "Collects structured intake information when no specific skill matches the user's IT request. Presents the issue classified into category, urgency, affected system, and symptoms for user review. Ticket submission is handled by the existing post-execution createTicket() path.",
       "risk": "low",
       "allowedTools": [
-        "present_intake_form"
+        "present_intake_form",
+        "check_connectivity",
+        "get_top_consumers",
+        "list_installed_apps",
+        "list_usb_devices",
+        "check_firewall_status",
+        "check_mail_account_config",
+        "list_printers",
+        "get_processes"
       ],
-      "steps": 1,
+      "steps": 2,
       "enabled": false
     },
     {
