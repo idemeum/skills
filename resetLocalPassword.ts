@@ -57,7 +57,7 @@ export const meta = {
       .describe("New password to set"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, validate inputs without changing password. Default: true"),
   },
 } as const;

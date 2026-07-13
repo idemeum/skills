@@ -141,7 +141,7 @@ export const meta = {
       ),
     tenant: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Optional tenant filter — when provided and the probe finds " +
         "multiple accounts, candidates are filtered to those matching " +

@@ -64,7 +64,7 @@ export const meta = {
   schema: {
     volume: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Volume / drive to probe. macOS default '/' (system root); " +
         "Windows default %SystemDrive% (typically 'C:'). Pass an explicit " +

@@ -46,11 +46,11 @@ export const meta = {
   schema: {
     what: z
       .array(z.enum(["derivedData", "archives", "deviceSupport", "all"]))
-      .optional()
+      .nullable().optional()
       .describe("What to clear. Default: ['derivedData']"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report sizes without deleting. Default: true"),
   },
 } as const;

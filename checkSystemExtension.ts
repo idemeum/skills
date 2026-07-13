@@ -40,7 +40,7 @@ export const meta = {
   schema: {
     bundleId: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Extension bundle ID to check (e.g. 'com.crowdstrike.falcon.Agent'). " +
         "Omit to list all security-related extensions",

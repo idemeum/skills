@@ -56,7 +56,7 @@ export const meta = {
   schema: {
     client: z
       .enum(["onedrive", "icloud", "google-drive", "dropbox", "auto"])
-      .optional()
+      .nullable().optional()
       .describe(
         "Which client's status to report at the top level. Default 'auto' " +
         "picks the most-stale installed client (the one that should fire " +
@@ -68,7 +68,7 @@ export const meta = {
       .int()
       .min(1)
       .max(168)
-      .optional()
+      .nullable().optional()
       .describe("Hours since lastSync that count as stale. Default 24."),
   },
 } as const;

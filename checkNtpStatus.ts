@@ -42,7 +42,7 @@ export const meta = {
   schema: {
     server: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Reference NTP server. Defaults to 'time.apple.com' on macOS and " +
         "'time.windows.com' on Windows.",

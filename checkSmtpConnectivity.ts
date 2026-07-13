@@ -39,11 +39,11 @@ export const meta = {
       .describe("SMTP server hostname (e.g. 'smtp.gmail.com', 'mail.company.com')"),
     ports: z
       .array(z.number())
-      .optional()
+      .nullable().optional()
       .describe("Ports to test. Default: [587, 465, 25]"),
     timeoutMs: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Connection timeout per port in ms. Default: 5000"),
   },
 } as const;

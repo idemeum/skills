@@ -50,7 +50,7 @@ export const meta = {
       .describe("Absolute paths of files or directories to delete."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "When true, reports what would be deleted without actually deleting. " +
         "Default: false.",

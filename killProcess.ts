@@ -38,19 +38,19 @@ export const meta = {
   schema: {
     name: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Process name to kill (case-insensitive partial match)"),
     pid: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Exact PID to kill. More precise than name"),
     signal: z
       .enum(["TERM", "KILL"])
-      .optional()
+      .nullable().optional()
       .describe("Signal to send. TERM=graceful shutdown, KILL=force. Default: TERM"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, show what would be killed without killing. Default: true"),
   },
 } as const;

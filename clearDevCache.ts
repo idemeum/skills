@@ -58,11 +58,11 @@ export const meta = {
   schema: {
     tools: z
       .array(z.enum(["npm", "yarn", "pnpm", "pip", "gradle", "maven", "all"]))
-      .optional()
+      .nullable().optional()
       .describe("Tools to clear. Default: all detected"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report sizes without clearing. Default: true"),
   },
 } as const;

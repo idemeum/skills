@@ -37,7 +37,7 @@ export const meta = {
   schema: {
     apps: z
       .array(z.enum(["teams", "slack", "zoom", "webex"]))
-      .optional()
+      .nullable().optional()
       .describe(
         "Which collab apps to probe. Omit to scan all four. Wildcards rejected.",
       ),

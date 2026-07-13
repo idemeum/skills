@@ -44,11 +44,11 @@ export const meta = {
       .describe("IDP identifier from detect_identity_provider."),
     tenant: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Okta tenant slug (ignored for Entra/Google)."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("When true, return the resolved URL without opening a browser."),
   },
 } as const;

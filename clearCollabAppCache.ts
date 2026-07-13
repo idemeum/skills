@@ -51,7 +51,7 @@ export const meta = {
       .describe("Which collab app's cache to clear. Wildcards rejected."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report what would be cleared without deleting anything."),
   },
 } as const;

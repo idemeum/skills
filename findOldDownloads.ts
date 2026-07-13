@@ -38,11 +38,11 @@ export const meta = {
   schema: {
     olderThanDays: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Return files not modified in this many days. Default: 90"),
     minSizeMb: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Minimum file size in MB. Default: 0 (all files)"),
   },
 } as const;

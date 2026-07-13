@@ -43,11 +43,11 @@ export const meta = {
       .describe("Security agent to get logs for"),
     lines: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Number of recent log lines. Default: 50"),
     errorOnly: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("Return only lines containing ERROR, WARN, or FAIL. Default: false"),
   },
 } as const;

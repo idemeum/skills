@@ -38,11 +38,11 @@ export const meta = {
   schema: {
     appName: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Application name (e.g. 'Zoom', 'Slack')"),
     appPath: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Full path to .app bundle. If omitted, searches /Applications and ~/Applications",
       ),

@@ -51,14 +51,14 @@ export const meta = {
   schema: {
     server: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Reference NTP server. Defaults to 'time.apple.com' on macOS. " +
         "Ignored on Windows — W32Time reads from its configured peer.",
       ),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("When true, report the command that would run without executing."),
   },
 } as const;

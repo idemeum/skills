@@ -49,7 +49,7 @@ export const meta = {
     // rejected by the helper and (b) make the preview disagree with the action.
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "If true, show jobs that would be cancelled without cancelling. Default: true",
       ),

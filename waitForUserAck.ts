@@ -106,7 +106,7 @@ export const meta = {
             .describe("Human-readable button text shown in the UserAckCard."),
           kind: z
             .enum(["primary", "secondary", "cancel"])
-            .optional()
+            .nullable().optional()
             .describe(
               "Optional visual hint for the button (primary = green/emerald, " +
               "secondary = neutral zinc, cancel = muted). Defaults to 'secondary'.",

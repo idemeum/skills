@@ -53,7 +53,7 @@ export const meta = {
   schema: {
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "When true, reports how much would be freed without actually emptying. " +
         "Default: false.",

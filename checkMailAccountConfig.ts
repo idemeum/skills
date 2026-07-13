@@ -50,11 +50,11 @@ export const meta = {
   schema: {
     client: z
       .enum(["mail", "outlook", "auto"])
-      .optional()
+      .nullable().optional()
       .describe("Email client to check. auto=detect installed client. Default: auto"),
     account: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Email address to check. Omit to list all configured accounts"),
   },
 } as const;

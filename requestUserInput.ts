@@ -98,7 +98,7 @@ export const meta = {
 
     placeholder: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Greyed-out hint text inside an EMPTY input. Disappears when " +
         "the user starts typing. NOT submitted as a value if the user " +
@@ -108,7 +108,7 @@ export const meta = {
 
     initialValue: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Text PRE-FILLED into the input. User can accept (click Continue) " +
         "or edit. Submitted as the captured value if the user clicks " +
@@ -119,7 +119,7 @@ export const meta = {
 
     validator: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Optional regex (string source, no leading/trailing slashes) " +
         "the captured value must match before Continue enables. " +
@@ -131,7 +131,7 @@ export const meta = {
 
     sensitive: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "When true, the renderer shows a password-style masked input " +
         "(dots), AND the captured value is redacted in audit logs, " +

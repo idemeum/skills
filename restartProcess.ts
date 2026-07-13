@@ -39,15 +39,15 @@ export const meta = {
   schema: {
     name: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Process name to restart (e.g. 'Finder', 'CrowdStrikeFalconSensor')"),
     pid: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Process ID to restart. Use instead of name for precision"),
     launchPath: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Full path to re-launch after killing. Required if process doesn't relaunch itself."),
   },
 } as const;

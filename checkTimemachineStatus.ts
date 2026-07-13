@@ -66,7 +66,7 @@ export const meta = {
       .int()
       .min(1)
       .max(720)
-      .optional()
+      .nullable().optional()
       .describe("Hours since last successful backup that count as stale. Default 72 (3 days)."),
   },
 } as const;

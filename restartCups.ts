@@ -48,7 +48,7 @@ export const meta = {
   schema: {
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, check service status without restarting. Default: true"),
   },
 } as const;

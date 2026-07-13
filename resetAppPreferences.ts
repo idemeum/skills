@@ -45,7 +45,7 @@ export const meta = {
       .describe("Application name (e.g. 'Mail', 'Outlook', 'Slack')"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report what would be removed without removing. Default: true"),
   },
 } as const;

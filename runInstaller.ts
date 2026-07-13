@@ -71,7 +71,7 @@ export const meta = {
       ),
     installer_type: z
       .enum(["pkg", "dmg", "msi", "exe"])
-      .optional()
+      .nullable().optional()
       .describe(
         "Installer type.  When omitted, auto-detected from the file " +
         "extension.  Must match the platform (pkg/dmg → macOS; " +
@@ -79,7 +79,7 @@ export const meta = {
       ),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "If true, validate the installer + show what would run, but do " +
         "not execute.  Default: true (G4 dry-run-first policy).",

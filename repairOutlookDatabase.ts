@@ -49,7 +49,7 @@ export const meta = {
   schema: {
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "If true, locate repair tool and database files without running repair. Default: true",
       ),

@@ -43,7 +43,7 @@ export const meta = {
   schema: {
     fix: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "If true, attempt to repair permissions with chown/chmod. Default: false",
       ),

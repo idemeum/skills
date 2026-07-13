@@ -41,11 +41,11 @@ export const meta = {
       .describe("HTTPS URL to the installer (.dmg, .pkg, .exe, .msi)"),
     filename: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Local filename. Defaults to the filename from the URL"),
     checksumSha256: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Expected SHA-256 hash for integrity validation"),
   },
 } as const;

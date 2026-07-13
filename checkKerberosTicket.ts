@@ -39,7 +39,7 @@ export const meta = {
       .int()
       .min(1)
       .max(1440)
-      .optional()
+      .nullable().optional()
       .describe(
         "How many minutes before expiry to flag a ticket as 'expiring soon'. " +
         "Defaults to 60 (1 hour).",

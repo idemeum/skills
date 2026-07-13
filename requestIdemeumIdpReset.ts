@@ -95,11 +95,11 @@ export const meta = {
       .describe("The user's IDP login (email / UPN)."),
     tenant: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("IDP tenant slug (Okta) or directory id (Entra); optional for Google."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "When true, return { willPost, endpoint, payloadWithoutSecrets } " +
         "without posting. The API key is never included even in dry-run.",

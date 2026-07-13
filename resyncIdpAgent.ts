@@ -48,7 +48,7 @@ export const meta = {
       .describe("IDP identifier from detect_identity_provider."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("When true, report the exact commands that would run without executing."),
   },
 } as const;

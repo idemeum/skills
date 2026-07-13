@@ -291,7 +291,7 @@ export const meta = {
             ),
           detail: z
             .string()
-            .optional()
+            .nullable().optional()
             .describe(
               "Optional extra bullet text shown when the user expands the " +
               "category. Use sparingly.",
@@ -299,7 +299,7 @@ export const meta = {
           bytes: z
             .number()
             .nonnegative()
-            .optional()
+            .nullable().optional()
             .describe(
               "Reclaimable size of this category in raw bytes (NOT a " +
               "formatted string). Used by G4 to decide which rows are " +
@@ -314,7 +314,7 @@ export const meta = {
           bytesFromTool: z
             .string()
             .min(1)
-            .optional()
+            .nullable().optional()
             .describe(
               "Canonical name of the read-only diagnostic tool whose output " +
               "determines this category's reclaimable size (e.g. " +
@@ -329,14 +329,14 @@ export const meta = {
             ),
           defaultSelected: z
             .boolean()
-            .optional()
+            .nullable().optional()
             .describe(
               "Whether the checkbox is checked by default. Defaults to " +
               "true. Set false for destructive or non-obvious categories.",
             ),
           destructive: z
             .boolean()
-            .optional()
+            .nullable().optional()
             .describe(
               "When true, the renderer shows a ⚠ icon and warning style. " +
               "Combine with defaultSelected: false so the user must " +

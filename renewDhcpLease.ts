@@ -42,7 +42,7 @@ export const meta = {
   schema: {
     interface: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Network interface name (e.g. 'en0', 'Wi-Fi'). Omit to renew all active interfaces"),
   },
 } as const;

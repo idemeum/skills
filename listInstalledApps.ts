@@ -38,11 +38,11 @@ export const meta = {
   schema: {
     filter: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Case-insensitive name filter to narrow results"),
     includeSystemApps: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("Include Apple/Microsoft system apps. Default: false"),
   },
 } as const;

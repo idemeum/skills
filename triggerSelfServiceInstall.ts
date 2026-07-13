@@ -57,7 +57,7 @@ export const meta = {
       ),
     catalogType: z
       .enum(["jamf", "intune", "munki"])
-      .optional()
+      .nullable().optional()
       .describe(
         "Override the catalog auto-detection. Omit to let the tool " +
         "detect the installed catalog automatically.",

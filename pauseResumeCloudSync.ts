@@ -66,7 +66,7 @@ export const meta = {
       .describe("Whether to pause syncing or resume it."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report the command(s) that would run without touching the system."),
   },
 } as const;

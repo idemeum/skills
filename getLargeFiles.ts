@@ -61,7 +61,7 @@ export const meta = {
   schema: {
     path: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Absolute path of the directory to scan recursively. " +
         "Defaults to the user home directory.",
@@ -70,13 +70,13 @@ export const meta = {
       .number()
       .int()
       .positive()
-      .optional()
+      .nullable().optional()
       .describe("Only return files at least this large in bytes. Default: 104857600 (100 MB)."),
     limit: z
       .number()
       .int()
       .positive()
-      .optional()
+      .nullable().optional()
       .describe("Maximum number of files to return. Default: 20."),
   },
 } as const;

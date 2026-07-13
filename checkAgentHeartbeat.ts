@@ -68,7 +68,7 @@ export const meta = {
       .int()
       .min(60)
       .max(86_400)
-      .optional()
+      .nullable().optional()
       .describe(
         "Maximum age (seconds) before the agent is considered " +
         "not-heartbeating. Default 900 (15 min) matches the Wave 2 Trigger 3 " +

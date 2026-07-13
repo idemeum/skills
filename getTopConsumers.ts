@@ -39,11 +39,11 @@ export const meta = {
   schema: {
     limit: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Number of top processes to return. Default: 10"),
     metric: z
       .enum(["cpu", "memory", "combined"])
-      .optional()
+      .nullable().optional()
       .describe("Ranking metric. Default: combined"),
   },
 } as const;

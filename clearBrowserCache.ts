@@ -54,11 +54,11 @@ export const meta = {
   schema: {
     browser: z
       .enum(["chrome", "safari", "firefox", "edge", "all"])
-      .optional()
+      .nullable().optional()
       .describe("Target browser. Default: all"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report sizes without deleting. Default: true"),
   },
 } as const;

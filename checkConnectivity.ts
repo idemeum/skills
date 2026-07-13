@@ -38,11 +38,11 @@ export const meta = {
   schema: {
     targets: z
       .array(z.string())
-      .optional()
+      .nullable().optional()
       .describe("Hosts to ping. Defaults to ['8.8.8.8', '1.1.1.1', 'google.com']"),
     count: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Ping count per target. Default: 3"),
   },
 } as const;

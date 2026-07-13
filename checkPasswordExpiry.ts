@@ -39,7 +39,7 @@ export const meta = {
   schema: {
     username: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Username to check. Defaults to current user"),
   },
   // Top-level keys proactive-trigger DSL conditions may reference.

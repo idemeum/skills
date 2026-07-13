@@ -46,7 +46,7 @@ export const meta = {
       .describe("Exact printer name to remove (get names from list_printers)"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, verify printer exists without removing. Default: true"),
   },
 } as const;

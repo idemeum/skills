@@ -50,7 +50,7 @@ export const meta = {
       .describe("IDP identifier from detect_identity_provider."),
     tenant: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("IDP tenant slug (required for Okta)."),
   },
 } as const;

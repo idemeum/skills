@@ -38,13 +38,13 @@ export const meta = {
   schema: {
     sortBy: z
       .enum(["cpu", "memory", "name"])
-      .optional()
+      .nullable().optional()
       .describe("Sort field. Default: cpu (highest first)."),
     limit: z
       .number()
       .int()
       .positive()
-      .optional()
+      .nullable().optional()
       .describe("Maximum number of processes to return. Default: 30."),
   },
 } as const;

@@ -59,7 +59,7 @@ export const meta = {
       ),
     driver_name: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("PPD file path or driver model. Omit for IPP Everywhere / the Microsoft IPP Class Driver (auto-driver)."),
   },
 } as const;

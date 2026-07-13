@@ -39,11 +39,11 @@ export const meta = {
       .describe("Printer IP address or hostname"),
     ports: z
       .array(z.number())
-      .optional()
+      .nullable().optional()
       .describe("Ports to test. Default: [9100, 631, 80]"),
     timeoutMs: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Timeout per port in ms. Default: 3000"),
   },
 } as const;

@@ -41,7 +41,7 @@ export const meta = {
   schema: {
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "If true, list what would be removed without removing. STRONGLY RECOMMENDED. Default: true",
       ),

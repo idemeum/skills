@@ -61,7 +61,7 @@ export const meta = {
   schema: {
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report what would be restarted without touching the system."),
   },
 } as const;

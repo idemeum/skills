@@ -53,7 +53,7 @@ export const meta = {
   schema: {
     app: z
       .enum(["teams", "slack", "zoom", "webex", "all"])
-      .optional()
+      .nullable().optional()
       .describe(
         "Which app to probe. Defaults to 'all' which returns one entry " +
         "per supported app.",

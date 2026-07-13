@@ -65,7 +65,7 @@ export const meta = {
       .describe("Exact domain strings whose cached credentials should be removed."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("When true, enumerate matching entries without deleting."),
   },
 } as const;

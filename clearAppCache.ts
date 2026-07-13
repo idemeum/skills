@@ -66,11 +66,11 @@ export const meta = {
   schema: {
     appName: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("App name to target (e.g. 'Slack', 'Chrome'). Omit + dryRun:false to clear every app cache (used by the disk-cleanup present_preview flow)."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report what would be deleted without deleting. Default: true"),
   },
 } as const;

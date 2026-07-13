@@ -51,11 +51,11 @@ export const meta = {
       .describe("Hostname to check (e.g. 'mail.company.com', 'vpn.example.com'). Hostname ONLY — never include a port."),
     port: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Primary TLS port to try first. Default: 443. Must be a TLS-listening port — never the VPN's own connection port (e.g. WireGuard 51821, IKEv2 500/4500), which has no TLS listener."),
     fallbackPorts: z
       .array(z.number())
-      .optional()
+      .nullable().optional()
       .describe("Additional TLS ports to try, in order, if `port` yields no cert (connection refused / handshake failure). E.g. [8443] for SSL VPNs. The result reports the port that actually returned a cert."),
   },
 } as const;

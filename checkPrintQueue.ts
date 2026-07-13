@@ -39,7 +39,7 @@ export const meta = {
   schema: {
     printerName: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Printer name to check. Omit to check all printers"),
   },
 } as const;

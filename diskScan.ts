@@ -46,7 +46,7 @@ export const meta = {
   schema: {
     path: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Absolute path of the directory to scan. " +
         "Defaults to the user home directory.",

@@ -44,11 +44,11 @@ export const meta = {
       .describe("Application name (e.g. 'Zoom', 'Slack')"),
     deep: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("Also remove support files in ~/Library. Default: false"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, list files that would be removed. Default: true"),
   },
 } as const;

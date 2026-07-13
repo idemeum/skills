@@ -50,7 +50,7 @@ export const meta = {
       .describe("Exact names of the startup items to disable, in one batch"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, show what would be removed without removing. Default: true"),
   },
 } as const;

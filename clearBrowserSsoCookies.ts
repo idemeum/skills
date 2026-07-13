@@ -83,7 +83,7 @@ export const meta = {
       .describe("Exact host string for the IDP domain (e.g. 'okta.com')."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("When true, return per-profile cookie counts without deleting."),
   },
 } as const;

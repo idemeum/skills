@@ -45,7 +45,7 @@ export const meta = {
   schema: {
     extensionName: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Extension name or bundle ID to check " +
         "(e.g. 'com.cisco.anyconnect.macos.acsock'). " +

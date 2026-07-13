@@ -52,7 +52,7 @@ export const meta = {
       .describe("VPN profile name to reconnect (from get_vpn_profiles)"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, show what would happen without reconnecting. Default: true"),
   },
 } as const;

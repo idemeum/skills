@@ -51,7 +51,7 @@ export const meta = {
   schema: {
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("When true, report the command that would run without executing."),
   },
 } as const;

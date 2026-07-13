@@ -46,14 +46,14 @@ export const meta = {
       .describe("IDP identifier from detect_identity_provider."),
     tenant: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "IDP tenant slug — required for Okta (e.g. 'acme' for acme.okta.com); " +
         "optional for Entra (falls back to 'common'); ignored for Google.",
       ),
     probeUsername: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe(
         "Synthetic username for the probe request (Okta + Entra). Does NOT " +
         "authenticate — the endpoint only reveals whether the SSPR surface " +

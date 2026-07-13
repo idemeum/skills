@@ -37,7 +37,7 @@ export const meta = {
   schema: {
     includeInactive: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("Include inactive/disconnected interfaces. Default: false"),
   },
 } as const;

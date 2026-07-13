@@ -38,7 +38,7 @@ export const meta = {
   schema: {
     agent: z
       .enum(["crowdstrike", "sentinelone", "jamf", "carbonblack", "cylance", "defender", "auto"])
-      .optional()
+      .nullable().optional()
       .describe("Agent to check. auto=detect all known agents. Default: auto"),
   },
 } as const;

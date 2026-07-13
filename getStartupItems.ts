@@ -42,7 +42,7 @@ export const meta = {
   schema: {
     includeSystem: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("Include Apple system agents. Default: false"),
   },
 } as const;

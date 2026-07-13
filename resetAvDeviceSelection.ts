@@ -64,7 +64,7 @@ export const meta = {
       .describe("Which collab app's A/V selection to reset."),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, report what would be reset without modifying any files."),
   },
 } as const;

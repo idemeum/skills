@@ -47,7 +47,7 @@ export const meta = {
       .describe("Network name (SSID) to forget"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe(
         "If true, check if network is in saved list without removing. Default: true",
       ),

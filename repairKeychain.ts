@@ -56,7 +56,7 @@ export const meta = {
       .describe("check=status only, repair=lock the login keychain so the next app access re-prompts once with the current password (non-interactive; clears a post-password-change desync), reset=move the login keychain aside so macOS recreates it (destructive)"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("For reset action: if true show what would be deleted. Default: true"),
   },
 } as const;

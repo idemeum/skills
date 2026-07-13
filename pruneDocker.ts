@@ -41,11 +41,11 @@ export const meta = {
   schema: {
     what: z
       .array(z.enum(["containers", "images", "volumes", "networks", "all"]))
-      .optional()
+      .nullable().optional()
       .describe("Resources to prune. Default: all"),
     dryRun: z
       .boolean()
-      .optional()
+      .nullable().optional()
       .describe("If true, show what would be removed. Default: true"),
   },
 } as const;

@@ -44,7 +44,7 @@ export const meta = {
       .int()
       .min(1)
       .max(365)
-      .optional()
+      .nullable().optional()
       .describe(
         "How many days before expiry to flag a cert as 'expiring soon'. " +
         "Defaults to 30.",

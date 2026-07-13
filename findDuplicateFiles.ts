@@ -52,21 +52,21 @@ export const meta = {
   schema: {
     path: z
       .string()
-      .optional()
+      .nullable().optional()
       .describe("Directory to scan. Defaults to home directory"),
     minSizeMb: z
       .number()
-      .optional()
+      .nullable().optional()
       .describe("Minimum file size in MB to consider. Default: 5"),
     extensions: z
       .array(z.string())
-      .optional()
+      .nullable().optional()
       .describe("File extensions to check e.g. ['.jpg','.pdf']. Omit for all files"),
     topDeletableLimit: z
       .number()
       .int()
       .positive()
-      .optional()
+      .nullable().optional()
       .describe(
         "When set, the tool returns ONLY a pre-computed `topDeletables: " +
         "[{path, sizeBytes}]` array of the N largest deletable duplicate " +
