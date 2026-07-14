@@ -36,6 +36,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["proxies","pacUrl","bypassList","anyEnabled","platform"],
   schema: {},
 } as const;
 

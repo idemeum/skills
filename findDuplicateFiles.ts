@@ -49,6 +49,7 @@ export const meta = {
   // ctx.deadlineMs internally and returns partial results before this
   // hard timeout fires.
   timeoutMs:       180_000,
+  outputKeys: ["scannedPath","scannedFiles","topDeletables","partial","warning","duplicateGroups","totalWastedBytes"],
   schema: {
     path: z
       .string()

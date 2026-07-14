@@ -37,6 +37,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["agent","logPath","accessible","entries","errorCount","warningCount","message"],
   schema: {
     agent: z
       .enum(["crowdstrike", "sentinelone", "jamf", "carbonblack", "cylance", "defender"])

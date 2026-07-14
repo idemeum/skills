@@ -50,6 +50,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["platform","dryRun","action","keychains","status","repaired","message"],
   schema: {
     action: z
       .enum(["check", "repair", "reset"])

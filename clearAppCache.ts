@@ -63,6 +63,7 @@ export const meta = {
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
   footprint:       APP_CACHE_FOOTPRINT,
+  outputKeys: ["platform","appName","dryRun","caches","totalSizeMb","deleted","freedMb"],
   schema: {
     appName: z
       .string()

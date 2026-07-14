@@ -107,7 +107,7 @@ Otherwise call `check_smtp_connectivity` with the SMTP host from Step 1 (`output
 `Condition:` skip if Step 4 was skipped (no SMTP host). When Step 4 ran, call `check_certificate_expiry` with the same host and **`port: 465`** (the implicit-TLS submission port; the `443` default and STARTTLS `587` don't serve a direct handshake and return `output.error`). Read it as: `output.isExpired === true` with **no** `output.error` = genuinely expired cert (a real cause); any `output.error` = could-not-verify (inconclusive — do NOT report "expired").
 
 **Step 6 — Check the client isn't hung**
-Call `get_top_consumers` with `metric: "combined"`, `limit: 10`. If `output.processes` contains `Mail` / `Microsoft Outlook` / `Outlook` with `cpuPercent > 20` OR `memoryMb > 500`, the hung process is the cause — route to the `process-manager` skill, don't continue correctives.
+Call `get_top_consumers` with `metric: "combined"`, `limit: 10`. If `output.processes` contains an entry where `name` is `"Mail"`, `"Microsoft Outlook"`, or `"Outlook"` AND (`cpuPercent > 20` OR `memoryMb > 500`), the hung process is the cause — route to the `process-manager` skill, don't continue correctives.
 
 **Step 7 — Check / fix file permissions (macOS Mail only)**
 **Condition:** only if `output.client === "mail"`.

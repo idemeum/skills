@@ -38,6 +38,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["idp","tenant","url","status","idpLabel","message"],
   schema: {
     idp: z
       .enum(["okta", "entra", "google", "unknown"])

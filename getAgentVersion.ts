@@ -34,6 +34,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["agent","installedVersion","installPath","found","message"],
   schema: {
     agent: z
       .enum(["crowdstrike", "sentinelone", "jamf", "carbonblack", "cylance", "defender"])

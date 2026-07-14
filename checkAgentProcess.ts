@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["detectedAgents","anyRunning"],
   schema: {
     agent: z
       .enum(["crowdstrike", "sentinelone", "jamf", "carbonblack", "cylance", "defender", "auto"])

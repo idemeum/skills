@@ -36,6 +36,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["jobs","stuckCount","total","platform"],
   schema: {
     printerName: z
       .string()

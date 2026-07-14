@@ -37,6 +37,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","isBound","domain","domainController","lastBindCheck","errors"],
   schema: {},
 } as const;
 

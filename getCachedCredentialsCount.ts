@@ -36,6 +36,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   [],
+  outputKeys: ["platform","domains","totalCount"],
   schema: {
     domains: z
       .array(z.string().min(1))

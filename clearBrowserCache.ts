@@ -51,6 +51,7 @@ export const meta = {
       "%LOCALAPPDATA%/Microsoft/Edge/User Data/Default/Cache",
     ] },
   },
+  outputKeys: ["platform","dryRun","browsers","totalSizeMb","freedMb","error"],
   schema: {
     browser: z
       .enum(["chrome", "safari", "firefox", "edge", "all"])

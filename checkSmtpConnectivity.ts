@@ -33,6 +33,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["host","results","anyReachable","platform"],
   schema: {
     host: z
       .string()

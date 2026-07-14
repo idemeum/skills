@@ -48,6 +48,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["system"],
   auditRequired:   true,
+  outputKeys: ["platform","server","command","dryRun","success","message"],
   schema: {
     server: z
       .string()

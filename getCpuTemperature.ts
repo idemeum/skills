@@ -43,6 +43,7 @@ export const meta = {
   //          routes through the privileged helper daemon.
   affectedScope:   os.platform() === "win32" ? ["system"] : ["user"],
   auditRequired:   false,
+  outputKeys: ["cpuTempC","isThrottling","message","note"],
   schema: {} as Record<string, ReturnType<typeof z.string>>,
 } as const;
 

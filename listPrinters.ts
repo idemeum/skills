@@ -38,6 +38,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["printers","defaultPrinter","total"],
   schema: {} as Record<string, z.ZodTypeAny>,
 } as const;
 

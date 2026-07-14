@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","filter","includeSystemApps","total","apps"],
   schema: {
     filter: z
       .string()

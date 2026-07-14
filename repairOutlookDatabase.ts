@@ -46,6 +46,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["toolFound","toolPath","databaseFiles","outlookRunning","dryRun","message"],
   schema: {
     dryRun: z
       .boolean()

@@ -56,6 +56,7 @@ export const meta = {
     win32:
       "msiexec /i <path>.msi /qn /norestart  # for .msi; .exe varies per vendor (try /S for silent install)",
   },
+  outputKeys: ["installerPath","installerType","dryRun","plannedCommand","exitCode","durationMs","message"],
   schema: {
     // snake_case keys: this tool routes its real run through the privileged
     // helper, whose `struct Params` is snake_case (`installer_path`,

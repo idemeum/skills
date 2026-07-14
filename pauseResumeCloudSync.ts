@@ -57,6 +57,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["client","action","platform","dryRun","outcome","message","command"],
   schema: {
     client: z
       .enum(["onedrive", "google-drive", "dropbox", "icloud"])

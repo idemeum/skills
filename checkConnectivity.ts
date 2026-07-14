@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","targets","allReachable","anyReachable"],
   schema: {
     targets: z
       .array(z.string())

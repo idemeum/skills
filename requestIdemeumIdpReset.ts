@@ -78,6 +78,7 @@ export const meta = {
   // and account-enumeration. Declaring it sensitive lets the centralised
   // sanitiser handle redaction at every downstream surface.
   sensitiveParams: ["username"],
+  outputKeys: ["status","message","deliveryMethod","notificationEmail","notificationPhone","ticketId","willPost","endpoint","payloadWithoutSecrets","httpStatus","failureReason"],
   schema: {
     idp: z
       .enum(["okta", "entra", "google"])

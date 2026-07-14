@@ -45,6 +45,7 @@ export const meta = {
     darwin: "sudo launchctl kickstart -k system/org.cups.cupsd",
     win32:  "Restart-Service Spooler -Force  # run from elevated PowerShell",
   },
+  outputKeys: ["wasRunning","restarted","isRunning","dryRun","platform","message"],
   schema: {
     dryRun: z
       .boolean()

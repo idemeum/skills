@@ -37,6 +37,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","extensions","allActive"],
   schema: {
     bundleId: z
       .string()

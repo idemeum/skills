@@ -40,6 +40,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["profiles"],
   schema: {} as Record<string, z.ZodTypeAny>,
 } as const;
 

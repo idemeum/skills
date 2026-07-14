@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","sipEnabled","secureBootEnabled","status","isCompliant","message"],
   schema: {},
 } as const;
 

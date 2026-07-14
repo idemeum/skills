@@ -36,6 +36,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","metric","processes","sampledAt"],
   schema: {
     limit: z
       .number()

@@ -43,6 +43,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["scannedPath","platform","entryCount","entries","warning"],
   schema: {
     path: z
       .string()

@@ -43,6 +43,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","cameras","defaultCamera"],
   schema: {} as Record<string, z.ZodTypeAny>,
 } as const;
 

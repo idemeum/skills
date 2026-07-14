@@ -41,6 +41,7 @@ export const meta = {
     darwin: "sudo cancel -a  # clears all queues for all users",
     win32:  "Stop-Service Spooler -Force; Remove-Item C:\\Windows\\System32\\spool\\PRINTERS\\* -Force; Start-Service Spooler  # run from elevated PowerShell",
   },
+  outputKeys: ["cancelledCount","printers","jobs","dryRun","message"],
   schema: {
     // No per-printer targeting: this tool always clears ALL queues. The
     // privileged helper daemon's clear_print_queue accepts exactly `{}`

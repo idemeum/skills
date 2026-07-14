@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["appName","appPath","found","signatureValid","gateKeeperApproved","details","recommendation"],
   schema: {
     appName: z
       .string()

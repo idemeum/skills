@@ -34,6 +34,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["totalRamMb","usedRamMb","freeRamMb","swapUsedMb","totalRamHuman","usedRamHuman","swapUsedHuman","pressureLevel","pageIns","pageOuts","message","note"],
   schema: {} as Record<string, ReturnType<typeof z.string>>,
 } as const;
 

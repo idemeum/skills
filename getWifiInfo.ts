@@ -54,6 +54,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["device","ssid","ssidAvailable","bssid","rssi","noise","snr","channel","band","security","txRateMbps","linkQuality","isConnected","platform"],
   schema: {},
 } as const;
 

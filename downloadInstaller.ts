@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["localPath","fileSizeMb","checksumValid","checksumProvided","message"],
   schema: {
     url: z
       .string()

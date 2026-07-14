@@ -10,6 +10,12 @@
       "affectedScope": [
         "system"
       ],
+      "outputKeys": [
+        "name",
+        "uri",
+        "added",
+        "message"
+      ],
       "params": [
         {
           "name": "printer_name",
@@ -39,6 +45,14 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "isBound",
+        "domain",
+        "domainController",
+        "lastBindCheck",
+        "errors"
       ]
     },
     {
@@ -83,6 +97,15 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "agent",
+        "logPath",
+        "accessible",
+        "entries",
+        "errorCount",
+        "warningCount",
+        "message"
+      ],
       "params": [
         {
           "name": "agent",
@@ -122,6 +145,10 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "detectedAgents",
+        "anyRunning"
+      ],
       "params": [
         {
           "name": "agent",
@@ -150,6 +177,15 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "appName",
+        "appPath",
+        "found",
+        "signatureValid",
+        "gateKeeperApproved",
+        "details",
+        "recommendation"
+      ],
       "params": [
         {
           "name": "appName",
@@ -173,6 +209,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "appName",
+        "platform",
+        "permissions",
+        "error"
       ],
       "params": [
         {
@@ -282,6 +324,10 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "platform",
+        "apps"
+      ],
       "params": [
         {
           "name": "app",
@@ -307,6 +353,12 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "platform",
+        "targets",
+        "allReachable",
+        "anyReachable"
+      ],
       "params": [
         {
           "name": "targets",
@@ -331,6 +383,15 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "enabled",
+        "status",
+        "encryptionMethod",
+        "encryptionPercent",
+        "enabledUsers",
+        "message"
       ]
     },
     {
@@ -342,6 +403,14 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "enabled",
+        "stealthMode",
+        "blockAllConnections",
+        "profiles",
+        "error"
       ]
     },
     {
@@ -379,6 +448,12 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "client",
+        "platform",
+        "accounts",
+        "error"
+      ],
       "params": [
         {
           "name": "client",
@@ -412,6 +487,19 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "mailDir",
+        "exists",
+        "readable",
+        "writable",
+        "owner",
+        "currentUser",
+        "permissionsOk",
+        "fixed",
+        "tccBlocked",
+        "supported",
+        "message"
+      ],
       "params": [
         {
           "name": "fix",
@@ -429,6 +517,15 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "isEnrolled",
+        "mdmProvider",
+        "enrollmentType",
+        "serverUrl",
+        "supervised",
+        "lastCheckinAttempt",
+        "source"
       ]
     },
     {
@@ -440,6 +537,10 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "extensions",
+        "allActivated"
       ],
       "params": [
         {
@@ -515,6 +616,12 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "jobs",
+        "stuckCount",
+        "total",
+        "platform"
+      ],
       "params": [
         {
           "name": "printerName",
@@ -533,6 +640,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "host",
+        "ports",
+        "isReachable",
+        "recommendation",
+        "platform"
       ],
       "params": [
         {
@@ -564,6 +678,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "proxies",
+        "pacUrl",
+        "bypassList",
+        "anyEnabled",
+        "platform"
       ]
     },
     {
@@ -575,6 +696,14 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "sipEnabled",
+        "secureBootEnabled",
+        "status",
+        "isCompliant",
+        "message"
       ]
     },
     {
@@ -586,6 +715,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "host",
+        "results",
+        "anyReachable",
+        "platform"
       ],
       "params": [
         {
@@ -617,6 +752,11 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "extensions",
+        "allActive"
       ],
       "params": [
         {
@@ -662,6 +802,11 @@
       "supportsDryRun": false,
       "affectedScope": [
         "network"
+      ],
+      "outputKeys": [
+        "isConnected",
+        "activeConnections",
+        "installedClients"
       ]
     },
     {
@@ -676,6 +821,15 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "platform",
+        "appName",
+        "dryRun",
+        "caches",
+        "totalSizeMb",
+        "deleted",
+        "freedMb"
       ],
       "params": [
         {
@@ -704,6 +858,14 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "platform",
+        "dryRun",
+        "browsers",
+        "totalSizeMb",
+        "freedMb",
+        "error"
       ],
       "params": [
         {
@@ -737,6 +899,14 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "domain",
+        "dryRun",
+        "stores",
+        "totalMatched",
+        "totalDeleted",
+        "missingSqlite"
+      ],
       "params": [
         {
           "name": "domain",
@@ -764,6 +934,16 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "app",
+        "platform",
+        "dryRun",
+        "basePath",
+        "clearedPaths",
+        "preservedPaths",
+        "sizeFreedBytes",
+        "errors"
       ],
       "params": [
         {
@@ -799,6 +979,11 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "caches",
+        "totalSizeMb",
+        "freedMb"
+      ],
       "params": [
         {
           "name": "tools",
@@ -833,6 +1018,13 @@
       "affectedScope": [
         "system"
       ],
+      "outputKeys": [
+        "cancelledCount",
+        "printers",
+        "jobs",
+        "dryRun",
+        "message"
+      ],
       "params": [
         {
           "name": "dryRun",
@@ -853,6 +1045,14 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "targets",
+        "totalSizeMb",
+        "freedMb",
+        "dryRun",
+        "supported",
+        "message"
       ],
       "params": [
         {
@@ -888,6 +1088,13 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "dryRun",
+        "deletedCount",
+        "freedBytes",
+        "freedHuman",
+        "items"
+      ],
       "params": [
         {
           "name": "paths",
@@ -911,6 +1118,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "primary",
+        "secondary",
+        "evidence"
       ]
     },
     {
@@ -925,6 +1138,13 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "primaryUsername",
+        "candidates",
+        "platform",
+        "idp",
+        "reason"
       ],
       "params": [
         {
@@ -954,6 +1174,13 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "platform",
+        "dryRun",
+        "results",
+        "affectedCount",
+        "message"
+      ],
       "params": [
         {
           "name": "names",
@@ -982,6 +1209,13 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "scannedPath",
+        "platform",
+        "entryCount",
+        "entries",
+        "warning"
+      ],
       "params": [
         {
           "name": "path",
@@ -999,6 +1233,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "localPath",
+        "fileSizeMb",
+        "checksumValid",
+        "checksumProvided",
+        "message"
       ],
       "params": [
         {
@@ -1035,6 +1276,17 @@
         "FullDiskAccess",
         "Automation"
       ],
+      "outputKeys": [
+        "dryRun",
+        "itemsInTrash",
+        "freedBytes",
+        "freedHuman",
+        "warning",
+        "method",
+        "itemsRemoved",
+        "itemsRemaining",
+        "error"
+      ],
       "params": [
         {
           "name": "dryRun",
@@ -1055,6 +1307,15 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "scannedPath",
+        "scannedFiles",
+        "topDeletables",
+        "partial",
+        "warning",
+        "duplicateGroups",
+        "totalWastedBytes"
       ],
       "params": [
         {
@@ -1092,6 +1353,16 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "platform",
+        "downloadsPath",
+        "totalFiles",
+        "oldFiles",
+        "totalBytes",
+        "totalHuman",
+        "message",
+        "error"
+      ],
       "params": [
         {
           "name": "olderThanDays",
@@ -1117,6 +1388,12 @@
       "affectedScope": [
         "network",
         "system"
+      ],
+      "outputKeys": [
+        "success",
+        "platform",
+        "command",
+        "error"
       ]
     },
     {
@@ -1129,6 +1406,14 @@
       "affectedScope": [
         "network",
         "system"
+      ],
+      "outputKeys": [
+        "ssid",
+        "interface",
+        "found",
+        "forgotten",
+        "dryRun",
+        "message"
       ],
       "params": [
         {
@@ -1153,6 +1438,20 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "username",
+        "fullName",
+        "homeDir",
+        "shell",
+        "isAdmin",
+        "accountType",
+        "passwordLastSet",
+        "passwordExpiresIn",
+        "domain",
+        "message",
+        "note"
       ]
     },
     {
@@ -1164,6 +1463,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "agent",
+        "installedVersion",
+        "installPath",
+        "found",
+        "message"
       ],
       "params": [
         {
@@ -1194,6 +1500,13 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "platform",
+        "caches",
+        "totalBytes",
+        "totalHuman",
+        "errors"
       ]
     },
     {
@@ -1208,6 +1521,13 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "platform",
+        "browsers",
+        "totalBytes",
+        "totalHuman",
+        "errors"
       ]
     },
     {
@@ -1219,6 +1539,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "domain",
+        "profiles",
+        "totalMatched",
+        "missingSqlite"
       ],
       "params": [
         {
@@ -1238,6 +1564,11 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "domains",
+        "totalCount"
       ],
       "params": [
         {
@@ -1261,6 +1592,12 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "platform",
+        "apps",
+        "totalBytes",
+        "errors"
+      ],
       "params": [
         {
           "name": "apps",
@@ -1281,7 +1618,13 @@
       "riskLevel": "low",
       "destructive": false,
       "requiresConsent": false,
-      "supportsDryRun": false
+      "supportsDryRun": false,
+      "outputKeys": [
+        "cpuTempC",
+        "isThrottling",
+        "message",
+        "note"
+      ]
     },
     {
       "toolId": "get_dev_cache_info",
@@ -1292,6 +1635,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "caches",
+        "totalBytes",
+        "totalHuman",
+        "errors"
       ]
     },
     {
@@ -1329,6 +1679,15 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "dockerInstalled",
+        "dockerRunning",
+        "totalReclaimableBytes",
+        "totalReclaimableHuman",
+        "breakdown",
+        "errors"
       ]
     },
     {
@@ -1343,6 +1702,16 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "scannedPath",
+        "minSizeBytes",
+        "minSizeHuman",
+        "returned",
+        "files",
+        "totalFound",
+        "totalBytes",
+        "warning"
       ],
       "params": [
         {
@@ -1373,6 +1742,20 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "totalRamMb",
+        "usedRamMb",
+        "freeRamMb",
+        "swapUsedMb",
+        "totalRamHuman",
+        "usedRamHuman",
+        "swapUsedHuman",
+        "pressureLevel",
+        "pageIns",
+        "pageOuts",
+        "message",
+        "note"
       ]
     },
     {
@@ -1384,6 +1767,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "interfaces",
+        "primaryInterface",
+        "activeCount",
+        "total"
       ],
       "params": [
         {
@@ -1403,6 +1793,14 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "sortBy",
+        "totalProcesses",
+        "returned",
+        "note",
+        "processes"
       ],
       "params": [
         {
@@ -1438,6 +1836,12 @@
         "FullDiskAccess",
         "Automation"
       ],
+      "outputKeys": [
+        "platform",
+        "includeSystem",
+        "loginItems",
+        "total"
+      ],
       "params": [
         {
           "name": "includeSystem",
@@ -1456,6 +1860,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "metric",
+        "processes",
+        "sampledAt"
       ],
       "params": [
         {
@@ -1490,6 +1900,13 @@
       "tccCategories": [
         "FullDiskAccess",
         "Automation"
+      ],
+      "outputKeys": [
+        "platform",
+        "itemCount",
+        "totalBytes",
+        "totalHuman",
+        "errors"
       ]
     },
     {
@@ -1504,6 +1921,9 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "profiles"
       ]
     },
     {
@@ -1515,6 +1935,22 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "device",
+        "ssid",
+        "ssidAvailable",
+        "bssid",
+        "rssi",
+        "noise",
+        "snr",
+        "channel",
+        "band",
+        "security",
+        "txRateMbps",
+        "linkQuality",
+        "isConnected",
+        "platform"
       ]
     },
     {
@@ -1529,6 +1965,14 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "platform",
+        "supported",
+        "targets",
+        "totalBytes",
+        "totalHuman",
+        "errors"
       ]
     },
     {
@@ -1540,6 +1984,13 @@
       "supportsDryRun": true,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "matched",
+        "killed",
+        "dryRun",
+        "signal",
+        "message"
       ],
       "params": [
         {
@@ -1581,6 +2032,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "inputDevices",
+        "outputDevices",
+        "defaultInput",
+        "defaultOutput"
       ]
     },
     {
@@ -1592,6 +2050,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "poweredOn",
+        "total",
+        "devices"
       ]
     },
     {
@@ -1603,6 +2067,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "certificates",
+        "summary",
+        "status",
+        "message"
       ],
       "params": [
         {
@@ -1621,6 +2092,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "filter",
+        "includeSystemApps",
+        "total",
+        "apps"
       ],
       "params": [
         {
@@ -1646,6 +2124,11 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "printers",
+        "defaultPrinter",
+        "total"
       ]
     },
     {
@@ -1657,6 +2140,11 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "total",
+        "devices"
       ]
     },
     {
@@ -1668,6 +2156,11 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "cameras",
+        "defaultCamera"
       ]
     },
     {
@@ -1679,6 +2172,14 @@
       "supportsDryRun": true,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "idp",
+        "tenant",
+        "url",
+        "status",
+        "idpLabel",
+        "message"
       ],
       "params": [
         {
@@ -1716,6 +2217,15 @@
       "supportsDryRun": true,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "client",
+        "action",
+        "platform",
+        "dryRun",
+        "outcome",
+        "message",
+        "command"
       ],
       "params": [
         {
@@ -1842,6 +2352,12 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "idp",
+        "tenant",
+        "available",
+        "evidence"
+      ],
       "params": [
         {
           "name": "idp",
@@ -1878,6 +2394,17 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "platform",
+        "dockerInstalled",
+        "dryRun",
+        "reclaimedMb",
+        "prunedContainers",
+        "prunedImages",
+        "prunedVolumes",
+        "prunedNetworks",
+        "message"
+      ],
       "params": [
         {
           "name": "what",
@@ -1910,6 +2437,13 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "platform",
+        "dryRun",
+        "results",
+        "totalRemoved",
+        "totalFound"
+      ],
       "params": [
         {
           "name": "domains",
@@ -1934,6 +2468,14 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "catalog_type",
+        "catalog_present",
+        "available_apps_count",
+        "apps",
+        "enumeration_available",
+        "message"
       ]
     },
     {
@@ -1949,6 +2491,14 @@
       "tccCategories": [
         "FullDiskAccess",
         "Automation"
+      ],
+      "outputKeys": [
+        "filesFound",
+        "filesRemoved",
+        "mailWasRunning",
+        "tccBlocked",
+        "dryRun",
+        "message"
       ],
       "params": [
         {
@@ -1968,6 +2518,15 @@
       "supportsDryRun": true,
       "affectedScope": [
         "network"
+      ],
+      "outputKeys": [
+        "profileName",
+        "disconnected",
+        "reconnected",
+        "dryRun",
+        "newStatus",
+        "vendorManaged",
+        "message"
       ],
       "params": [
         {
@@ -1993,6 +2552,13 @@
       "supportsDryRun": true,
       "affectedScope": [
         "system"
+      ],
+      "outputKeys": [
+        "printerName",
+        "found",
+        "removed",
+        "dryRun",
+        "message"
       ],
       "params": [
         {
@@ -2020,6 +2586,10 @@
         "network",
         "system"
       ],
+      "outputKeys": [
+        "platform",
+        "results"
+      ],
       "params": [
         {
           "name": "interface",
@@ -2039,6 +2609,15 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "platform",
+        "command",
+        "dryRun",
+        "status",
+        "stdout",
+        "error",
+        "message"
+      ],
       "params": [
         {
           "name": "dryRun",
@@ -2057,6 +2636,15 @@
       "supportsDryRun": true,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "dryRun",
+        "action",
+        "keychains",
+        "status",
+        "repaired",
+        "message"
       ],
       "params": [
         {
@@ -2091,6 +2679,14 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "toolFound",
+        "toolPath",
+        "databaseFiles",
+        "outlookRunning",
+        "dryRun",
+        "message"
+      ],
       "params": [
         {
           "name": "dryRun",
@@ -2108,6 +2704,19 @@
       "supportsDryRun": true,
       "affectedScope": [
         "network"
+      ],
+      "outputKeys": [
+        "status",
+        "message",
+        "deliveryMethod",
+        "notificationEmail",
+        "notificationPhone",
+        "ticketId",
+        "willPost",
+        "endpoint",
+        "payloadWithoutSecrets",
+        "httpStatus",
+        "failureReason"
       ],
       "params": [
         {
@@ -2193,6 +2802,15 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "platform",
+        "appName",
+        "dryRun",
+        "found",
+        "totalSizeHuman",
+        "deleted",
+        "message"
+      ],
       "params": [
         {
           "name": "appName",
@@ -2220,6 +2838,13 @@
       ],
       "tccCategories": [
         "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "app",
+        "platform",
+        "dryRun",
+        "actions",
+        "errors"
       ],
       "params": [
         {
@@ -2252,6 +2877,14 @@
       "affectedScope": [
         "system"
       ],
+      "outputKeys": [
+        "platform",
+        "dryRun",
+        "command",
+        "succeeded",
+        "message",
+        "durationMs"
+      ],
       "params": [
         {
           "name": "dryRun",
@@ -2270,6 +2903,13 @@
       "supportsDryRun": true,
       "affectedScope": [
         "system"
+      ],
+      "outputKeys": [
+        "platform",
+        "username",
+        "success",
+        "dryRun",
+        "message"
       ],
       "params": [
         {
@@ -2303,6 +2943,14 @@
         "network",
         "system"
       ],
+      "outputKeys": [
+        "interface",
+        "reset",
+        "dryRun",
+        "rebootRequired",
+        "message",
+        "platform"
+      ],
       "params": [
         {
           "name": "interface",
@@ -2328,6 +2976,13 @@
       "affectedScope": [
         "system"
       ],
+      "outputKeys": [
+        "printers",
+        "resetDone",
+        "dryRun",
+        "warning",
+        "message"
+      ],
       "params": [
         {
           "name": "dryRun",
@@ -2345,6 +3000,14 @@
       "supportsDryRun": true,
       "affectedScope": [
         "system"
+      ],
+      "outputKeys": [
+        "wasRunning",
+        "restarted",
+        "isRunning",
+        "dryRun",
+        "platform",
+        "message"
       ],
       "params": [
         {
@@ -2364,6 +3027,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "killed",
+        "relaunched",
+        "newPid",
+        "message"
       ],
       "params": [
         {
@@ -2396,6 +3065,15 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "idp",
+        "idpLabel",
+        "platform",
+        "dryRun",
+        "actions",
+        "skipped",
+        "message"
+      ],
       "params": [
         {
           "name": "idp",
@@ -2426,6 +3104,15 @@
       "supportsDryRun": true,
       "affectedScope": [
         "system"
+      ],
+      "outputKeys": [
+        "installerPath",
+        "installerType",
+        "dryRun",
+        "plannedCommand",
+        "exitCode",
+        "durationMs",
+        "message"
       ],
       "params": [
         {
@@ -2461,6 +3148,14 @@
       "affectedScope": [
         "system"
       ],
+      "outputKeys": [
+        "platform",
+        "server",
+        "command",
+        "dryRun",
+        "success",
+        "message"
+      ],
       "params": [
         {
           "name": "server",
@@ -2484,6 +3179,12 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "catalog_type",
+        "triggered",
+        "install_method",
+        "message"
       ],
       "params": [
         {
@@ -2516,6 +3217,14 @@
       "tccCategories": [
         "FullDiskAccess"
       ],
+      "outputKeys": [
+        "appBundle",
+        "supportFiles",
+        "totalSizeMb",
+        "removed",
+        "dryRun",
+        "message"
+      ],
       "params": [
         {
           "name": "appName",
@@ -2546,6 +3255,13 @@
       "supportsDryRun": false,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "idp",
+        "idpLabel",
+        "reachable",
+        "checks",
+        "message"
       ],
       "params": [
         {

@@ -40,6 +40,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["platform","dryRun","results","affectedCount","message"],
   schema: {
     // Batched: one call removes every named item, so the user sees a single
     // dry-run preview of the full set + a single confirmation (never one gate

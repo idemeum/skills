@@ -46,6 +46,7 @@ export const meta = {
   // default headroom so the disconnect + pause + start + poll chain never races
   // the G4 deadline.
   timeoutMs:       90_000,
+  outputKeys: ["profileName","disconnected","reconnected","dryRun","newStatus","vendorManaged","message"],
   schema: {
     profileName: z
       .string()

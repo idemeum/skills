@@ -34,6 +34,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","interfaces","primaryInterface","activeCount","total"],
   schema: {
     includeInactive: z
       .boolean()

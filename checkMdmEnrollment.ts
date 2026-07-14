@@ -51,6 +51,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["isEnrolled","mdmProvider","enrollmentType","serverUrl","supervised","lastCheckinAttempt","source"],
   schema: {},
 } as const;
 

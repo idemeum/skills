@@ -39,6 +39,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["platform","appName","dryRun","found","totalSizeHuman","deleted","message"],
   schema: {
     appName: z
       .string()

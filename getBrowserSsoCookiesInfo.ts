@@ -35,6 +35,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   [],
+  outputKeys: ["domain","profiles","totalMatched","missingSqlite"],
   schema: {
     domain: z
       .string()

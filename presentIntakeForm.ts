@@ -71,6 +71,7 @@ export const meta = {
   affectedScope:   ["user"] as const,
   auditRequired:   false,
   isUserWaitGate:  true,
+  outputKeys: [],
   schema: {
     title: z
       .string()

@@ -31,6 +31,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   [],
+  outputKeys: ["platform","dockerInstalled","dockerRunning","totalReclaimableBytes","totalReclaimableHuman","breakdown","errors"],
   schema:          {},
 } as const;
 

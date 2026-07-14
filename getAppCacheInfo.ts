@@ -47,6 +47,7 @@ export const meta = {
   // the default 60 s ceiling. Tool honours ctx.deadlineMs internally and
   // returns partial results before this hard timeout fires.
   timeoutMs:       180_000,
+  outputKeys: ["platform","caches","totalBytes","totalHuman","errors"],
   schema:          {},
 } as const;
 

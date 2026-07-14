@@ -58,6 +58,7 @@ export const meta = {
   // Defender/OneDrive overhead this can take 40–60 s on a populated home;
   // 180 s matches find_duplicate_files which does the same walk plus hashing.
   timeoutMs:       180_000,
+  outputKeys: ["scannedPath","minSizeBytes","minSizeHuman","returned","files","totalFound","totalBytes","warning"],
   schema: {
     path: z
       .string()

@@ -39,6 +39,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["network"],
   auditRequired:   false,
+  outputKeys: ["isConnected","activeConnections","installedClients"],
   schema: {} as Record<string, z.ZodTypeAny>,
 } as const;
 

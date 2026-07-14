@@ -50,6 +50,7 @@ export const meta = {
     darwin: { roots: ["~/.Trash"] },
     win32:  { roots: ["%SYSTEMDRIVE%/$Recycle.Bin"] },
   },
+  outputKeys: ["dryRun","itemsInTrash","freedBytes","freedHuman","warning","method","itemsRemoved","itemsRemaining","error"],
   schema: {
     dryRun: z
       .boolean()

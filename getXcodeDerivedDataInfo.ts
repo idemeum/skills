@@ -34,6 +34,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["platform","supported","targets","totalBytes","totalHuman","errors"],
   schema:          {},
 } as const;
 

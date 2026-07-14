@@ -44,6 +44,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","primary","secondary","evidence"],
   schema: {}, // no params
 } as const;
 

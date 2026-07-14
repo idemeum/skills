@@ -36,6 +36,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","username","fullName","homeDir","shell","isAdmin","accountType","passwordLastSet","passwordExpiresIn","domain","message","note"],
   schema: {},
 } as const;
 

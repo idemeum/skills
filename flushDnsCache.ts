@@ -39,6 +39,7 @@ export const meta = {
     darwin: "sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder",
     win32:  "Clear-DnsClientCache  # run from elevated PowerShell",
   },
+  outputKeys: ["success","platform","command","error"],
   schema: {} as Record<string, z.ZodTypeAny>,
 } as const;
 

@@ -39,6 +39,7 @@ export const meta = {
     darwin: "sudo ipconfig set en0 DHCP  # substitute the active interface name",
     win32:  "ipconfig /release && ipconfig /renew  # run from elevated Command Prompt",
   },
+  outputKeys: ["platform","results"],
   schema: {
     interface: z
       .string()

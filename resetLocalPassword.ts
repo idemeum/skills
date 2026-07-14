@@ -48,6 +48,7 @@ export const meta = {
   // sensitiveParams name MUST track the schema key or runtime redaction stops
   // protecting the secret.
   sensitiveParams: ["new_password"] as const,
+  outputKeys: ["platform","username","success","dryRun","message"],
   schema: {
     username: z
       .string()

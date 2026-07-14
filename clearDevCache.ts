@@ -55,6 +55,7 @@ export const meta = {
       "%LOCALAPPDATA%/npm-cache", "%LOCALAPPDATA%/pip", "%LOCALAPPDATA%/Yarn",
     ] },
   },
+  outputKeys: ["caches","totalSizeMb","freedMb"],
   schema: {
     tools: z
       .array(z.enum(["npm", "yarn", "pnpm", "pip", "gradle", "maven", "all"]))

@@ -38,6 +38,7 @@ export const meta = {
     darwin: "sudo lpadmin -x \"<printerName>\"  # substitute the exact printer name from list_printers",
     win32:  "Remove-Printer -Name \"<printerName>\"  # run from elevated PowerShell",
   },
+  outputKeys: ["printerName","found","removed","dryRun","message"],
   schema: {
     // snake_case to match the privileged helper's struct Params field
     // (`printer_name`); G4 forwards executor params verbatim to the helper.

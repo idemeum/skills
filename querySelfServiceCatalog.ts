@@ -40,6 +40,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["catalog_type","catalog_present","available_apps_count","apps","enumeration_available","message"],
   schema: {},
 } as const;
 

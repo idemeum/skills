@@ -38,6 +38,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","certificates","summary","status","message"],
   schema: {
     expiryWarnDays: z
       .number()

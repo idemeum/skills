@@ -58,6 +58,7 @@ export const meta = {
     darwin: "sudo /bin/launchctl kickstart -k system/com.apple.bluetoothd",
     win32:  "Restart-Service -Name bthserv -Force  # run from elevated PowerShell",
   },
+  outputKeys: ["platform","dryRun","command","succeeded","message","durationMs"],
   schema: {
     dryRun: z
       .boolean()

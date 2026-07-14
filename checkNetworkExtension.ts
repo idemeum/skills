@@ -42,6 +42,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["extensions","allActivated"],
   schema: {
     extensionName: z
       .string()

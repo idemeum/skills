@@ -48,6 +48,7 @@ export const meta = {
   escalationHint:  {
     win32: "gpupdate /force  # run from elevated Command Prompt; refreshes Group Policy and re-issues Kerberos tickets",
   },
+  outputKeys: ["platform","command","dryRun","status","stdout","error","message"],
   schema: {
     dryRun: z
       .boolean()

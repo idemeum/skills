@@ -240,6 +240,7 @@ export const meta = {
    * normal path.
    */
   isUserWaitGate:  true,
+  outputKeys: [],
   schema: {
     title: z
       .string()

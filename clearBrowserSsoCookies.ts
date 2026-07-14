@@ -68,6 +68,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["domain","dryRun","stores","totalMatched","totalDeleted","missingSqlite"],
   schema: {
     domain: z
       .string()

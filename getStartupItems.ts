@@ -39,6 +39,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess", "Automation"],
+  outputKeys: ["platform","includeSystem","loginItems","total"],
   schema: {
     includeSystem: z
       .boolean()

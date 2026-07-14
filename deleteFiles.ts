@@ -43,6 +43,7 @@ export const meta = {
   // (a vanished path returns a per-path failure, never throws), so overlapping a
   // cache sweeper is benign — exempt from the disjointness check.
   footprint:       { kind: "targeted" },
+  outputKeys: ["dryRun","deletedCount","freedBytes","freedHuman","items"],
   schema: {
     paths: z
       .array(z.string().min(1))

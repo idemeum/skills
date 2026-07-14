@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","downloadsPath","totalFiles","oldFiles","totalBytes","totalHuman","message","error"],
   schema: {
     olderThanDays: z
       .number()

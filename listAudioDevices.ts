@@ -41,6 +41,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","inputDevices","outputDevices","defaultInput","defaultOutput"],
   schema: {} as Record<string, z.ZodTypeAny>,
 } as const;
 

@@ -38,6 +38,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["system"],
   auditRequired:   true,
+  outputKeys: ["printers","resetDone","dryRun","warning","message"],
   schema: {
     dryRun: z
       .boolean()

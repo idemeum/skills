@@ -41,6 +41,7 @@ export const meta = {
     darwin: "sudo lpadmin -p \"<name>\" -E -v \"ipp://<host>\" -m everywhere  # substitute display name and printer IP/hostname",
     win32:  "Add-PrinterPort -Name \"<name>_Port\" -PrinterHostAddress \"<host>\"; Add-Printer -Name \"<name>\" -PortName \"<name>_Port\" -DriverName \"Microsoft IPP Class Driver\"  # run from elevated PowerShell",
   },
+  outputKeys: ["name","uri","added","message"],
   schema: {
     // Keys match the privileged helper's struct Params exactly (snake_case):
     // `printer_name`, `device_uri`, `driver_name`. G4 forwards executor params

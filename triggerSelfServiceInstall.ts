@@ -44,6 +44,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["catalog_type","triggered","install_method","message"],
   schema: {
     appIdentifier: z
       .string()

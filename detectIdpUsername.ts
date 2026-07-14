@@ -132,6 +132,7 @@ export const meta = {
   // empty and the non-FDA sources still contribute. G4's tccPreflightCheck
   // asks for FDA once upfront rather than silently degrading mid-run.
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["primaryUsername","candidates","platform","idp","reason"],
   schema: {
     idp: z
       .enum(["okta", "entra", "google"])

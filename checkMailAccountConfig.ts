@@ -47,6 +47,7 @@ export const meta = {
   // and the Outlook path reads the user's own Group Container (not TCC-gated).
   // Declaring FullDiskAccess here would make G4's preflight abort the run when
   // FDA is absent — needlessly, since neither path requires it.
+  outputKeys: ["client","platform","accounts","error"],
   schema: {
     client: z
       .enum(["mail", "outlook", "auto"])

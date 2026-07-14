@@ -34,6 +34,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["platform","apps","totalBytes","errors"],
   schema: {
     apps: z
       .array(z.enum(["teams", "slack", "zoom", "webex"]))

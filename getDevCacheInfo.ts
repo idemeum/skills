@@ -46,6 +46,7 @@ export const meta = {
   // isn't enough on developer machines. Tool honours ctx.deadlineMs
   // internally and returns partial results before this hard timeout fires.
   timeoutMs:       180_000,
+  outputKeys: ["platform","caches","totalBytes","totalHuman","errors"],
   schema:          {},
 } as const;
 

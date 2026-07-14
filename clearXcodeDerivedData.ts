@@ -43,6 +43,7 @@ export const meta = {
     // any cache sweeper. macOS only.
     darwin: { roots: ["~/Library/Developer/Xcode"] },
   },
+  outputKeys: ["targets","totalSizeMb","freedMb","dryRun","supported","message"],
   schema: {
     what: z
       .array(z.enum(["derivedData", "archives", "deviceSupport", "all"]))

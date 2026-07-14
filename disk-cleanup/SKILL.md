@@ -72,13 +72,13 @@ Do NOT use this skill for process or memory issues — use the `process-manager`
 ## Steps
 
 **Step 1 — Identify large top-level folders**
-Call `disk_scan` on the user home directory to list every immediate child folder and file sorted largest first. **Windows only:** omit the `path` argument entirely — do NOT construct or guess a path on Windows; explicit paths there often resolve to the app install directory (`C:\Program Files\…`) rather than the user home, which the tool will reject. On macOS, passing the home directory path explicitly is fine.
+Call `disk_scan` with **no `path` argument** — the tool defaults to the user home directory automatically. Do NOT construct or guess a home-directory path.
 
 **Step 2 — Find large files**
-Call `get_large_files` **once** on the home directory with `minSizeBytes: 100000000` (100 MB) and `limit: 10`. Do NOT iterate per folder — one call only.
+Call `get_large_files` **once** with `minSizeBytes: 100000000` (100 MB) and `limit: 10` — omit the `path` argument (defaults to home directory). Do NOT iterate per folder — one call only.
 
 **Step 3 — Find duplicate files**
-Call `find_duplicate_files` **once** on the home directory with `minSizeMb: 10` and `topDeletableLimit: 10`. Do NOT iterate per folder — one call only.
+Call `find_duplicate_files` **once** with `minSizeMb: 10` and `topDeletableLimit: 10` — omit the `path` argument (defaults to home directory). Do NOT iterate per folder — one call only.
 
 **Step 4 — Check old downloads**
 Call `find_old_downloads` with `olderThanDays: 90` and `minSizeMb: 50` to list stale downloads ≥50 MB. Installers (.dmg, .pkg, .exe) older than 90 days are almost always safe to remove.

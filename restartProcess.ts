@@ -36,6 +36,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["killed","relaunched","newPid","message"],
   schema: {
     name: z
       .string()

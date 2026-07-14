@@ -39,6 +39,7 @@ export const meta = {
     darwin: "sudo networksetup -setnetworkserviceenabled '<service>' off && sudo networksetup -setnetworkserviceenabled '<service>' on  # substitute the service name, e.g. Wi-Fi",
     win32:  "netsh int ip reset && netsh winsock reset  # run from elevated Command Prompt; reboot afterwards",
   },
+  outputKeys: ["interface","reset","dryRun","rebootRequired","message","platform"],
   schema: {
     // snake_case `interface` matches the privileged helper's struct Params field
     // (required). macOS: network SERVICE name ("Wi-Fi", "Ethernet"). Windows:

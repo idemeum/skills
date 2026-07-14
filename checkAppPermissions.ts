@@ -38,6 +38,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["appName","platform","permissions","error"],
   schema: {
     appName: z
       .string()

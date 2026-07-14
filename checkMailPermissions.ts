@@ -40,6 +40,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   false,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["mailDir","exists","readable","writable","owner","currentUser","permissionsOk","fixed","tccBlocked","supported","message"],
   schema: {
     fix: z
       .boolean()

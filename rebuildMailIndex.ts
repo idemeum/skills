@@ -46,6 +46,7 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess", "Automation"],
+  outputKeys: ["filesFound","filesRemoved","mailWasRunning","tccBlocked","dryRun","message"],
   schema: {
     dryRun: z
       .boolean()

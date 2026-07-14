@@ -41,6 +41,7 @@ export const meta = {
     darwin: "sudo networksetup -removepreferredwirelessnetwork en0 \"<SSID>\"",
     win32:  "netsh wlan delete profile name=\"<SSID>\"  # run from elevated Command Prompt",
   },
+  outputKeys: ["ssid","interface","found","forgotten","dryRun","message"],
   schema: {
     ssid: z
       .string()

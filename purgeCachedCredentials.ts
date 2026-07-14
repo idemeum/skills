@@ -45,6 +45,7 @@ export const meta = {
   supportsDryRun:  true,
   affectedScope:   ["user"],
   auditRequired:   true,
+  outputKeys: ["platform","dryRun","results","totalRemoved","totalFound"],
   schema: {
     domains: z
       .array(

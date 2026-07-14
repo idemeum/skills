@@ -34,6 +34,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","enabled","status","encryptionMethod","encryptionPercent","enabledUsers","message"],
   schema: {},
 } as const;
 

@@ -38,6 +38,7 @@ export const meta = {
   affectedScope:   ["system"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
+  outputKeys: ["appBundle","supportFiles","totalSizeMb","removed","dryRun","message"],
   schema: {
     appName: z
       .string()

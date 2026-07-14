@@ -35,6 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  outputKeys: ["platform","sortBy","totalProcesses","returned","note","processes"],
   schema: {
     sortBy: z
       .enum(["cpu", "memory", "name"])
