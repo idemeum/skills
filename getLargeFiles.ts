@@ -63,10 +63,7 @@ export const meta = {
     path: z
       .string()
       .nullable().optional()
-      .describe(
-        "Absolute path of the directory to scan recursively. " +
-        "Defaults to the user home directory.",
-      ),
+      .describe("Directory to scan recursively. Omit to scan home directory. Do NOT construct or guess a path."),
     minSizeBytes: z
       .number()
       .int()
@@ -231,9 +228,14 @@ export async function run({
 
   const rel = nodePath.relative(realHome, realScanPath);
   if (rel.startsWith("..") || nodePath.isAbsolute(rel)) {
-    throw new Error(
-      `[get_large_files] Path must be within home directory`,
-    );
+    const homeRel = nodePath.relative(realScanPath, realHome);
+    if (!homeRel.startsWith("..") && !nodePath.isAbsolute(homeRel)) {
+      realScanPath = realHome;
+    } else {
+      throw new Error(
+        `[get_large_files] Path must be within home directory`,
+      );
+    }
   }
 
   const results: FileEntry[] = [];

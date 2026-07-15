@@ -48,10 +48,7 @@ export const meta = {
     path: z
       .string()
       .nullable().optional()
-      .describe(
-        "Absolute path of the directory to scan. " +
-        "Defaults to the user home directory.",
-      ),
+      .describe("Directory to scan. Omit to scan home directory. Do NOT construct or guess a path."),
   },
 } as const;
 
@@ -198,7 +195,7 @@ export async function run(
   // process.cwd() (the app install dir) rather than home, which always fails
   // the home-directory safety check.
   const effectivePath = inputPath || os.homedir();
-  const scanPath = nodePath.resolve(expandTilde(effectivePath) ?? effectivePath);
+  let scanPath = nodePath.resolve(expandTilde(effectivePath) ?? effectivePath);
 
   // Security: restrict scanning to within the user home directory.
   // Prevents Claude from being directed to scan /etc, /var, or other
@@ -206,9 +203,16 @@ export async function run(
   const home = os.homedir();
   const rel  = nodePath.relative(home, scanPath);
   if (rel.startsWith("..") || nodePath.isAbsolute(rel)) {
-    throw new Error(
-      `[disk_scan] Path must be within home directory (${home}): ${scanPath}`,
-    );
+    // If the path is a parent of home (e.g. "/Users" when home is
+    // "/Users/nik"), the LLM intended "scan home" but guessed wrong.
+    const homeRel = nodePath.relative(scanPath, home);
+    if (!homeRel.startsWith("..") && !nodePath.isAbsolute(homeRel)) {
+      scanPath = home;
+    } else {
+      throw new Error(
+        `[disk_scan] Path must be within home directory (${home}): ${scanPath}`,
+      );
+    }
   }
 
   try {

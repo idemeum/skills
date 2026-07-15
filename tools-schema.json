@@ -1220,7 +1220,8 @@
         {
           "name": "path",
           "type": "string",
-          "required": false
+          "required": false,
+          "description": "Directory to scan. Omit to scan home directory. Do NOT construct or guess a path."
         }
       ]
     },
@@ -1322,7 +1323,7 @@
           "name": "path",
           "type": "string",
           "required": false,
-          "description": "Directory to scan. Defaults to home directory"
+          "description": "Directory to scan. Omit to scan home directory. Do NOT construct or guess a path."
         },
         {
           "name": "minSizeMb",
@@ -1717,7 +1718,8 @@
         {
           "name": "path",
           "type": "string",
-          "required": false
+          "required": false,
+          "description": "Directory to scan recursively. Omit to scan home directory. Do NOT construct or guess a path."
         },
         {
           "name": "minSizeBytes",

@@ -54,7 +54,7 @@ export const meta = {
     path: z
       .string()
       .nullable().optional()
-      .describe("Directory to scan. Defaults to home directory"),
+      .describe("Directory to scan. Omit to scan home directory. Do NOT construct or guess a path."),
     minSizeMb: z
       .number()
       .nullable().optional()
@@ -229,14 +229,19 @@ export async function run(
   const home = os.homedir();
 
   // Expand ~ / ~/ before resolve() — see _shared/expandTilde.ts.
-  const scanPath = nodePath.resolve(expandTilde(inputPath || home) ?? home);
+  let scanPath = nodePath.resolve(expandTilde(inputPath || home) ?? home);
 
   // Security: restrict scan to within home directory
   const rel = nodePath.relative(home, scanPath);
   if (rel.startsWith("..") || nodePath.isAbsolute(rel)) {
-    throw new Error(
-      `[find_duplicate_files] Path must be within home directory (${home}): ${scanPath}`,
-    );
+    const homeRel = nodePath.relative(scanPath, home);
+    if (!homeRel.startsWith("..") && !nodePath.isAbsolute(homeRel)) {
+      scanPath = home;
+    } else {
+      throw new Error(
+        `[find_duplicate_files] Path must be within home directory (${home}): ${scanPath}`,
+      );
+    }
   }
 
   try {
