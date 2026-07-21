@@ -2345,48 +2345,6 @@
       ]
     },
     {
-      "toolId": "probe_idp_sspr_available",
-      "description": "Probes the IDP's public endpoints to infer whether self-service password reset (SSPR) is enabled for this tenant. Best-effort: Okta and Entra return a meaningful signal; Google returns 'unknown' because no reliable public probe exists. The parent skill uses the result to choose between the SSPR portal path and the idemeum-cloud fallback.",
-      "riskLevel": "low",
-      "destructive": false,
-      "requiresConsent": false,
-      "supportsDryRun": false,
-      "affectedScope": [
-        "user"
-      ],
-      "outputKeys": [
-        "idp",
-        "tenant",
-        "available",
-        "evidence"
-      ],
-      "params": [
-        {
-          "name": "idp",
-          "type": "string",
-          "required": true,
-          "description": "IDP identifier from detect_identity_provider.",
-          "enum": [
-            "okta",
-            "entra",
-            "google",
-            "unknown"
-          ]
-        },
-        {
-          "name": "tenant",
-          "type": "string",
-          "required": false,
-          "description": "IDP tenant slug — required for Okta (e.g. 'acme' for acme.okta.com); optional for Entra (falls back to 'common"
-        },
-        {
-          "name": "probeUsername",
-          "type": "string",
-          "required": false
-        }
-      ]
-    },
-    {
       "toolId": "prune_docker",
       "description": "Removes unused Docker resources (stopped containers, dangling images, unused volumes, unused networks). Use to free significant disk space on developer machines. Checks if Docker is installed first.",
       "riskLevel": "medium",
@@ -2690,60 +2648,6 @@
         "message"
       ],
       "params": [
-        {
-          "name": "dryRun",
-          "type": "boolean",
-          "required": false
-        }
-      ]
-    },
-    {
-      "toolId": "request_idemeum_idp_reset",
-      "description": "Fallback path when the IDP's self-service portal is unavailable. POSTs to idemeum cloud, which holds admin-delegated IDP credentials per customer and triggers or performs the reset via the IDP admin API. The agent never sees IDP admin credentials. Response indicates how the reset was delivered (e.g. temp password emailed to recovery address).",
-      "riskLevel": "high",
-      "destructive": false,
-      "requiresConsent": true,
-      "supportsDryRun": true,
-      "affectedScope": [
-        "network"
-      ],
-      "outputKeys": [
-        "status",
-        "message",
-        "deliveryMethod",
-        "notificationEmail",
-        "notificationPhone",
-        "ticketId",
-        "willPost",
-        "endpoint",
-        "payloadWithoutSecrets",
-        "httpStatus",
-        "failureReason"
-      ],
-      "params": [
-        {
-          "name": "idp",
-          "type": "string",
-          "required": true,
-          "description": "IDP identifier; JumpCloud/Ping deferred to Wave 2.",
-          "enum": [
-            "okta",
-            "entra",
-            "google"
-          ]
-        },
-        {
-          "name": "username",
-          "type": "string",
-          "required": true,
-          "description": "The user's IDP login (email / UPN)."
-        },
-        {
-          "name": "tenant",
-          "type": "string",
-          "required": false,
-          "description": "IDP tenant slug (Okta) or directory id (Entra); optional for Google."
-        },
         {
           "name": "dryRun",
           "type": "boolean",
@@ -3245,44 +3149,6 @@
           "type": "boolean",
           "required": false,
           "description": "If true, list files that would be removed. Default: true"
-        }
-      ]
-    },
-    {
-      "toolId": "verify_sso_auth",
-      "description": "Verifies IDP endpoint reachability and TLS health by probing the OIDC discovery endpoint and a token endpoint (expected 401). Does NOT verify that the user's new password works — password propagation is verified implicitly when the user signs back into apps. Use as the final step in a cloud IDP password-reset workflow.",
-      "riskLevel": "low",
-      "destructive": false,
-      "requiresConsent": false,
-      "supportsDryRun": false,
-      "affectedScope": [
-        "user"
-      ],
-      "outputKeys": [
-        "idp",
-        "idpLabel",
-        "reachable",
-        "checks",
-        "message"
-      ],
-      "params": [
-        {
-          "name": "idp",
-          "type": "string",
-          "required": true,
-          "description": "IDP identifier from detect_identity_provider.",
-          "enum": [
-            "okta",
-            "entra",
-            "google",
-            "unknown"
-          ]
-        },
-        {
-          "name": "tenant",
-          "type": "string",
-          "required": false,
-          "description": "IDP tenant slug (required for Okta)."
         }
       ]
     },

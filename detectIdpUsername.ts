@@ -224,10 +224,10 @@ async function probeEntraWin32(): Promise<UsernameCandidate[]> {
     return [];
   }
 
-  // First check the device is actually AAD-joined — a UPN from dsregcmd on
-  // a non-joined device is meaningless (could be stale state).
-  const aadJoined = /AzureAdJoined\s*:\s*YES/i.test(stdout);
-  if (!aadJoined) {
+  const aadJoined        = /AzureAdJoined\s*:\s*YES/i.test(stdout);
+  const workplaceJoined  = /WorkplaceJoined\s*:\s*YES/i.test(stdout);
+
+  if (!aadJoined && !workplaceJoined) {
     return [];
   }
 
@@ -236,8 +236,10 @@ async function probeEntraWin32(): Promise<UsernameCandidate[]> {
 
   return [{
     username:   upn,
-    source:     "dsregcmd /status (AAD-joined)",
-    confidence: "high",
+    source:     aadJoined
+      ? "dsregcmd /status (AAD-joined)"
+      : "dsregcmd /status (WorkplaceJoined)",
+    confidence: aadJoined ? "high" : "medium",
   }];
 }
 

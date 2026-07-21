@@ -27,7 +27,7 @@ import { isSupportedIdp, type Idp } from "./_shared/idp";
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
-  name: "probe_idp_sspr_available",
+  name: "c_probe_idp_sspr_available",
   description:
     "Probes the IDP's public endpoints to infer whether self-service password " +
     "reset (SSPR) is enabled for this tenant. Best-effort: Okta and Entra " +

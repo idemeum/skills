@@ -25,7 +25,7 @@
         "detect_identity_provider",
         "detect_idp_username",
         "open_idp_sspr_portal",
-        "request_idemeum_idp_reset",
+        "c_request_idemeum_idp_reset",
         "wait_for_user_ack",
         "request_user_input",
         "present_preview",
@@ -121,6 +121,59 @@
       ],
       "steps": 17,
       "enabled": true
+    },
+    {
+      "skillId": "entra-account-unlock",
+      "name": "Unlock a locked Entra account",
+      "description": "Unlocks a Microsoft Entra account that was locked out after too many failed sign-in attempts. Diagnoses the lockout cause using sign-in logs, clears the lockout state, and verifies the account is accessible again. Use when the user says \"I'm locked out of my Microsoft account\", \"too many failed login attempts\", or similar Entra account lockout complaints.",
+      "risk": "high",
+      "allowedTools": [
+        "detect_identity_provider",
+        "detect_idp_username",
+        "request_user_input",
+        "wait_for_user_ack",
+        "c_entra_get_user_info",
+        "c_entra_get_sign_in_logs",
+        "c_entra_unlock_account",
+        "present_preview"
+      ],
+      "steps": 8,
+      "enabled": false
+    },
+    {
+      "skillId": "entra-mfa-reset",
+      "name": "Reset MFA for an Entra user",
+      "description": "Resets all MFA methods for a Microsoft Entra user so they are prompted to re-enroll on next sign-in. Use when the user says \"I lost my phone and can't do MFA\", \"reset my Microsoft authenticator\", \"I got a new phone and need to re-register MFA\", or similar Entra MFA complaints.",
+      "risk": "high",
+      "allowedTools": [
+        "detect_identity_provider",
+        "detect_idp_username",
+        "request_user_input",
+        "wait_for_user_ack",
+        "c_entra_get_user_info",
+        "c_entra_get_mfa_status",
+        "c_entra_reset_mfa",
+        "present_preview"
+      ],
+      "steps": 8,
+      "enabled": false
+    },
+    {
+      "skillId": "entra-password-reset",
+      "name": "Reset an Entra user's password",
+      "description": "Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when self-service password reset (SSPR) is disabled or unavailable, or the admin needs to force-reset a user's password. Do NOT use when the user can self-serve — prefer cloud-idp-password-reset for self-service resets.",
+      "risk": "high",
+      "allowedTools": [
+        "detect_identity_provider",
+        "detect_idp_username",
+        "request_user_input",
+        "wait_for_user_ack",
+        "c_entra_get_user_info",
+        "c_entra_reset_password",
+        "present_preview"
+      ],
+      "steps": 7,
+      "enabled": false
     },
     {
       "skillId": "identity-auth-repair",

@@ -1,5 +1,5 @@
 /**
- * mcp/skills/requestIdemeumIdpReset.ts — request_idemeum_idp_reset
+ * mcp/skills/cRequestIdemeumIdpReset.ts — c_request_idemeum_idp_reset
  *
  * Fallback password-reset path: when the IDP's self-service portal is
  * disabled (or the user tried and failed), the agent POSTs to idemeum
@@ -13,7 +13,7 @@
  *
  * Wire contract
  * -------------
- * POST ${IDEMEUM_IDP_URL}/api/eoc/idp-password/{upn}
+ * POST ${CLOUD_GATEWAY_URL}/api/eoc/idp-password/{upn}
  *   Accept:        application/vnd.dvmi.cloud.reset.result+json
  *   Content-Type:  application/vnd.dvmi.idp.password.action+json
  *   X-Idemeum-Eoc-Api-Key: ${IDEMEUM_API_KEY}
@@ -24,7 +24,7 @@
  *   Failure  → { status: "failed",    message, httpStatus?, failureReason? }
  *   Not conf → { status: "not-configured", message }
  *
- * When IDEMEUM_IDP_URL is unset, the tool resolves fail-open with
+ * When CLOUD_GATEWAY_URL is unset, the tool resolves fail-open with
  * { status: "not-configured", message: "…" } so the skill prose can
  * still branch gracefully.
  *
@@ -59,7 +59,7 @@ function getAgentId(): string {
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
-  name: "request_idemeum_idp_reset",
+  name: "c_request_idemeum_idp_reset",
   description:
     "Fallback path when the IDP's self-service portal is unavailable. POSTs " +
     "to idemeum cloud, which holds admin-delegated IDP credentials per " +
@@ -175,7 +175,7 @@ export async function run(args: {
   tenant?:  string;
   dryRun?:  boolean;
 }): Promise<CloudResetResult> {
-  const url    = process.env["IDEMEUM_IDP_URL"];
+  const url    = process.env["CLOUD_GATEWAY_URL"];
   const apiKey = (process.env["IDEMEUM_API_KEY"] ?? "").trim();
 
   if (!url || url.length === 0) {
@@ -183,7 +183,7 @@ export async function run(args: {
       status:  "not-configured",
       message:
         "idemeum cloud fallback is not configured on this machine. " +
-        "Contact your MSP administrator to enable IDEMEUM_IDP_URL.",
+        "Contact your MSP administrator to enable CLOUD_GATEWAY_URL.",
     };
   }
 
@@ -212,12 +212,12 @@ export async function run(args: {
 
   const body = JSON.stringify(payload);
   const responseTimeoutMs = (() => {
-    const v = parseInt(process.env["IDEMEUM_IDP_RESPONSE_TIMEOUT_MS"] ?? "10000", 10);
+    const v = parseInt(process.env["CLOUD_GATEWAY_RESPONSE_TIMEOUT_MS"] ?? "10000", 10);
     return isNaN(v) || v <= 0 ? 10_000 : v;
   })();
   const r = await httpPost(endpoint, body, headers, {
     timeoutMs:  responseTimeoutMs,
-    breakerKey: "IDEMEUM_IDP_URL",
+    breakerKey: "CLOUD_GATEWAY_URL",
   });
 
   if (r.failureReason) {

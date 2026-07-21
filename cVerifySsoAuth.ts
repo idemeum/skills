@@ -31,7 +31,7 @@ import {
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
-  name: "verify_sso_auth",
+  name: "c_verify_sso_auth",
   description:
     "Verifies IDP endpoint reachability and TLS health by probing the " +
     "OIDC discovery endpoint and a token endpoint (expected 401). Does NOT " +
