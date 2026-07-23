@@ -1,6 +1,6 @@
 ---
 name: entra-password-reset
-description: Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when self-service password reset (SSPR) is disabled or unavailable, or the admin needs to force-reset a user's password. Do NOT use when the user can self-serve — prefer cloud-idp-password-reset for self-service resets.
+description: Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when the user reports a forgotten password, SSPR is disabled or unavailable, or an admin needs to force-reset a user's password.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
@@ -33,14 +33,15 @@ metadata:
 
 ## When to use
 
-Use this skill when an admin-initiated forced password reset is needed for a Microsoft Entra user. This generates a temporary password via the Graph API that the user must change on next sign-in.
+Use this skill when a Microsoft Entra user needs a password reset. This generates a temporary password via the Graph API that the user must change on next sign-in.
 
-**Prefer `cloud-idp-password-reset` when the user can self-serve.** That skill guides the user through the SSPR portal and handles post-reset cleanup (cached credentials, browser cookies, IDP agent sync). Use this skill only when:
+Appropriate when:
+- The user forgot their password
 - SSPR is disabled for the tenant or user
 - SSPR failed and the user cannot complete it
 - An admin needs to force-reset the password (e.g. suspected compromise, new hire onboarding)
 
-Do NOT use for Okta or Google password resets — those require different admin APIs.
+Do NOT use for Okta or Google password resets — those require different admin APIs and will get their own connector-specific skills.
 
 **Security boundary:** the temporary password is displayed ONLY to the support agent. The agent MUST communicate it to the user via a secure out-of-band channel (e.g. in-person, encrypted message). NEVER display the temporary password in the chat UI summary or log it.
 

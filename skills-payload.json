@@ -17,27 +17,6 @@
       "enabled": false
     },
     {
-      "skillId": "cloud-idp-password-reset",
-      "name": "Reset my Okta/Entra/Google password",
-      "description": "Resets a user's cloud identity provider password (Okta, Microsoft Entra, Google Workspace) and cleans up stale local session state (cached credentials, browser SSO cookies, IDP agent sync, login Keychain) so the user's apps stop presenting the old password. Use when the user says \"I need to reset my Okta/Entra/Google password\", \"I just reset my password and now Outlook/VPN/Teams keeps asking me to sign in\", or similar cloud-IDP sign-in complaints.",
-      "risk": "high",
-      "allowedTools": [
-        "detect_identity_provider",
-        "detect_idp_username",
-        "open_idp_sspr_portal",
-        "c_request_idemeum_idp_reset",
-        "wait_for_user_ack",
-        "request_user_input",
-        "present_preview",
-        "purge_cached_credentials",
-        "clear_browser_sso_cookies",
-        "resync_idp_agent",
-        "repair_keychain"
-      ],
-      "steps": 11,
-      "enabled": false
-    },
-    {
       "skillId": "cloud-sync-backup-repair",
       "name": "OneDrive / iCloud / Dropbox / Time Machine sync or backup problem",
       "description": "Diagnoses and repairs cloud sync (OneDrive, iCloud Drive, Google Drive, Dropbox) and Time Machine backup problems including stuck queues, stale sync state, missed backups, sync conflicts on slow networks, and credential / token expiry. Read-only probes by default; the only mutating tool is `pause_resume_cloud_sync` and it is reversible. Use when the user reports their cloud files are not syncing, OneDrive shows a red X, or they are unsure when their last backup ran.",
@@ -161,7 +140,7 @@
     {
       "skillId": "entra-password-reset",
       "name": "Reset an Entra user's password",
-      "description": "Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when self-service password reset (SSPR) is disabled or unavailable, or the admin needs to force-reset a user's password. Do NOT use when the user can self-serve — prefer cloud-idp-password-reset for self-service resets.",
+      "description": "Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when the user reports a forgotten password, SSPR is disabled or unavailable, or an admin needs to force-reset a user's password.",
       "risk": "high",
       "allowedTools": [
         "detect_identity_provider",

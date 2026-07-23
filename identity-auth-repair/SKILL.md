@@ -69,7 +69,7 @@ Use this skill when the user:
 - Cannot reach the Active Directory / LDAP / identity provider
 
 Do NOT use this skill when:
-- The user says they need to reset a cloud IDP password — use `cloud-idp-password-reset`.
+- The user says they need to reset their Entra password — use `entra-password-reset`.
 - The user's local Mac / Windows password is not working — this skill cannot help (the user cannot run the agent if they cannot log in to their machine). Direct them to IT helpdesk for an in-person / phone-based local password reset.
 - Only one app is failing and the rest work — use the app-specific skill (`email-repair`, `vpn-repair`, etc.).
 
@@ -193,4 +193,4 @@ Summarise what was found and what was fixed:
 - **Client cert expiring within 30 days.** Does not block auth TODAY but will in the near future. Still surface it to the user so they can schedule a renewal before it becomes an emergency.
 - **Machine is Entra-joined (no traditional AD binding).** `check_ad_binding` will report "not domain-joined" — that's correct and expected on Entra-joined endpoints. Do NOT treat as a failure; proceed to the next step.
 - **Hybrid AD + Entra with password writeback.** If the user just reset their cloud password and Kerberos still rejects, on-prem propagation can lag 15–30 min. Advise waiting before concluding Kerberos is broken.
-- **Password is NOT collected by this skill.** All corrective tools avoid handling passwords: `renew_kerberos_ticket` uses `kinit -R` (no prompt) or surfaces "interactive" so the user runs `kinit` in their own terminal. The agent's security boundary is the same as in `cloud-idp-password-reset`.
+- **Password is NOT collected by this skill.** All corrective tools avoid handling passwords: `renew_kerberos_ticket` uses `kinit -R` (no prompt) or surfaces "interactive" so the user runs `kinit` in their own terminal.

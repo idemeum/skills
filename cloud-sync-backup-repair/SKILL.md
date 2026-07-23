@@ -109,7 +109,7 @@ If the host is unreachable, sync isn't going to work — surface this to the use
 
 This is a tool-less interpretation step — re-read `check_cloud_sync_status` output from Step 1 for the target client and route the next steps:
 
-- **`status: "stale"` + `lastSyncMs` more than 24h old** → sync has stopped. Either (a) the client process crashed and is no longer running, (b) credentials expired (escalate to `cloud-idp-password-reset`), (c) the client is paused, (d) network partition. Step 5's pause-then-resume un-stick may help case (c) and sometimes case (a).
+- **`status: "stale"` + `lastSyncMs` more than 24h old** → sync has stopped. Either (a) the client process crashed and is no longer running, (b) credentials expired (escalate to `entra-password-reset` for Entra accounts), (c) the client is paused, (d) network partition. Step 5's pause-then-resume un-stick may help case (c) and sometimes case (a).
 - **`status: "idle"`** → sync is working and current. The user's symptom is likely about a specific file rather than the engine — surface this and skip to Step 9 final report.
 - **`status: "error"`** → the client surfaced an error. The current alpha tooling does not extract per-error detail; surface advice to open the client's UI to read the error message. End the run via Step 9 final report — Steps 5/6 (pause/resume) won't help an error state.
 - **`status: "not-installed"`** → wrong target. The user named a client that isn't installed; report this and end the run.
@@ -182,7 +182,7 @@ Escalate to IT when:
 Cloud-sync issues often share root causes with problems other skills handle better. Before drilling deeper into a sync diagnostic, check whether the symptom maps to one of these adjacent skills and redirect — the user gets a faster, more focused fix and the diagnostic isn't repeated:
 
 - **Disk full / "no space" errors during sync** → use the **Disk Cleanup** skill (`disk-cleanup`) first to free space, then retry cloud sync. Sync clients commonly stop with low-space warnings that an empty `~/.Trash` or a Downloads cleanup will resolve in minutes.
-- **"Stale credentials" / "expired token" / authentication-loop errors** → use the **Cloud IDP Password Reset** skill (`cloud-idp-password-reset`) to refresh the user's identity-provider credentials. SSO-mediated sync clients (OneDrive for Business, Google Drive on Workspace, iCloud after an Apple-ID password change) re-authenticate cleanly after a successful IDP reset.
+- **"Stale credentials" / "expired token" / authentication-loop errors** → for Entra accounts, use the **Entra Password Reset** skill (`entra-password-reset`) to force a password reset. SSO-mediated sync clients (OneDrive for Business) re-authenticate cleanly after a successful reset.
 - **Network unreachable / "cannot reach cloud service" with no captive portal** → use the **Network Reset** skill (`network-reset`) to restore basic connectivity (`flush_dns_cache`, `renew_dhcp_lease`, etc. — most are now non-admin via the privileged helper). Once `check_connectivity` reports the cloud endpoint reachable, retry the cloud-sync diagnostic.
 
 When you redirect, keep the cloud-sync diagnostic state captured so far in the run report — it's still useful context for whichever skill takes over, and it goes into the IT-escalation ticket regardless of which skill closes the run.
