@@ -44,17 +44,6 @@ metadata:
     icon: HardDrive
     iconClass: text-amber-500
     order: 1
-  proactive-triggers:
-    # Wave 2 Track B Phase 4 — Trigger 1 (highest-volume universal preventable ticket).
-    # See docs/skills/SKILL-ROADMAP.md "L2 activation priority" for the impact ranking.
-    - name: disk-nearly-full
-      telemetry:
-        tool: get_disk_usage
-        intervalMs: 3600000      # 1 h — disk fullness is steady-state, slow polling is fine
-      condition: "usagePercent >= 90"
-      duration: immediate
-      autofix: false
-      severity: high
 ---
 
 ## When to use

@@ -34,29 +34,6 @@ metadata:
     icon: ShieldCheck
     iconClass: text-emerald-500
     order: 10
-  proactive-triggers:
-    # Wave 2 Track B Phase 4 — Trigger 2 (highest-blast-radius prevention).
-    # One expired cert on Friday night = 50+ Monday tickets.
-    - name: certificate-expiring
-      telemetry:
-        tool: check_certificate_expiry
-        intervalMs: 21600000     # 6 h — certificate expiry is days-out signal, slow polling
-        params:
-          host: "vpn.example.com"   # Per-tenant override via cloud-triggers customTriggers
-      condition: "daysUntilExpiry <= 7 && isExpired == false"
-      duration: immediate
-      autofix: false
-      severity: high
-    # Wave 2 Track B Phase 4 — Trigger 6 (subtle cascade prevention).
-    # 60s drift breaks Kerberos + SAML + TOTP simultaneously above the 5-min threshold.
-    - name: ntp-drift
-      telemetry:
-        tool: check_ntp_status
-        intervalMs: 1800000      # 30 min
-      condition: "absOffsetMs > 60000"
-      duration: 30m              # Sustained drift, not transient — hysteresis prevents flapping
-      autofix: false
-      severity: medium
 ---
 
 ## When to use

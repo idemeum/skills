@@ -29,27 +29,6 @@ metadata:
     icon: CloudUpload
     iconClass: text-blue-500
     order: 13
-  proactive-triggers:
-    # Wave 2 Track B Phase 4 — Trigger 4 (data-at-risk anxiety driver, QBR talking point).
-    - name: cloud-sync-stale
-      telemetry:
-        tool: check_cloud_sync_status
-        intervalMs: 3600000      # 1 h
-      condition: "stale == true"
-      duration: 24h              # Hysteresis: 24h continuous staleness before firing
-      autofix: false
-      severity: medium
-    # Wave 2 Track B Phase 4 — Trigger 5 (ransomware insurance; macOS only).
-    # check_timemachine_status returns status:"not-supported" + stale:false on Windows,
-    # so this trigger naturally never fires on Windows machines.
-    - name: timemachine-stale
-      telemetry:
-        tool: check_timemachine_status
-        intervalMs: 21600000     # 6 h
-      condition: "stale == true"
-      duration: 72h              # 3-day window matches the conventional backup-stale threshold
-      autofix: false
-      severity: medium
 ---
 
 ## When to use

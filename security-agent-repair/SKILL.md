@@ -38,17 +38,6 @@ metadata:
     icon: Shield
     iconClass: text-indigo-500
     order: 6
-  proactive-triggers:
-    # Wave 2 Track B Phase 4 — Trigger 3 (MSP compliance-critical).
-    # Direct customer-facing compliance alerts + SLA dollar impact for MSPs.
-    - name: agent-not-heartbeating
-      telemetry:
-        tool: check_agent_heartbeat
-        intervalMs: 600000       # 10 min — agent liveness is the most fast-moving Wave 2 signal
-      condition: "healthy == false && ageSec >= 900"
-      duration: 15m              # Hysteresis matches the 15-min threshold in the condition
-      autofix: false
-      severity: high
 ---
 
 ## When to use
