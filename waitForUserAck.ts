@@ -81,7 +81,7 @@ export const meta = {
    * runUserAckGate() — the run() below is never invoked on the normal path.
    */
   isUserWaitGate:  true,
-  outputKeys: [],
+  outputKeys: ["choice"],
   schema: {
     prompt: z
       .string()

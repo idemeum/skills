@@ -87,7 +87,7 @@ export const meta = {
    */
   isUserWaitGate: true,
 
-  outputKeys: [],
+  outputKeys: ["value"],
   schema: {
     prompt: z
       .string()

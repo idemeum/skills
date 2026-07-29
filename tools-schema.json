@@ -2271,6 +2271,15 @@
       "affectedScope": [
         "user"
       ],
+      "outputKeys": [
+        "category",
+        "urgency",
+        "summary",
+        "affectedSystem",
+        "symptoms",
+        "additionalNotes",
+        "action"
+      ],
       "params": [
         {
           "name": "title",
@@ -2323,6 +2332,10 @@
       "isUserWaitGate": true,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "selected",
+        "selectedTargets"
       ],
       "params": [
         {
@@ -2665,6 +2678,9 @@
       "isUserWaitGate": true,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "value"
       ],
       "params": [
         {
@@ -3162,6 +3178,9 @@
       "isUserWaitGate": true,
       "affectedScope": [
         "user"
+      ],
+      "outputKeys": [
+        "choice"
       ],
       "params": [
         {
