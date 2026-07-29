@@ -81,9 +81,8 @@ export const meta = {
       .string()
       .min(1)
       .describe(
-        "IT issue category extracted from the user's description. Must be one of: " +
-        "Network, Software, Hardware, Account/Access, Email, Printing, " +
-        "Performance, Security, Other.",
+        "IT issue category extracted from the user's description. " +
+        "The valid values are defined in the skill workflow.",
       ),
     urgency: z
       .enum(["low", "medium", "high", "critical"])
