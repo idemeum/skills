@@ -21,18 +21,18 @@ metadata:
   maxAggregateRisk: high
   userLabel: "Reset MFA for an Entra user"
   examples:
-    - "user lost their phone and can't do MFA"
-    - "reset MFA for a Microsoft account"
-    - "authenticator app isn't working"
-    - "user got a new phone and needs to re-register MFA"
-    - "I can't complete Microsoft two-factor"
-    - "reset MFA for alice@example.com"
+    - "user lost their phone and can't do Microsoft Entra MFA"
+    - "reset MFA for a Microsoft Entra account"
+    - "Microsoft authenticator app isn't working"
+    - "user got a new phone and needs to re-register Entra MFA"
+    - "I can't complete Microsoft Entra two-factor sign-in"
+    - "reset MFA for alice@example.com in Entra"
   pill:
     label: Reset Entra MFA
     goal: I lost my phone or authenticator app and can't complete Microsoft Entra MFA — reset my MFA registration so I can re-enroll
     icon: ShieldOff
     iconClass: text-orange-500
-    order: 14
+    order: 20
 ---
 
 ## When to use
@@ -64,6 +64,7 @@ Call `c_entra_get_user_info` with the confirmed UPN.
 - If the tool returns `status: "not-configured"` → tell the user that the cloud gateway is not set up on this machine and they should contact their IT administrator
 - If the tool returns `status: "failed"` with `httpStatus: 404` → the UPN was not found in Entra. Ask the user to double-check the spelling
 - If `accountEnabled` is `false` → warn the user their account is disabled and MFA reset may not help until the account is re-enabled
+- If `lockedOut` is `true` → note that the account is also locked out; suggest `entra-account-unlock` as a follow-up
 - On success, note the `displayName` for user-friendly messaging
 
 **Step 3 — Check current MFA status**
@@ -93,8 +94,8 @@ Present the preview to the user showing what will happen.
 
 Call `c_entra_reset_mfa` with `dryRun: false`. This step's params has `dryRun` authored as `false` — G4 fires the consent gate automatically before execution.
 
-- If `status` is `"ok"` → proceed to verification
-- If `status` is `"failed"` → report the error message to the user
+- If `status` is `"initiated"` → proceed to verification
+- If `status` is `"failed"` → report the error to the user and suggest retrying or opening a ticket
 
 **Step 7 — Verify the reset**
 
@@ -109,3 +110,4 @@ Tell the user:
 - On their next sign-in to any Microsoft service, they will be prompted to set up MFA again
 - They should have their new phone or preferred authentication method ready
 - The re-enrollment prompt will appear automatically — no additional action is needed from IT
+- If they are also locked out or need a password reset, point them to `entra-account-unlock` or `entra-password-reset`

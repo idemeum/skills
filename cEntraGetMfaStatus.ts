@@ -1,14 +1,12 @@
 /**
- * mcp/skills/cEntraGetMfaStatus.ts — c_entra_get_mfa_status
+ * c_entra_get_mfa_status
  *
- * Diagnostic cloud-proxy tool: fetches an Entra user's MFA registration
- * status, registered methods, and default method via the cloud gateway.
+ * Diagnostic cloud-proxy tool: fetches an entra user's mfa registration status. returns registered authentication methods (phone, authenticator app, fido2, etc.) and whether registration is complete via the cloud gateway.
  *
  * Wire contract
  * -------------
  * GET ${CLOUD_GATEWAY_URL}/entra/users/{upn}/mfa
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
- *   → { methods: [{ type, isDefault }], registrationComplete }
  */
 
 import { z } from "zod";
@@ -19,9 +17,7 @@ import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGatewa
 export const meta = {
   name: "c_entra_get_mfa_status",
   description:
-    "Fetches an Entra user's MFA registration status via the cloud gateway. " +
-    "Returns registered authentication methods (phone, authenticator app, " +
-    "FIDO2, etc.), which is the default, and whether registration is complete.",
+    "Fetches an Entra user's MFA registration status. Returns registered authentication methods (phone, authenticator app, FIDO2, etc.) and whether registration is complete via the cloud gateway.",
   riskLevel:       "low",
   destructive:     false,
   requiresConsent: false,
@@ -30,8 +26,12 @@ export const meta = {
   affectedScope:   ["network"],
   sensitiveParams: ["userPrincipalName"],
   outputKeys: [
-    "status", "message", "methods", "registrationComplete",
-    "httpStatus", "failureReason",
+    "status",
+    "message",
+    "methods",
+    "registrationComplete",
+    "httpStatus",
+    "failureReason",
   ],
   schema: {
     userPrincipalName: z
@@ -41,29 +41,28 @@ export const meta = {
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
         "must be a UPN (e.g. alice@example.com)",
       )
-      .describe("The Entra user's UPN."),
+      .describe("The Microsoft Entra ID user's UPN."),
   },
 } as const;
 
 // -- Types --------------------------------------------------------------------
 
-interface MfaMethod {
-  type:      string;
-  isDefault: boolean;
+interface MethodsEntry {
+  type: string;
+  id: string;
 }
-
-interface EntraMfaData {
-  methods:              MfaMethod[];
+interface EntraGetMfaStatusData {
   registrationComplete: boolean;
+  methods: MethodsEntry[];
 }
 
 export interface EntraGetMfaStatusResult {
-  status:                "ok" | "failed" | "not-configured";
-  message:               string;
-  methods?:              MfaMethod[];
+  status:         "ok" | "failed" | "not-configured";
+  message:        string;
   registrationComplete?: boolean;
-  httpStatus?:           number;
-  failureReason?:        CloudGatewayResult["failureReason"];
+  methods?: MethodsEntry[];
+  httpStatus?:    number;
+  failureReason?: CloudGatewayResult["failureReason"];
 }
 
 // -- Implementation -----------------------------------------------------------
@@ -72,7 +71,7 @@ export async function run(args: {
   userPrincipalName: string;
 }): Promise<EntraGetMfaStatusResult> {
   const upn = encodeURIComponent(args.userPrincipalName);
-  const r = await cloudGatewayCall<EntraMfaData>({
+  const r = await cloudGatewayCall<EntraGetMfaStatusData>({
     path: `/entra/users/${upn}/mfa`,
   });
 
@@ -86,15 +85,10 @@ export async function run(args: {
   }
 
   const d = r.data!;
-  const methodCount = d.methods?.length ?? 0;
-  const defaultMethod = d.methods?.find((m) => m.isDefault);
-
   return {
-    status:               "ok",
-    message:              methodCount > 0
-      ? `${methodCount} MFA method(s) registered. Default: ${defaultMethod?.type ?? "none"}.`
-      : "No MFA methods registered.",
-    methods:              d.methods,
+    status:  "ok",
+    message: (Array.isArray(d.methods) ? d.methods.length : 0) + " MFA method(s) registered.",
     registrationComplete: d.registrationComplete,
+    methods: d.methods,
   };
 }

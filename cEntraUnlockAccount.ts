@@ -1,16 +1,13 @@
 /**
- * mcp/skills/cEntraUnlockAccount.ts — c_entra_unlock_account
+ * c_entra_unlock_account
  *
- * Corrective cloud-proxy tool: unlocks an Entra account that was locked
- * out after too many failed sign-in attempts. Clears the lockout state
- * so the user can sign in again.
+ * Corrective cloud-proxy tool: unlocks an entra account locked out due to too many failed sign-in attempts. clears the lockout state so the user can sign in again via the cloud gateway. supports dry-run to preview the operation without executing.
  *
  * Wire contract
  * -------------
  * POST ${CLOUD_GATEWAY_URL}/entra/users/{upn}/unlock
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
- *   Body: {}
- *   → { status: "initiated" | "failed", message }
+ *   Body: {"accountEnabled":true}
  */
 
 import { z } from "zod";
@@ -21,9 +18,7 @@ import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGatewa
 export const meta = {
   name: "c_entra_unlock_account",
   description:
-    "Unlocks an Entra account locked out due to too many failed sign-in " +
-    "attempts. Clears the lockout state via the cloud gateway so the user " +
-    "can sign in again. Supports dry-run to preview the operation.",
+    "Unlocks an Entra account locked out due to too many failed sign-in attempts. Clears the lockout state so the user can sign in again via the cloud gateway. Supports dry-run to preview the operation without executing.",
   riskLevel:       "high",
   destructive:     false,
   requiresConsent: true,
@@ -32,8 +27,12 @@ export const meta = {
   affectedScope:   ["network"],
   sensitiveParams: ["userPrincipalName"],
   outputKeys: [
-    "status", "message", "willPost", "endpoint",
-    "httpStatus", "failureReason",
+    "status",
+    "message",
+    "willPost",
+    "endpoint",
+    "httpStatus",
+    "failureReason",
   ],
   schema: {
     userPrincipalName: z
@@ -43,7 +42,7 @@ export const meta = {
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
         "must be a UPN (e.g. alice@example.com)",
       )
-      .describe("The Entra user's UPN."),
+      .describe("The Microsoft Entra ID user's UPN."),
     dryRun: z
       .boolean()
       .nullable().optional()
@@ -53,7 +52,7 @@ export const meta = {
 
 // -- Types --------------------------------------------------------------------
 
-interface EntraUnlockData {
+interface EntraUnlockAccountData {
   status:  "initiated" | "failed";
   message: string;
 }
@@ -80,13 +79,13 @@ export async function run(args: {
   if (args.dryRun) {
     return {
       status:   "ok",
-      message:  `Would POST account unlock for ${args.userPrincipalName}.`,
+      message:  `Would POST unlock account for ${args.userPrincipalName}.`,
       willPost: true,
       endpoint: baseUrl ? baseUrl.replace(/\/$/, "") + path : "(CLOUD_GATEWAY_URL not set)",
     };
   }
 
-  const r = await cloudGatewayCall<EntraUnlockData>({
+  const r = await cloudGatewayCall<EntraUnlockAccountData>({
     method: "POST",
     path,
   });

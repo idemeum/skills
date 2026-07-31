@@ -1,15 +1,12 @@
 /**
- * mcp/skills/cEntraGetSignInLogs.ts — c_entra_get_sign_in_logs
+ * c_entra_get_sign_in_logs
  *
- * Diagnostic cloud-proxy tool: fetches recent Entra sign-in events for a
- * user. Useful for diagnosing account lockouts (source IPs, devices,
- * error codes) and detecting brute-force patterns.
+ * Diagnostic cloud-proxy tool: fetches recent entra sign-in events for a user. returns timestamps, success/failure status, location, device info, and error codes. useful for diagnosing lockouts and detecting suspicious activity via the cloud gateway.
  *
  * Wire contract
  * -------------
  * GET ${CLOUD_GATEWAY_URL}/entra/users/{upn}/sign-ins
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
- *   → { events: [{ timestamp, status, location, device, errorCode }] }
  */
 
 import { z } from "zod";
@@ -20,9 +17,7 @@ import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGatewa
 export const meta = {
   name: "c_entra_get_sign_in_logs",
   description:
-    "Fetches recent Entra sign-in events for a user via the cloud gateway. " +
-    "Returns timestamps, success/failure status, location, device info, and " +
-    "error codes. Useful for diagnosing lockouts and detecting suspicious activity.",
+    "Fetches recent Entra sign-in events for a user. Returns timestamps, success/failure status, location, device info, and error codes. Useful for diagnosing lockouts and detecting suspicious activity via the cloud gateway.",
   riskLevel:       "low",
   destructive:     false,
   requiresConsent: false,
@@ -31,7 +26,11 @@ export const meta = {
   affectedScope:   ["network"],
   sensitiveParams: ["userPrincipalName"],
   outputKeys: [
-    "status", "message", "events", "httpStatus", "failureReason",
+    "status",
+    "message",
+    "events",
+    "httpStatus",
+    "failureReason",
   ],
   schema: {
     userPrincipalName: z
@@ -41,28 +40,29 @@ export const meta = {
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
         "must be a UPN (e.g. alice@example.com)",
       )
-      .describe("The Entra user's UPN."),
+      .describe("The Microsoft Entra ID user's UPN."),
   },
 } as const;
 
 // -- Types --------------------------------------------------------------------
 
-interface SignInEvent {
+interface EventsEntry {
   timestamp: string;
-  status:    string;
-  location:  string | null;
-  device:    string | null;
   errorCode: number | null;
+  location: string | null;
+  device: string | null;
+  status: string | null;
+  ipAddress: string | null;
+  application: string | null;
 }
-
-interface EntraSignInData {
-  events: SignInEvent[];
+interface EntraGetSignInLogsData {
+  events: EventsEntry[];
 }
 
 export interface EntraGetSignInLogsResult {
   status:         "ok" | "failed" | "not-configured";
   message:        string;
-  events?:        SignInEvent[];
+  events?: EventsEntry[];
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
 }
@@ -73,7 +73,7 @@ export async function run(args: {
   userPrincipalName: string;
 }): Promise<EntraGetSignInLogsResult> {
   const upn = encodeURIComponent(args.userPrincipalName);
-  const r = await cloudGatewayCall<EntraSignInData>({
+  const r = await cloudGatewayCall<EntraGetSignInLogsData>({
     path: `/entra/users/${upn}/sign-ins`,
   });
 
@@ -87,14 +87,9 @@ export async function run(args: {
   }
 
   const d = r.data!;
-  const events = d.events ?? [];
-  const failedCount = events.filter((e) => e.status === "failure").length;
-
   return {
     status:  "ok",
-    message: events.length > 0
-      ? `${events.length} recent sign-in event(s); ${failedCount} failed.`
-      : "No recent sign-in events found.",
-    events,
+    message: (Array.isArray(d.events) ? d.events.length : 0) + " recent sign-in event(s).",
+    events: d.events,
   };
 }

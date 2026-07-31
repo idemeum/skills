@@ -1,6 +1,6 @@
 ---
 name: entra-password-reset
-description: Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when the user reports a forgotten password, SSPR is disabled or unavailable, or an admin needs to force-reset a user's password.
+description: Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when the user says "I forgot my Microsoft password", "reset my Entra password", SSPR is disabled or unavailable, or an admin needs to force-reset a user's password.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
@@ -19,16 +19,17 @@ metadata:
   maxAggregateRisk: high
   userLabel: "Reset an Entra user's password"
   examples:
-    - "reset this user's Microsoft password"
-    - "user forgot their Entra password and self-service isn't working"
-    - "I need to force a password reset for an employee"
-    - "generate a temporary password for a new hire"
+    - "reset this user's Microsoft Entra password"
+    - "forgot my Microsoft password and SSPR won't work"
+    - "force a password reset for a Microsoft account"
+    - "generate a temporary Entra password for a new hire"
+    - "user can't reset their Entra password via self-service"
   pill:
     label: Reset Entra Password
     goal: I need to reset a Microsoft Entra password because self-service password reset is unavailable or I need to force-reset a user's password
     icon: KeyRound
     iconClass: text-red-500
-    order: 15
+    order: 21
 ---
 
 ## When to use
@@ -41,7 +42,7 @@ Appropriate when:
 - SSPR failed and the user cannot complete it
 - An admin needs to force-reset the password (e.g. suspected compromise, new hire onboarding)
 
-Do NOT use for Okta or Google password resets — those require different admin APIs and will get their own connector-specific skills.
+Do NOT use for Okta or Google password resets — those require different admin APIs. Do NOT use when the user only needs MFA cleared (use `entra-mfa-reset`) or is locked out but knows their password (use `entra-account-unlock`).
 
 **Security boundary:** the temporary password is displayed ONLY to the support agent. The agent MUST communicate it to the user via a secure out-of-band channel (e.g. in-person, encrypted message). NEVER display the temporary password in the chat UI summary or log it.
 
@@ -87,7 +88,7 @@ Present the preview to the user showing what will happen.
 
 Call `c_entra_reset_password` with `dryRun: false`. This step's params has `dryRun` authored as `false` — G4 fires the consent gate automatically before execution.
 
-- If `status` is `"ok"` and `temporaryPassword` is present → proceed to delivery
+- If `status` is `"initiated"` and `temporaryPassword` is present → proceed to delivery
 - If `status` is `"failed"` → report the error message to the user
 
 **Step 6 — Verify account status**
@@ -101,4 +102,5 @@ Present the temporary password to the support agent with clear instructions:
 - Communicate this to the user via a SECURE out-of-band channel (in-person, encrypted message, phone call)
 - Do NOT email the temporary password in plaintext
 - The user MUST change this password on their next sign-in
-- If the user's account was locked, they may also need an account unlock
+- If the user's account was locked, they may also need `entra-account-unlock`
+- If the user's MFA is also broken, suggest `entra-mfa-reset`
