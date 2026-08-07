@@ -1,7 +1,7 @@
 /**
  * c_entra_get_user_info
  *
- * Diagnostic cloud-proxy tool: fetches an entra (azure ad) user's profile and account status. returns display name, account enabled/disabled, lockout state, last sign-in timestamp, job title, and department via the cloud gateway.
+ * Diagnostic cloud-proxy tool: fetches an entra (azure ad) user's profile and account status. returns display name, account enabled/disabled, job title, and department via the cloud gateway.
  *
  * Wire contract
  * -------------
@@ -17,7 +17,7 @@ import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGatewa
 export const meta = {
   name: "c_entra_get_user_info",
   description:
-    "Fetches an Entra (Azure AD) user's profile and account status. Returns display name, account enabled/disabled, lockout state, last sign-in timestamp, job title, and department via the cloud gateway.",
+    "Fetches an Entra (Azure AD) user's profile and account status. Returns display name, account enabled/disabled, job title, and department via the cloud gateway.",
   riskLevel:       "low",
   destructive:     false,
   requiresConsent: false,
@@ -31,7 +31,6 @@ export const meta = {
     "displayName",
     "userPrincipalName",
     "accountEnabled",
-    "lastSignIn",
     "jobTitle",
     "department",
     "lockedOut",
@@ -56,7 +55,6 @@ interface EntraGetUserInfoData {
   displayName: string;
   userPrincipalName: string;
   accountEnabled: boolean;
-  lastSignIn: string | null;
   jobTitle: string | null;
   department: string | null;
   lockedOut: boolean;
@@ -68,7 +66,6 @@ export interface EntraGetUserInfoResult {
   displayName?: string;
   userPrincipalName?: string;
   accountEnabled?: boolean;
-  lastSignIn?: string | null;
   jobTitle?: string | null;
   department?: string | null;
   lockedOut?: boolean;
@@ -102,7 +99,6 @@ export async function run(args: {
     displayName: d.displayName,
     userPrincipalName: d.userPrincipalName,
     accountEnabled: d.accountEnabled,
-    lastSignIn: d.lastSignIn,
     jobTitle: d.jobTitle,
     department: d.department,
     lockedOut: d.lockedOut,

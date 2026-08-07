@@ -7,7 +7,7 @@
  * -------------
  * POST ${CLOUD_GATEWAY_URL}/entra/users/{upn}/password/reset
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
- *   Body: {}
+ *   Body: {"passwordProfile":{"forceChangePasswordNextSignIn":true}}
  */
 
 import { z } from "zod";
@@ -56,7 +56,7 @@ export const meta = {
 interface EntraResetPasswordData {
   status:  "initiated" | "failed";
   message: string;
-  temporaryPassword?: string;
+  temporaryPassword?: string | null;
 }
 
 export interface EntraResetPasswordResult {
@@ -64,7 +64,7 @@ export interface EntraResetPasswordResult {
   message:        string;
   willPost?:      boolean;
   endpoint?:      string;
-  temporaryPassword?: string;
+  temporaryPassword?: string | null;
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
 }

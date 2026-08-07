@@ -52,8 +52,6 @@ interface EventsEntry {
   location: string | null;
   device: string | null;
   status: string | null;
-  ipAddress: string | null;
-  application: string | null;
 }
 interface EntraGetSignInLogsData {
   events: EventsEntry[];

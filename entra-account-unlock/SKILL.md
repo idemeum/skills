@@ -22,9 +22,9 @@ metadata:
   examples:
     - "user is locked out of their Microsoft Entra account"
     - "too many failed sign-in attempts on Azure AD"
-    - "Entra account is locked after wrong password attempts"
-    - "unlock this user's Microsoft 365 account"
-    - "smart lockout triggered on Entra ID"
+    - "Entra account is locked after bad password attempts"
+    - "unlock this user's Azure AD account"
+    - "Microsoft Entra lockout after wrong password"
   pill:
     label: Unlock Entra Account
     goal: I'm locked out of my Microsoft Entra account after too many failed sign-in attempts — unlock my account so I can sign in again
@@ -101,8 +101,8 @@ Present the preview to the user showing what will happen.
 
 Call `c_entra_unlock_account` with `dryRun: false`. This step's params has `dryRun` authored as `false` — G4 fires the consent gate automatically before execution.
 
-- If `status` is `"initiated"` → the account unlock has been submitted successfully ("Account unlocked."); proceed to verification
-- If `status` is `"failed"` → report the error to the user and stop
+- If `status` is `"initiated"` → proceed to verification
+- If `status` is `"failed"` → report the error message to the user
 
 **Step 7 — Verify the unlock**
 
@@ -112,7 +112,7 @@ Call `c_entra_get_user_info` with the confirmed UPN to confirm the lockout has b
 
 Tell the user:
 - Their account has been unlocked and they can sign in again
-- If sign-in logs showed suspicious activity, strongly recommend changing their password immediately (suggest `entra-password-reset`)
-- If MFA seems misconfigured or repeatedly failing as part of the lockout pattern, suggest `entra-mfa-reset`
+- If sign-in logs showed suspicious activity, strongly recommend changing their password immediately (suggest `entra-password-reset` skill or self-service via the SSPR portal)
 - If the lockout was from their own failed attempts, remind them of their current password or suggest a password reset if they've forgotten it
+- If MFA prompts are also failing, `entra-mfa-reset` may be needed as a follow-up
 - Smart lockout in Entra may re-lock the account if the underlying cause (wrong cached password on a device, misconfigured app) is not resolved — help identify and fix stale cached credentials if applicable
