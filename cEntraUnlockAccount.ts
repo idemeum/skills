@@ -5,7 +5,7 @@
  *
  * Wire contract
  * -------------
- * POST ${CLOUD_GATEWAY_URL}/entra/users/{upn}/unlock
+ * PATCH ${CLOUD_GATEWAY_URL}/entra/users/{upn}/unlock
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
  *   Body: {"accountEnabled":true}
  */

@@ -5,9 +5,9 @@
  *
  * Wire contract
  * -------------
- * POST ${CLOUD_GATEWAY_URL}/entra/users/{upn}/password/reset
+ * PATCH ${CLOUD_GATEWAY_URL}/entra/users/{upn}/password/reset
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
- *   Body: {"passwordProfile":{"forceChangePasswordNextSignIn":true}}
+ *   Body: {"passwordProfile":{"password":"{{generated:password}}","forceChangePasswordNextSignIn":true}}
  */
 
 import { z } from "zod";
@@ -29,7 +29,6 @@ export const meta = {
   outputKeys: [
     "status",
     "message",
-    "temporaryPassword",
     "willPost",
     "endpoint",
     "httpStatus",
@@ -56,7 +55,6 @@ export const meta = {
 interface EntraResetPasswordData {
   status:  "initiated" | "failed";
   message: string;
-  temporaryPassword?: string | null;
 }
 
 export interface EntraResetPasswordResult {
@@ -64,7 +62,6 @@ export interface EntraResetPasswordResult {
   message:        string;
   willPost?:      boolean;
   endpoint?:      string;
-  temporaryPassword?: string | null;
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
 }
@@ -106,6 +103,5 @@ export async function run(args: {
   return {
     status:  d.status === "initiated" ? "ok" : "failed",
     message: d.message,
-    ...(d.temporaryPassword != null && { temporaryPassword: d.temporaryPassword }),
   };
 }
