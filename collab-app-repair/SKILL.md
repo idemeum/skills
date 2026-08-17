@@ -79,8 +79,9 @@ Call `list_audio_devices` to enumerate available audio devices and the system de
 
 **Step 3 — Check app permissions (mic / camera / screen recording)**
 `Condition:` only run if the user's complaint involves mic, camera, speaker, or screen share. Call `check_app_permissions` for the affected app:
-- `appBundleId` for macOS — e.g. `com.microsoft.teams2`, `com.tinyspeck.slackmacgap`, `us.zoom.xos`, `Cisco-Systems.Spark`
-- Windows path is the executable
+- Pass the value as `appName` — the tool takes no other parameter
+- On macOS use the bundle id — e.g. `com.microsoft.teams2`, `com.tinyspeck.slackmacgap`, `us.zoom.xos`, `Cisco-Systems.Spark`
+- On Windows use the executable path
 
 Required permissions vary per symptom:
 - **Mic problem** — Microphone permission must be granted

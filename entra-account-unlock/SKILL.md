@@ -1,30 +1,29 @@
 ---
 name: entra-account-unlock
-description: Unlocks a Microsoft Entra account that was locked out after too many failed sign-in attempts. Diagnoses the lockout cause using sign-in logs, clears the lockout state, and verifies the account is accessible again. Use when the user says "I'm locked out of my Microsoft account", "too many failed login attempts", or similar Entra account lockout complaints.
+description: Unlocks a Microsoft Entra ID account that was locked out after too many failed sign-in attempts, diagnosing the lockout cause using sign-in logs before clearing it. Use when the user says "I'm locked out of my Microsoft account", "too many failed login attempts on Entra", or similar Entra account lockout complaints.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
   - detect_identity_provider
   - detect_idp_username
-  - request_user_input
   - wait_for_user_ack
+  - request_user_input
   - c_entra_get_user_info
   - c_entra_get_sign_in_logs
   - c_entra_unlock_account
-  - present_preview
 metadata:
   prerequisites:
     before-corrective:
       - detect_identity_provider
-      - c_entra_get_user_info
   maxAggregateRisk: high
   userLabel: "Unlock a locked Entra account"
   examples:
-    - "user is locked out of their Microsoft Entra account"
-    - "too many failed sign-in attempts on Azure AD"
-    - "Entra account is locked after bad password attempts"
-    - "unlock this user's Azure AD account"
-    - "Microsoft Entra lockout after wrong password"
+    - "user is locked out of their Microsoft Entra account after too many bad passwords"
+    - "too many failed sign-in attempts on Azure AD, account locked"
+    - "Entra account shows locked out, needs to be cleared"
+    - "unlock this user's Microsoft Entra account"
+    - "Azure AD smart lockout triggered, user can't sign in"
+    - "Entra account locked after repeated failed logins from a stale device"
   pill:
     label: Unlock Entra Account
     goal: I'm locked out of my Microsoft Entra account after too many failed sign-in attempts — unlock my account so I can sign in again
@@ -35,84 +34,86 @@ metadata:
 
 ## When to use
 
-Use this skill when a Microsoft Entra user is locked out after too many failed sign-in attempts. This skill diagnoses the lockout cause using sign-in logs, clears the lockout, and verifies the account is accessible.
+Use this skill when a Microsoft Entra ID user is locked out after too many failed sign-in attempts (Entra smart lockout). This skill diagnoses the lockout cause from sign-in logs, clears the lockout, and verifies the account is accessible again.
 
-Do NOT use for Okta or Google account lockouts — those require different admin APIs. Do NOT use when the account is disabled (not locked out) — that requires an admin to re-enable the account through a different process.
+Do NOT use for Okta or Google account lockouts — those require different admin APIs. Do NOT use when the account is disabled rather than locked out — that is a directory admin action outside this skill's scope. Do NOT use for MFA re-enrollment issues (`entra-mfa-reset`), forgotten passwords (`entra-password-reset`), missing app/group access (`entra-access-request`), licence problems (`entra-license-assign`), or role assignment requests (`entra-role-assign`).
 
 ---
 
 ## Steps
 
-**Step 1 — Identify the target user**
+**Step 1 — Detect the identity provider**
 
 Call `detect_identity_provider`. Check if `"entra"` appears in `output.primary` OR `output.secondary`. If Entra is not detected in either field, this skill is not applicable — tell the user their device is not enrolled with Microsoft Entra and suggest they create a support ticket.
 
-If Entra is detected, call `detect_idp_username` with `idp: "entra"`.
+**Step 2 — Auto-discover the UPN**
 
-- If `primaryUsername` is returned → confirm with the user via `wait_for_user_ack`: "Is this your Microsoft account: {primaryUsername}?"
-- If `candidates` has multiple entries → present the choices via `wait_for_user_ack` and let the user pick
-- If `primaryUsername` is null → call `request_user_input` asking for their Microsoft Entra UPN (explain that it may look like an email address, e.g. alice@example.com, and may differ from their personal email in hybrid AD setups)
+Call `detect_idp_username` with `idp: "entra"`.
 
-The confirmed UPN is used as `userPrincipalName` for all subsequent tool calls.
+**Step 3 — Confirm the account**
 
-**Step 2 — Verify lockout state**
+Call `wait_for_user_ack`.
+
+- If `primaryUsername` was returned → ask "Is this your Microsoft account: {primaryUsername}?" with Yes / No options
+- If `candidates` has multiple entries → present each as an option, plus a "different account" escape option
+- Include the "different account" escape option in all cases
+
+**Step 4 — Capture the UPN manually**
+
+Call `request_user_input` asking for their Microsoft Entra UPN (explain it may look like an email address, e.g. alice@example.com, and may differ from their personal email in hybrid AD setups). Only when Step 2 found no username, or the user chose the escape option in Step 3.
+
+The confirmed UPN from Step 3 or Step 4 is used for all subsequent tool calls.
+
+**Step 5 — Verify lockout state**
 
 Call `c_entra_get_user_info` with the confirmed UPN.
 
-- If the tool returns `status: "not-configured"` → tell the user that the cloud gateway is not set up on this machine and they should contact their IT administrator
-- If the tool returns `status: "failed"` with `httpStatus: 404` → the UPN was not found in Entra. Ask the user to double-check the spelling
-- If `lockedOut` is `false` → inform the user their account is NOT currently locked out. The issue may be something else (wrong password, MFA failure, account disabled). If `accountEnabled` is `false`, suggest they contact their admin to re-enable the account
+- If `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
+- If `status: "failed"` with `httpStatus: 404` → the UPN was not found in Entra; ask the user to double-check the spelling
+- If `lockedOut` is `false` → tell the user the account is NOT currently locked out. If `accountEnabled` is also `false`, the account is disabled instead and this skill does not apply — direct them to their admin
 - If `lockedOut` is `true` → proceed with the unlock flow
 - On success, note the `displayName` for user-friendly messaging
 
-**Step 3 — Diagnose lockout cause**
+**Step 6 — Diagnose the lockout cause**
 
 Call `c_entra_get_sign_in_logs` with the confirmed UPN.
 
-Analyze the sign-in events:
-- Look for patterns of failed attempts (repeated failures from the same or different locations)
-- Check if failures come from a single IP/location (likely the user's own failed attempts) or multiple diverse locations (possible brute-force attack)
-- Note the error codes — common ones: 50126 (invalid credentials), 50053 (account locked), 50057 (account disabled)
-- Check the timestamps — are the failures clustered in a short period?
+Look for repeated failures from a single location/device (likely the user's own mistyped attempts) versus multiple diverse locations or IPs (possible brute-force). Note error codes and the time window of the failures.
 
-Present the analysis to the user:
-- "Your account was locked after X failed sign-in attempts between {startTime} and {endTime}"
-- If all failures are from a single location/device → "This appears to be from your own sign-in attempts"
-- If failures come from multiple diverse locations → "WARNING: Some sign-in attempts came from unusual locations ({locations}). This may indicate unauthorized access attempts. Consider resetting your password after unlocking."
+**Step 7 — Confirm the unlock**
 
-**Step 4 — Security assessment before unlock**
+If sign-in logs show suspicious activity (diverse locations, unfamiliar devices), use `wait_for_user_ack` with options "Unlock and recommend password reset" / "Unlock only" / "Cancel" and warn the user about the unusual sign-in attempts.
 
-If the sign-in logs show suspicious activity (multiple diverse locations, unusual devices, or patterns consistent with brute-force attacks):
-- Use `wait_for_user_ack` to warn: "Sign-in logs show potentially suspicious activity from {locations}. It is recommended to reset your password after unlocking the account. Do you want to proceed with the unlock?"
-- If the user confirms, proceed. Also recommend `entra-password-reset` as a follow-up action.
-
-If the sign-in logs show normal activity (user's own failed attempts):
-- Use `wait_for_user_ack` to confirm: "Unlock account for {displayName} ({upn})?"
+Otherwise, use `wait_for_user_ack` to confirm: "Unlock account for {displayName} ({upn})?"
 
 MUST get explicit confirmation before proceeding. Do not skip this step.
 
-**Step 5 — Preview the unlock (dry-run)**
+**Step 8 — Execute the unlock**
 
-Call `c_entra_unlock_account` with `dryRun: true`. This step's params has `dryRun` authored as `true` — G4 treats this as binding and short-circuits the dry-run gate.
+Call `c_entra_unlock_account` with the confirmed UPN.
 
-Present the preview to the user showing what will happen.
+- If `status` is `"ok"` → proceed to verification
+- If `status` is `"failed"` → report the `failureReason` (and `httpStatus` if present) to the user and suggest retrying or filing a ticket
+- If `status` is `"not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
 
-**Step 6 — Execute the unlock**
-
-Call `c_entra_unlock_account` with `dryRun: false`. This step's params has `dryRun` authored as `false` — G4 fires the consent gate automatically before execution.
-
-- If `status` is `"initiated"` → proceed to verification
-- If `status` is `"failed"` → report the error message to the user
-
-**Step 7 — Verify the unlock**
+**Step 9 — Verify the unlock**
 
 Call `c_entra_get_user_info` with the confirmed UPN to confirm the lockout has been cleared (`lockedOut` should now be `false`).
 
-**Step 8 — Post-unlock guidance**
+**Step 10 — Post-unlock guidance**
 
 Tell the user:
 - Their account has been unlocked and they can sign in again
-- If sign-in logs showed suspicious activity, strongly recommend changing their password immediately (suggest `entra-password-reset` skill or self-service via the SSPR portal)
-- If the lockout was from their own failed attempts, remind them of their current password or suggest a password reset if they've forgotten it
-- If MFA prompts are also failing, `entra-mfa-reset` may be needed as a follow-up
-- Smart lockout in Entra may re-lock the account if the underlying cause (wrong cached password on a device, misconfigured app) is not resolved — help identify and fix stale cached credentials if applicable
+- If sign-in logs showed suspicious activity, strongly recommend a password reset via `entra-password-reset` or self-service SSPR
+- If the lockout came from their own repeated failed attempts, remind them to double-check their password, and to clear any stale cached credentials on devices before retrying
+- Smart lockout may re-trigger shortly after unlock if a device keeps retrying with an old password
+- If MFA also needs re-registration, mention `entra-mfa-reset` as a separate follow-up
+
+---
+
+## Edge cases
+
+- **Account not locked out:** if `lockedOut` is already `false`, do not call the corrective — tell the user there is nothing to unlock; if they still cannot sign in, the cause is something else (password, MFA, or disabled account).
+- **Account disabled:** if `accountEnabled` is `false` in addition to `lockedOut` being `false`, this is a directory admin action outside this skill — direct the user to their admin.
+- **Suspicious sign-in activity:** proceed with the unlock regardless — the user still needs access — but flag the activity and recommend a password reset as a follow-up.
+- **Lockout recurs quickly:** a device with cached stale credentials can re-trigger smart lockout almost immediately after unlock; mention this in the closing guidance.

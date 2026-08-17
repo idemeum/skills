@@ -1,13 +1,13 @@
 /**
- * c_entra_reset_password
+ * c_entra_assign_app
  *
- * Corrective cloud-proxy tool: forces a password reset for an entra user. generates a temporary password that is emailed by the gateway to the user's recovery address (othermails) and is never returned to the agent. precondition: this operation must not be called when the user has no recoveryemail (i.e. othermails is empty), because the gateway would have nowhere to deliver the temporary password, leaving the user locked out with a changed credential and no way to retrieve it. the caller must first check recoveryemail from get_user_info and stop if it is null via the cloud gateway. supports dry-run to preview the operation without executing.
+ * Corrective cloud-proxy tool: assigns an entra user to an enterprise application (service principal), granting them access to that app via a default app role via the cloud gateway. supports dry-run to preview the operation without executing.
  *
  * Wire contract
  * -------------
- * PATCH ${CLOUD_GATEWAY_URL}/entra/users/{upn}/password/reset
+ * POST ${CLOUD_GATEWAY_URL}/entra/users/{upn}/apps/{servicePrincipalId}
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
- *   Body: {"passwordProfile":{"password":"{{generated:password}}","forceChangePasswordNextSignIn":true}}
+ *   Body: {"principalId":"{userId}","resourceId":"{{param:servicePrincipalId}}","appRoleId":"00000000-0000-0000-0000-000000000000"}
  */
 
 import { z } from "zod";
@@ -16,9 +16,9 @@ import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGatewa
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
-  name: "c_entra_reset_password",
+  name: "c_entra_assign_app",
   description:
-    "Forces a password reset for an Entra user. Generates a temporary password that is emailed by the gateway to the user's recovery address (otherMails) and is never returned to the agent. PRECONDITION: This operation MUST NOT be called when the user has no recoveryEmail (i.e. otherMails is empty), because the gateway would have nowhere to deliver the temporary password, leaving the user locked out with a changed credential and no way to retrieve it. The caller must first check recoveryEmail from get_user_info and stop if it is null via the cloud gateway. Supports dry-run to preview the operation without executing.",
+    "Assigns an Entra user to an enterprise application (service principal), granting them access to that app via a default app role via the cloud gateway. Supports dry-run to preview the operation without executing.",
   riskLevel:       "high",
   destructive:     false,
   requiresConsent: true,
@@ -29,8 +29,6 @@ export const meta = {
   outputKeys: [
     "status",
     "message",
-    "deliveryMethod",
-    "notificationEmail",
     "willPost",
     "endpoint",
     "httpStatus",
@@ -45,6 +43,8 @@ export const meta = {
         "must be a UPN (e.g. alice@example.com)",
       )
       .describe("The Microsoft Entra ID user's UPN."),
+    servicePrincipalId: z.string().min(1)
+      .describe("Object ID (GUID) of the target enterprise application (service principal), as returned by an app search."),
     dryRun: z
       .boolean()
       .nullable().optional()
@@ -54,20 +54,16 @@ export const meta = {
 
 // -- Types --------------------------------------------------------------------
 
-interface EntraResetPasswordData {
+interface EntraAssignAppData {
   status:  "initiated" | "failed";
   message: string;
-  deliveryMethod?: string;
-  notificationEmail?: string;
 }
 
-export interface EntraResetPasswordResult {
+export interface EntraAssignAppResult {
   status:         "ok" | "failed" | "not-configured";
   message:        string;
   willPost?:      boolean;
   endpoint?:      string;
-  deliveryMethod?: string;
-  notificationEmail?: string;
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
 }
@@ -76,22 +72,24 @@ export interface EntraResetPasswordResult {
 
 export async function run(args: {
   userPrincipalName: string;
+  servicePrincipalId: string;
   dryRun?: boolean;
-}): Promise<EntraResetPasswordResult> {
+}): Promise<EntraAssignAppResult> {
   const baseUrl = process.env["CLOUD_GATEWAY_URL"];
   const upn = encodeURIComponent(args.userPrincipalName);
-  const path = `/entra/users/${upn}/password/reset`;
+  const servicePrincipalId = encodeURIComponent(String(args.servicePrincipalId));
+  const path = `/entra/users/${upn}/apps/${servicePrincipalId}`;
 
   if (args.dryRun) {
     return {
       status:   "ok",
-      message:  `Would POST reset password for ${args.userPrincipalName}.`,
+      message:  `Would POST assign app for ${args.userPrincipalName}.`,
       willPost: true,
       endpoint: baseUrl ? baseUrl.replace(/\/$/, "") + path : "(CLOUD_GATEWAY_URL not set)",
     };
   }
 
-  const r = await cloudGatewayCall<EntraResetPasswordData>({
+  const r = await cloudGatewayCall<EntraAssignAppData>({
     method: "POST",
     path,
   });
@@ -109,7 +107,5 @@ export async function run(args: {
   return {
     status:  d.status === "initiated" ? "ok" : "failed",
     message: d.message,
-    ...(d.deliveryMethod != null && { deliveryMethod: d.deliveryMethod }),
-    ...(d.notificationEmail != null && { notificationEmail: d.notificationEmail }),
   };
 }

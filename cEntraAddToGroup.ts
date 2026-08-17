@@ -1,13 +1,13 @@
 /**
- * c_entra_reset_password
+ * c_entra_add_to_group
  *
- * Corrective cloud-proxy tool: forces a password reset for an entra user. generates a temporary password that is emailed by the gateway to the user's recovery address (othermails) and is never returned to the agent. precondition: this operation must not be called when the user has no recoveryemail (i.e. othermails is empty), because the gateway would have nowhere to deliver the temporary password, leaving the user locked out with a changed credential and no way to retrieve it. the caller must first check recoveryemail from get_user_info and stop if it is null via the cloud gateway. supports dry-run to preview the operation without executing.
+ * Corrective cloud-proxy tool: adds an entra user to a security or microsoft 365 group, granting them every resource that group confers. precondition: this operation must not be called for a group whose membershiprule is non-null. those groups have dynamic (rule-based) membership computed by entra; microsoft graph rejects a direct member add, so the call fails. the caller must check membershiprule from the group search first and exclude such groups from the choices offered to the user, explaining that membership is rule-driven and it must change the rule via the cloud gateway. supports dry-run to preview the operation without executing.
  *
  * Wire contract
  * -------------
- * PATCH ${CLOUD_GATEWAY_URL}/entra/users/{upn}/password/reset
+ * POST ${CLOUD_GATEWAY_URL}/entra/users/{upn}/groups/{groupId}
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
- *   Body: {"passwordProfile":{"password":"{{generated:password}}","forceChangePasswordNextSignIn":true}}
+ *   Body: {"@odata.id":"https://graph.microsoft.com/v1.0/directoryObjects/{userId}"}
  */
 
 import { z } from "zod";
@@ -16,9 +16,9 @@ import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGatewa
 // -- Meta ---------------------------------------------------------------------
 
 export const meta = {
-  name: "c_entra_reset_password",
+  name: "c_entra_add_to_group",
   description:
-    "Forces a password reset for an Entra user. Generates a temporary password that is emailed by the gateway to the user's recovery address (otherMails) and is never returned to the agent. PRECONDITION: This operation MUST NOT be called when the user has no recoveryEmail (i.e. otherMails is empty), because the gateway would have nowhere to deliver the temporary password, leaving the user locked out with a changed credential and no way to retrieve it. The caller must first check recoveryEmail from get_user_info and stop if it is null via the cloud gateway. Supports dry-run to preview the operation without executing.",
+    "Adds an Entra user to a security or Microsoft 365 group, granting them every resource that group confers. PRECONDITION: This operation MUST NOT be called for a group whose membershipRule is non-null. Those groups have dynamic (rule-based) membership computed by Entra; Microsoft Graph rejects a direct member add, so the call fails. The caller must check membershipRule from the group search first and exclude such groups from the choices offered to the user, explaining that membership is rule-driven and IT must change the rule via the cloud gateway. Supports dry-run to preview the operation without executing.",
   riskLevel:       "high",
   destructive:     false,
   requiresConsent: true,
@@ -29,8 +29,6 @@ export const meta = {
   outputKeys: [
     "status",
     "message",
-    "deliveryMethod",
-    "notificationEmail",
     "willPost",
     "endpoint",
     "httpStatus",
@@ -45,6 +43,8 @@ export const meta = {
         "must be a UPN (e.g. alice@example.com)",
       )
       .describe("The Microsoft Entra ID user's UPN."),
+    groupId: z.string().min(1)
+      .describe("Object ID (GUID) of the target group, as returned by a group search."),
     dryRun: z
       .boolean()
       .nullable().optional()
@@ -54,20 +54,16 @@ export const meta = {
 
 // -- Types --------------------------------------------------------------------
 
-interface EntraResetPasswordData {
+interface EntraAddToGroupData {
   status:  "initiated" | "failed";
   message: string;
-  deliveryMethod?: string;
-  notificationEmail?: string;
 }
 
-export interface EntraResetPasswordResult {
+export interface EntraAddToGroupResult {
   status:         "ok" | "failed" | "not-configured";
   message:        string;
   willPost?:      boolean;
   endpoint?:      string;
-  deliveryMethod?: string;
-  notificationEmail?: string;
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
 }
@@ -76,22 +72,24 @@ export interface EntraResetPasswordResult {
 
 export async function run(args: {
   userPrincipalName: string;
+  groupId: string;
   dryRun?: boolean;
-}): Promise<EntraResetPasswordResult> {
+}): Promise<EntraAddToGroupResult> {
   const baseUrl = process.env["CLOUD_GATEWAY_URL"];
   const upn = encodeURIComponent(args.userPrincipalName);
-  const path = `/entra/users/${upn}/password/reset`;
+  const groupId = encodeURIComponent(String(args.groupId));
+  const path = `/entra/users/${upn}/groups/${groupId}`;
 
   if (args.dryRun) {
     return {
       status:   "ok",
-      message:  `Would POST reset password for ${args.userPrincipalName}.`,
+      message:  `Would POST add to group for ${args.userPrincipalName}.`,
       willPost: true,
       endpoint: baseUrl ? baseUrl.replace(/\/$/, "") + path : "(CLOUD_GATEWAY_URL not set)",
     };
   }
 
-  const r = await cloudGatewayCall<EntraResetPasswordData>({
+  const r = await cloudGatewayCall<EntraAddToGroupData>({
     method: "POST",
     path,
   });
@@ -109,7 +107,5 @@ export async function run(args: {
   return {
     status:  d.status === "initiated" ? "ok" : "failed",
     message: d.message,
-    ...(d.deliveryMethod != null && { deliveryMethod: d.deliveryMethod }),
-    ...(d.notificationEmail != null && { notificationEmail: d.notificationEmail }),
   };
 }

@@ -1,32 +1,32 @@
 ---
 name: entra-password-reset
-description: Forces a password reset for a Microsoft Entra user via the admin Graph API, generating a temporary password the user must change on next sign-in. Use when the user reports a forgotten password, SSPR is disabled or unavailable, or an admin needs to force-reset a user's password.
+description: Forces a password reset for a Microsoft Entra ID user via the admin Graph API, generating a temporary password that the gateway emails to the user's recovery address and the user must change on next sign-in. Use when the user reports a forgotten Microsoft/Entra password, SSPR is disabled or unavailable for their Entra tenant, or an admin needs to force-reset an Entra account's password.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
   - detect_identity_provider
   - detect_idp_username
-  - request_user_input
   - wait_for_user_ack
+  - request_user_input
   - c_entra_get_user_info
+  - c_entra_get_sign_in_logs
   - c_entra_reset_password
-  - present_preview
 metadata:
   prerequisites:
     before-corrective:
       - detect_identity_provider
-      - c_entra_get_user_info
   maxAggregateRisk: high
   userLabel: "Reset an Entra user's password"
   examples:
     - "reset this user's Microsoft Entra password"
-    - "user forgot their Entra password and SSPR isn't working"
-    - "I need to force a password reset for a Microsoft account"
-    - "generate a temporary Entra password for a new hire"
-    - "self-service password reset failed on Azure AD"
+    - "force a password reset for an Azure AD account"
+    - "generate a temporary password for a new hire in Entra"
+    - "SSPR is disabled for this Entra user, force reset password"
+    - "user forgot their Microsoft 365 password and self-service reset isn't available"
+    - "admin needs to reset an Entra account password after suspected compromise"
   pill:
     label: Reset Entra Password
-    goal: I need to reset a Microsoft Entra password because self-service password reset is unavailable or I need to force-reset a user's password
+    goal: I need to reset a Microsoft Entra user's password because self-service password reset is unavailable or an admin needs to force-reset it
     icon: KeyRound
     iconClass: text-red-500
     order: 21
@@ -34,72 +34,79 @@ metadata:
 
 ## When to use
 
-Use this skill when a Microsoft Entra user needs a password reset. This generates a temporary password via the Graph API that the user must change on next sign-in.
+Use when a Microsoft Entra ID user needs a password reset via the admin Graph API — generates a temporary password the user must change on next sign-in, delivered by the gateway to the user's recovery email.
 
-Appropriate when:
-- The user forgot their password
-- SSPR is disabled for the tenant or user
-- SSPR failed and the user cannot complete it
-- An admin needs to force-reset the password (e.g. suspected compromise, new hire onboarding)
+Appropriate for: forgotten Entra/Microsoft 365 password, SSPR disabled or failed, or admin force-reset (suspected compromise, onboarding).
 
-Do NOT use for Okta or Google password resets — those require different admin APIs and their own connector-specific skills. Do NOT use for MFA re-enrollment issues (see `entra-mfa-reset`) or lockout issues where the password is not the problem (see `entra-account-unlock`).
+Do NOT use for Okta or Google password resets. Do NOT use if the account is locked out rather than password-forgotten — use `entra-account-unlock` first. Do NOT use for MFA re-enrollment (`entra-mfa-reset`), access requests (`entra-access-request`), licensing (`entra-license-assign`), or role assignment (`entra-role-assign`).
 
-**Security boundary:** the temporary password is displayed ONLY to the support agent. The agent MUST communicate it to the user via a secure out-of-band channel (e.g. in-person, encrypted message). NEVER display the temporary password in the chat UI summary or log it.
+**Precondition:** the gateway delivers the temporary password by emailing the user's recovery address (`otherMails`). If no recovery email is on file, do NOT reset — it would strand the user with a changed credential and no way to retrieve it. Always check `recoveryEmail` from `c_entra_get_user_info` first and stop if null.
+
+**Security boundary:** the temporary password is generated and delivered entirely by the gateway; it is never returned to the agent. Never type, paste, or interpolate it into this conversation — only confirm that a reset occurred and where it was sent.
 
 ---
 
 ## Steps
 
-**Step 1 — Identify the target user**
+**Step 1 — Detect the identity provider**
 
-Call `detect_identity_provider`. Check if `"entra"` appears in `output.primary` OR `output.secondary`. If Entra is not detected in either field, this skill is not applicable — tell the user their device is not enrolled with Microsoft Entra and suggest they create a support ticket.
+Call `detect_identity_provider`. Check if `"entra"` appears in `output.primary` OR `output.secondary`. If not detected, this skill does not apply — tell the user their device is not enrolled with Microsoft Entra and suggest a support ticket.
 
-If Entra is detected, call `detect_idp_username` with `idp: "entra"`.
+**Step 2 — Auto-discover the username**
 
-- If `primaryUsername` is returned → confirm with the user via `wait_for_user_ack`: "Is this your Microsoft account: {primaryUsername}?"
-- If `candidates` has multiple entries → present the choices via `wait_for_user_ack` and let the user pick
-- If `primaryUsername` is null → call `request_user_input` asking for their Microsoft Entra UPN (explain that it may look like an email address, e.g. alice@example.com, and may differ from their personal email in hybrid AD setups)
+Call `detect_idp_username` with `idp: "entra"`.
 
-The confirmed UPN is used as `userPrincipalName` for all subsequent tool calls.
+**Step 3 — Confirm the account**
 
-**Step 2 — Verify user account exists**
+Use `wait_for_user_ack` to confirm, e.g. "Is this your Microsoft account: {primaryUsername}?" If `candidates` has multiple entries, present up to 4 choices plus a "different account" escape option.
+
+**Step 4 — Capture UPN manually**
+
+Condition: only when Step 2 found no username, or the user chose "different account" in Step 3. Call `request_user_input` asking for their Entra UPN (may look like an email, may differ from personal email in hybrid AD setups).
+
+**Step 5 — Verify account and recovery email**
 
 Call `c_entra_get_user_info` with the confirmed UPN.
 
-- If the tool returns `status: "not-configured"` → tell the user that the cloud gateway is not set up on this machine and they should contact their IT administrator
-- If the tool returns `status: "failed"` with `httpStatus: 404` → the UPN was not found in Entra. Ask the user to double-check the spelling
-- If `accountEnabled` is `false` → warn the user their account is disabled. A password reset can still proceed but the user won't be able to sign in until the account is re-enabled
-- If `lockedOut` is `true` → inform the user that the account is also locked out. After the password reset, they may also need an account unlock (suggest `entra-account-unlock`)
-- On success, note the `displayName` for user-friendly messaging
+- `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
+- `status: "failed"`, `httpStatus: 404` → UPN not found; ask user to check spelling
+- `accountEnabled` is `false` → warn the account is disabled; reset can proceed but sign-in stays blocked until re-enabled
+- `lockedOut` is `true` → note this is separate; suggest `entra-account-unlock` as a follow-up
+- **`recoveryEmail` is null/empty → STOP.** Tell the user there is no recovery address on file, so the gateway has nowhere to deliver a temporary password. Do not proceed; advise adding a recovery email or contacting an admin
+- On success with a valid `recoveryEmail`, note `displayName` for messaging
 
-**Step 3 — Confirm the reset**
+**Step 6 — Review recent sign-in activity**
 
-Use `wait_for_user_ack` to confirm: "This will reset the password for {displayName} ({upn}). A temporary password will be generated that the user must change on their next sign-in. Do you want to proceed?"
+Call `c_entra_get_sign_in_logs` with the confirmed UPN. Check for repeated failures or unusual locations suggesting compromise rather than a simply forgotten password. If found, mention it — a reset is still the right remedy.
 
-MUST get explicit confirmation before proceeding. Do not skip this step.
+**Step 7 — Confirm the reset**
 
-**Step 4 — Preview the reset (dry-run)**
+Use `wait_for_user_ack` to confirm: "This will reset the password for {displayName} ({upn}). A temporary password will be emailed to their recovery address, and they must change it on next sign-in. Proceed?" MUST get explicit confirmation.
 
-Call `c_entra_reset_password` with `dryRun: true`. This step's params has `dryRun` authored as `true` — G4 treats this as binding and short-circuits the dry-run gate.
+**Step 8 — Execute the reset**
 
-Present the preview to the user showing what will happen.
+Call `c_entra_reset_password` with the confirmed UPN.
 
-**Step 5 — Execute the reset**
+- `status: "ok"` → the gateway emailed a temporary password to the recovery address; proceed to verification. The password never reaches the agent
+- `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
+- `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 
-Call `c_entra_reset_password` with `dryRun: false`. This step's params has `dryRun` authored as `false` — G4 fires the consent gate automatically before execution.
+**Step 9 — Verify account status**
 
-- If `status` is `"initiated"` and `temporaryPassword` is present → proceed to delivery
-- If `status` is `"failed"` → report the error message to the user
+Call `c_entra_get_user_info` with the confirmed UPN to confirm the account is in the expected state after the reset.
 
-**Step 6 — Verify account status**
+**Step 10 — Deliver guidance**
 
-Call `c_entra_get_user_info` with the confirmed UPN to verify the account is in the expected state after the reset.
+Tell the user (without stating the password itself):
+- A temporary password was generated for {displayName} ({upn}) and emailed to {recoveryEmail} — check there, including spam
+- They MUST change it on next sign-in
+- If also locked out, run `entra-account-unlock`; if MFA needs re-registration, run `entra-mfa-reset`
 
-**Step 7 — Deliver the temporary password**
+---
 
-Present the temporary password to the support agent with clear instructions:
-- The temporary password is: {temporaryPassword}
-- Communicate this to the user via a SECURE out-of-band channel (in-person, encrypted message, phone call)
-- Do NOT email the temporary password in plaintext
-- The user MUST change this password on their next sign-in
-- If the user's account was locked, they may also need an account unlock (see `entra-account-unlock`)
+## Edge cases
+
+- **No recovery email:** never call `c_entra_reset_password` (Step 5) — this is a hard stop, not a warning.
+- **Account disabled:** reset can still be issued, but sign-in remains blocked until an admin re-enables the account.
+- **Account locked out:** unlocking and resetting are independent; mention `entra-account-unlock` as a separate follow-up.
+- **Suspicious sign-in activity:** proceed with the reset regardless — compromise is a stronger reason to reset — but flag it to the user.

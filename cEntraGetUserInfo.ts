@@ -1,7 +1,7 @@
 /**
  * c_entra_get_user_info
  *
- * Diagnostic cloud-proxy tool: fetches an entra (azure ad) user's profile and account status. returns display name, account enabled/disabled, lockout state, last sign-in timestamp, job title, and department via the cloud gateway.
+ * Diagnostic cloud-proxy tool: fetches an entra (azure ad) user's profile and account status. returns display name, account enabled/disabled, lockout state, last sign-in timestamp, job title, department, usagelocation (required by microsoft before a licence can be assigned to the user), and recoveryemail (the alternate address a password reset is delivered to) via the cloud gateway.
  *
  * Wire contract
  * -------------
@@ -17,7 +17,7 @@ import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGatewa
 export const meta = {
   name: "c_entra_get_user_info",
   description:
-    "Fetches an Entra (Azure AD) user's profile and account status. Returns display name, account enabled/disabled, lockout state, last sign-in timestamp, job title, and department via the cloud gateway.",
+    "Fetches an Entra (Azure AD) user's profile and account status. Returns display name, account enabled/disabled, lockout state, last sign-in timestamp, job title, department, usageLocation (required by Microsoft before a licence can be assigned to the user), and recoveryEmail (the alternate address a password reset is delivered to) via the cloud gateway.",
   riskLevel:       "low",
   destructive:     false,
   requiresConsent: false,
@@ -34,6 +34,8 @@ export const meta = {
     "lastSignIn",
     "jobTitle",
     "department",
+    "usageLocation",
+    "recoveryEmail",
     "lockedOut",
     "httpStatus",
     "failureReason",
@@ -59,6 +61,8 @@ interface EntraGetUserInfoData {
   lastSignIn: string | null;
   jobTitle: string | null;
   department: string | null;
+  usageLocation: string | null;
+  recoveryEmail: string | null;
   lockedOut: boolean;
 }
 
@@ -71,6 +75,8 @@ export interface EntraGetUserInfoResult {
   lastSignIn?: string | null;
   jobTitle?: string | null;
   department?: string | null;
+  usageLocation?: string | null;
+  recoveryEmail?: string | null;
   lockedOut?: boolean;
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
@@ -105,6 +111,8 @@ export async function run(args: {
     lastSignIn: d.lastSignIn,
     jobTitle: d.jobTitle,
     department: d.department,
+    usageLocation: d.usageLocation,
+    recoveryEmail: d.recoveryEmail,
     lockedOut: d.lockedOut,
   };
 }

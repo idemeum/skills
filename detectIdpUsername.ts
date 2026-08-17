@@ -13,10 +13,10 @@
  * Purpose
  * -------
  * Reads the device's existing IDP-agent state to discover the user's
- * IDP login username (email / UPN).  Used by cloud-IDP password-reset
- * to auto-populate the username for `request_idemeum_idp_reset` rather
- * than asking the user via chat narration (which works poorly in
- * practice — the conversationIdRef clears on run end).
+ * IDP login username (email / UPN).  Used by the entra-* cloud-proxy
+ * skills to auto-populate the UPN for the `c_entra_*` tools rather than
+ * asking the user via chat narration (which works poorly in practice —
+ * the conversationIdRef clears on run end).
  *
  * Designed for cross-skill reuse: callers pass `idp` explicitly and
  * the tool does NOT depend on `detect_identity_provider`.  Other
