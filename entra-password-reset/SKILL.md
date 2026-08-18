@@ -1,6 +1,6 @@
 ---
 name: entra-password-reset
-description: Forces a password reset for a Microsoft Entra ID user via the admin Graph API, generating a temporary password that the gateway emails to the user's recovery address and the user must change on next sign-in. Use when the user reports a forgotten Microsoft/Entra password, SSPR is disabled or unavailable for their Entra tenant, or an admin needs to force-reset an Entra account's password.
+description: Forces a password reset for a Microsoft Entra ID user via the admin Graph API, generating a temporary password that the gateway attempts to email to the user's recovery address and never returns to the agent. Use when the user reports a forgotten Microsoft/Entra password, SSPR is disabled or unavailable for their Entra tenant, or an admin needs to force-reset an Entra account's password.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
@@ -42,7 +42,7 @@ Do NOT use for Okta or Google password resets. Do NOT use if the account is lock
 
 **Precondition:** the gateway delivers the temporary password by emailing the user's recovery address (`otherMails`). If no recovery email is on file, do NOT reset — it would strand the user with a changed credential and no way to retrieve it. Always check `recoveryEmail` from `c_entra_get_user_info` first and stop if null.
 
-**Security boundary:** the temporary password is generated and delivered entirely by the gateway; it is never returned to the agent. Never type, paste, or interpolate it into this conversation — only confirm that a reset occurred and where it was sent.
+**Security boundary:** the temporary password is generated entirely by the gateway; it is never returned to the agent. Never type, paste, or interpolate a password into this conversation — only confirm that a reset occurred and how (or whether) it was delivered.
 
 ---
 
@@ -81,25 +81,24 @@ Call `c_entra_get_sign_in_logs` with the confirmed UPN. Check for repeated failu
 
 **Step 7 — Confirm the reset**
 
-Use `wait_for_user_ack` to confirm: "This will reset the password for {displayName} ({upn}). A temporary password will be emailed to their recovery address, and they must change it on next sign-in. Proceed?" MUST get explicit confirmation.
+Use `wait_for_user_ack` to confirm: "This will reset the password for {displayName} ({upn}). A temporary password will be generated and, if possible, emailed to their recovery address. They must change it on next sign-in. Proceed?" MUST get explicit confirmation.
 
 **Step 8 — Execute the reset**
 
 Call `c_entra_reset_password` with the confirmed UPN.
 
-- `status: "ok"` → the gateway emailed a temporary password to the recovery address; proceed to verification. The password never reaches the agent
-- `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
+- `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
+- `status: "ok"` → the password WAS changed regardless of delivery outcome; branch on `deliveryMethod`:
+  - `deliveryMethod: "email"` → the temporary password was sent to `notificationEmail`; tell the user to check that inbox, including spam/junk
+  - `deliveryMethod: "none"` → the password changed but could NOT be emailed; tell the user their password has changed and they must contact IT to obtain it — do NOT tell them to check any inbox
 
-**Step 9 — Verify account status**
-
-Call `c_entra_get_user_info` with the confirmed UPN to confirm the account is in the expected state after the reset.
-
-**Step 10 — Deliver guidance**
+**Step 9 — Deliver guidance**
 
 Tell the user (without stating the password itself):
-- A temporary password was generated for {displayName} ({upn}) and emailed to {recoveryEmail} — check there, including spam
-- They MUST change it on next sign-in
+- The reset succeeded for {displayName} ({upn})
+- If `deliveryMethod` was `"email"` — check {notificationEmail} (including spam) for the temporary password, then change it on next sign-in
+- If `deliveryMethod` was `"none"` — the password has changed but was not delivered; contact IT directly to obtain the new temporary password
 - If also locked out, run `entra-account-unlock`; if MFA needs re-registration, run `entra-mfa-reset`
 
 ---
@@ -107,6 +106,7 @@ Tell the user (without stating the password itself):
 ## Edge cases
 
 - **No recovery email:** never call `c_entra_reset_password` (Step 5) — this is a hard stop, not a warning.
+- **`deliveryMethod: "none"`:** the reset still succeeded — never tell the user to check an inbox in this case; direct them to contact IT for the new password.
 - **Account disabled:** reset can still be issued, but sign-in remains blocked until an admin re-enables the account.
 - **Account locked out:** unlocking and resetting are independent; mention `entra-account-unlock` as a separate follow-up.
 - **Suspicious sign-in activity:** proceed with the reset regardless — compromise is a stronger reason to reset — but flag it to the user.

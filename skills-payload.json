@@ -178,7 +178,7 @@
     {
       "skillId": "entra-password-reset",
       "name": "Reset an Entra user's password",
-      "description": "Forces a password reset for a Microsoft Entra ID user via the admin Graph API, generating a temporary password that the gateway emails to the user's recovery address and the user must change on next sign-in. Use when the user reports a forgotten Microsoft/Entra password, SSPR is disabled or unavailable for their Entra tenant, or an admin needs to force-reset an Entra account's password.",
+      "description": "Forces a password reset for a Microsoft Entra ID user via the admin Graph API, generating a temporary password that the gateway attempts to email to the user's recovery address and never returns to the agent. Use when the user reports a forgotten Microsoft/Entra password, SSPR is disabled or unavailable for their Entra tenant, or an admin needs to force-reset an Entra account's password.",
       "risk": "high",
       "allowedTools": [
         "detect_identity_provider",
@@ -189,7 +189,7 @@
         "c_entra_get_sign_in_logs",
         "c_entra_reset_password"
       ],
-      "steps": 10,
+      "steps": 9,
       "enabled": false
     },
     {
