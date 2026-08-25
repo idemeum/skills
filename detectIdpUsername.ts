@@ -102,6 +102,7 @@ import { promisify } from "util";
 import * as os       from "os";
 import { z }         from "zod";
 import type { Idp }  from "./_shared/idp";
+import { normalizeIdp, idpFromDiscoveryUrl } from "./_shared/idp";
 
 const execAsync = promisify(exec);
 
@@ -621,23 +622,6 @@ async function probeOktaVerifyDataDarwin(): Promise<UsernameCandidate[]> {
 // -- darwin × Jamf Connect probes (IDP-aware) ---------------------------------
 
 /**
- * Normalize an IDP identifier string from Jamf Connect / dscl output to
- * one of the canonical Idp enum values. Returns null for unrecognized.
- *
- * Jamf Connect reports IDP types as: "okta", "azure", "google",
- * "googleidp", "onelogin", "pingfederate", etc. dscl OIDCProvider
- * uses similar values. We only care about the three IDPs this tool
- * supports.
- */
-function normalizeIdp(raw: string): Idp | null {
-  const v = raw.toLowerCase().trim();
-  if (v === "okta") return "okta";
-  if (v === "azure" || v === "azuread" || v === "entra" || v === "entraid") return "entra";
-  if (v === "google" || v === "googleidp" || v === "googleworkspace") return "google";
-  return null;
-}
-
-/**
  * Probe a: `dscl . -read /Users/$USER OIDCProvider OIDCProviderUserName`.
  *
  * Jamf Connect writes the IDP user into the local account schema once
@@ -746,22 +730,6 @@ async function probeJamfConnectDefaultsDarwin(
 }
 
 /**
- * Infer IDP from an OIDC discovery URL host.
- *   https://login.microsoftonline.com/<tenant>/v2.0/... → entra
- *   https://acme.okta.com/.well-known/openid-configuration → okta
- *   https://accounts.google.com/.well-known/openid-configuration → google
- */
-function idpFromDiscoveryUrl(url: string): Idp | null {
-  const lower = url.toLowerCase();
-  if (lower.includes("login.microsoftonline.com") || lower.includes("sts.windows.net")) {
-    return "entra";
-  }
-  if (lower.match(/\.okta(preview|-emea)?\.com/)) return "okta";
-  if (lower.includes("accounts.google.com")) return "google";
-  return null;
-}
-
-/**
  * Probe c: System-scope Jamf Connect plist (FDA-gated).
  *
  * RESEARCHED path `/Library/Preferences/com.jamf.connect.plist`. Same
@@ -840,6 +808,54 @@ async function probeDarwin(idp: Idp): Promise<UsernameCandidate[]> {
 
 // -- Result builder -----------------------------------------------------------
 
+/** Confidence ordering, lowest number wins. */
+function confidenceRank(c: UsernameCandidate): number {
+  return c.confidence === "high" ? 0 : c.confidence === "medium" ? 1 : 2;
+}
+
+/**
+ * Collapse candidates that name the SAME user, then rank by confidence.
+ *
+ * Several sources agreeing is the healthy case, not an ambiguous one: on a
+ * managed Mac, Company Portal + the SSO extension + Office all hold the same
+ * UPN. Returned verbatim, that reads to a skill as "three candidates — ask
+ * the user to choose", and the user is shown a menu of three identical
+ * addresses. Real ambiguity is several DISTINCT usernames (multi-account Okta,
+ * or an Office license still registered to a pre-migration address).
+ *
+ * Matching is case-insensitive because the stores disagree on casing.
+ * The surviving entry keeps the highest confidence seen and merges the source
+ * labels, so corroboration stays visible in the audit trail instead of being
+ * silently dropped. Ranking the result means candidates[0] is the tool's own
+ * best answer, so a choice list is ordered the same way the tool ordered it.
+ */
+function dedupeCandidates(candidates: UsernameCandidate[]): UsernameCandidate[] {
+  const byUser = new Map<string, UsernameCandidate>();
+
+  for (const c of candidates) {
+    const key      = c.username.toLowerCase();
+    const existing = byUser.get(key);
+    if (!existing) {
+      byUser.set(key, { ...c });
+      continue;
+    }
+    // Same user from another store — merge rather than duplicate.
+    const sources = new Set([
+      ...existing.source.split(" + "),
+      ...c.source.split(" + "),
+    ]);
+    byUser.set(key, {
+      ...(confidenceRank(c) < confidenceRank(existing) ? c : existing),
+      source: [...sources].join(" + "),
+      // Keep whichever entry carried a tenant — probes that can't determine
+      // one omit the field entirely.
+      ...(existing.tenant ?? c.tenant ? { tenant: existing.tenant ?? c.tenant } : {}),
+    });
+  }
+
+  return [...byUser.values()].sort((a, b) => confidenceRank(a) - confidenceRank(b));
+}
+
 function selectPrimary(
   candidates: UsernameCandidate[],
   tenantFilter?: string,
@@ -857,11 +873,7 @@ function selectPrimary(
   if (pool.length === 0) return null;
 
   // Highest-confidence first; ties broken by order of discovery.
-  const ranked = [...pool].sort((a, b) => {
-    const rank = (c: UsernameCandidate) =>
-      c.confidence === "high" ? 0 : c.confidence === "medium" ? 1 : 2;
-    return rank(a) - rank(b);
-  });
+  const ranked = [...pool].sort((a, b) => confidenceRank(a) - confidenceRank(b));
   return ranked[0];
 }
 
@@ -879,7 +891,7 @@ export async function run(args: {
 
   // darwin: Phase 2 probes (Entra / Okta / Google via Jamf Connect).
   if (platform === "darwin") {
-    const candidates = await probeDarwin(idp);
+    const candidates = dedupeCandidates(await probeDarwin(idp));
     if (candidates.length === 0) {
       return {
         primaryUsername: null,
@@ -924,7 +936,7 @@ export async function run(args: {
   let candidates: UsernameCandidate[] = [];
 
   if (idp === "entra") {
-    candidates = await probeEntraWin32();
+    candidates = dedupeCandidates(await probeEntraWin32());
     if (candidates.length === 0) {
       return {
         primaryUsername: null,
@@ -937,7 +949,7 @@ export async function run(args: {
       };
     }
   } else if (idp === "okta") {
-    candidates = await probeOktaWin32();
+    candidates = dedupeCandidates(await probeOktaWin32());
     if (candidates.length === 0) {
       return {
         primaryUsername: null,
@@ -982,6 +994,7 @@ export const __testing = {
   parseDsregcmdUpn,
   parseOktaVerifyRegistry,
   selectPrimary,
+  dedupeCandidates,
   // darwin helpers
   looksLikeEmail,
   collectEmailsFromObject,

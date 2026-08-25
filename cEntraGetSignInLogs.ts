@@ -24,7 +24,8 @@ export const meta = {
   supportsDryRun:  false,
   auditRequired:   true,
   affectedScope:   ["network"],
-  sensitiveParams: ["userPrincipalName"],
+  requiresVerifiedIdentity: true,
+  sensitiveParams: [],
   outputKeys: [
     "status",
     "message",
@@ -32,16 +33,7 @@ export const meta = {
     "httpStatus",
     "failureReason",
   ],
-  schema: {
-    userPrincipalName: z
-      .string()
-      .min(1)
-      .regex(
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        "must be a UPN (e.g. alice@example.com)",
-      )
-      .describe("The Microsoft Entra ID user's UPN."),
-  },
+  schema: {},
 } as const;
 
 // -- Types --------------------------------------------------------------------
@@ -69,12 +61,19 @@ export interface EntraGetSignInLogsResult {
 
 // -- Implementation -----------------------------------------------------------
 
-export async function run(args: {
-  userPrincipalName: string;
-}): Promise<EntraGetSignInLogsResult> {
-  const upn = encodeURIComponent(args.userPrincipalName);
+export async function run(_args: Record<string, never>, ctx?: { verifiedUpn?: string; userSessionHandle?: string }): Promise<EntraGetSignInLogsResult> {
+  // Subject comes from the verified session, never from args — see
+  // ToolRunContext.verifiedUpn in electron/agent/guards/execution.ts.
+  if (!ctx?.verifiedUpn) {
+    return {
+      status:  "failed",
+      message: "No verified identity for this run.",
+    } as never;
+  }
+  const upn = encodeURIComponent(ctx.verifiedUpn);
   const r = await cloudGatewayCall<EntraGetSignInLogsData>({
     path: `/entra/users/${upn}/sign-ins`,
+    userSessionHandle: ctx?.userSessionHandle,
   });
 
   if (r.status !== "ok") {

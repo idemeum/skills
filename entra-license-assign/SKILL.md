@@ -1,33 +1,31 @@
 ---
 name: entra-license-assign
-description: Assigns a Microsoft 365 licence SKU (e.g. E3, E5, Teams Phone) to a Microsoft Entra ID user from the tenant's purchased seat pool. Use when a user needs a Microsoft 365/Office 365 licence added, a new hire is missing a licence, or an admin needs to assign a specific Entra licence SKU with available seats.
+description: Assigns a Microsoft 365 licence SKU (e.g. E3, E5) to a Microsoft Entra ID user via the admin Graph API, after confirming the tenant has purchased seats available and the user has a usage location set — a hard Microsoft precondition. Use when a user needs a Microsoft 365 licence assigned or reassigned in Entra ID, such as a new hire missing a licence, a licence that was removed, or a user needing a different SKU to unlock Teams/Office features.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
-  - detect_identity_provider
-  - detect_idp_username
-  - wait_for_user_ack
   - request_user_input
+  - wait_for_user_ack
   - c_entra_get_user_info
   - c_entra_get_licenses
   - c_entra_get_available_licenses
   - c_entra_assign_license
 metadata:
+  maxAggregateRisk: high
+  userLabel: "Assign a Microsoft 365 licence in Entra"
+  examples:
+    - "assign a Microsoft 365 E3 licence to this Entra user"
+    - "user needs an Office 365 licence added in Entra ID"
+    - "new hire needs a Microsoft 365 licence assigned before they can use Teams"
+    - "grant this Entra account an E5 licence so they can use Teams Phone"
+    - "user's Microsoft 365 licence was removed, need to reassign it"
+    - "assign a licence SKU to an Azure AD user account"
   prerequisites:
     before-corrective:
-      - detect_identity_provider
-  maxAggregateRisk: high
-  userLabel: "Assign a Microsoft 365 licence to an Entra user"
-  examples:
-    - "assign a Microsoft 365 E3 license to this Entra user"
-    - "user needs an Office 365 license added in Entra ID"
-    - "grant a Microsoft 365 licence SKU to a new hire in Azure AD"
-    - "assign Teams Phone license to an Entra account"
-    - "user is missing a Microsoft 365 license, need to assign one from available seats"
-    - "add an Entra ID licence assignment for this employee"
+      - c_entra_get_user_info
   pill:
-    label: Assign Entra License
-    goal: I need to assign a Microsoft 365 license to a Microsoft Entra ID user
+    label: Assign Entra Licence
+    goal: I need a Microsoft 365 licence assigned to a user in Entra ID because they're missing access to a licensed app
     icon: BadgeCheck
     iconClass: text-blue-500
     order: 24
@@ -35,89 +33,74 @@ metadata:
 
 ## When to use
 
-Use this skill when a Microsoft Entra ID user needs a Microsoft 365 licence SKU assigned — a new hire missing a licence, a user needing a specific plan (E3, E5, Teams Phone, etc.), or an admin assigning from the tenant's purchased seat pool.
+Use this skill when a Microsoft Entra ID user needs a Microsoft 365 licence SKU (e.g. E3, E5, Business Premium) assigned — a new hire with no licence, a licence that was removed and needs restoring, or an upgrade/change to a different SKU.
 
-Do NOT use for app or group access requests (`entra-access-request`) or directory role assignments (`entra-role-assign`) — licences, app roles, and directory roles are distinct Entra constructs. Do NOT use for MFA re-enrollment (`entra-mfa-reset`), forgotten passwords (`entra-password-reset`), or account lockouts (`entra-account-unlock`). Do NOT use for Okta or Google licensing — those are different admin APIs.
+Do NOT use for Okta or Google licensing — those are managed outside Entra. Do NOT use for application or group access requests (`entra-access-request`) — a licence is a Microsoft 365 entitlement, not an app permission or group membership. Do NOT use for directory role assignment (`entra-role-assign`) — a role is administrative privilege, not a licence. Do NOT use for MFA re-enrollment (`entra-mfa-reset`), forgotten passwords (`entra-password-reset`), or account lockouts (`entra-account-unlock`).
 
-**Precondition:** Microsoft requires `usageLocation` to be set on the user before any licence can be assigned. Always check `usageLocation` from `c_entra_get_user_info` first — if it is null/empty, do NOT proceed; this is a hard stop, not a warning.
+**Precondition:** Microsoft requires a `usageLocation` (country code) to be set on the user before any licence can be assigned. Always check `usageLocation` from `c_entra_get_user_info` first and stop if it is null.
 
 ---
 
 ## Steps
 
-**Step 1 — Detect the identity provider**
+**Step 1 — Verify account and usage location**
 
-Call `detect_identity_provider`. Check if `"entra"` appears in `output.primary` OR `output.secondary`. If not detected, this skill does not apply — tell the user their device is not enrolled with Microsoft Entra and suggest a support ticket.
-
-**Step 2 — Auto-discover the username**
-
-Call `detect_idp_username` with `idp: "entra"`.
-
-**Step 3 — Confirm the account**
-
-Call `wait_for_user_ack` to confirm, e.g. "Is this your Microsoft account: {primaryUsername}?" If `candidates` has multiple entries, present up to 3 choices plus a "different account" escape option.
-
-**Step 4 — Capture the UPN manually**
-
-Condition: only when Step 2 found no username, or the user chose the escape option in Step 3. Call `request_user_input` asking for their Entra UPN (may look like an email, may differ from personal email in hybrid AD setups).
-
-**Step 5 — Verify account and usage location**
-
-Call `c_entra_get_user_info` with the confirmed UPN.
+Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 - `status: "failed"`, `httpStatus: 404` → UPN not found; ask user to check spelling
-- **`usageLocation` is null/empty → STOP.** Tell the user Microsoft requires a usage location before any licence can be assigned; they must set it (via admin/portal) and retry this skill
-- `accountEnabled` is `false` → warn the account is disabled; licence assignment can still proceed but sign-in stays blocked
-- On success, note `displayName` for messaging
+- **`usageLocation` is null/empty → STOP.** Microsoft will reject a licence assignment without it. Tell the user an admin must set a usage location (country code) on the account first, and do not proceed
+- `accountEnabled` is `false` → warn the licence can still be assigned but sign-in stays blocked until the account is re-enabled
+- On success, note `displayName` and `usageLocation` for messaging
 
-**Step 6 — Check current licences**
+**Step 2 — Check currently assigned licences**
 
-Call `c_entra_get_licenses` with the confirmed UPN. Note assigned `skuId`s so they can be excluded from the selection list — assigning a licence the user already holds would be a no-op.
+Call `c_entra_get_licenses`.
 
-**Step 7 — Check available tenant licences**
+Note the `skuPartNumber` values already held by the user so they can be excluded from the choices offered next — assigning a licence the user already has is a no-op.
 
-Call `c_entra_get_available_licenses`. Exclude SKUs already held (Step 6) and SKUs with `usedSeats >= totalSeats` (no seats left) to build the eligible list.
+**Step 3 — Check tenant licence inventory**
 
-**Step 8 — Select the licence to assign**
+Call `c_entra_get_available_licenses`.
 
-Call `wait_for_user_ack` presenting up to 3 eligible SKUs from Step 7 (by `skuPartNumber`, with seats remaining) plus a "different licence" escape option.
+Filter to SKUs the user does NOT already hold (from Step 2) and that have at least one free seat (`totalSeats` > `usedSeats`). Present the eligible SKUs with their remaining seat counts. If none are eligible, tell the user no purchasable licence is available and stop.
 
-If no SKUs are eligible, tell the user and stop — recommend procurement if seats are exhausted.
+**Step 4 — Capture the desired licence**
 
-**Step 9 — Capture licence name manually**
+Call `request_user_input` asking the user to type the exact `skuPartNumber` of the licence they want, chosen only from the eligible list presented in Step 3.
 
-Condition: only when Step 7 found more than 3 eligible SKUs, or the user chose the escape option in Step 8. Call `request_user_input` asking for the exact licence name or part number, matched against the list from Step 7 to resolve the `skuId`.
+**Step 5 — Confirm the assignment**
 
-**Step 10 — Confirm the assignment**
+Use `wait_for_user_ack` to confirm: "Assign {skuPartNumber} to {displayName} ({upn})? Seats remaining after assignment: {seatsLeft - 1}." Options: Yes / No.
 
-Call `wait_for_user_ack` to confirm: "Assign {skuPartNumber} to {displayName} ({upn})? Seats remaining: {totalSeats - usedSeats}." MUST get explicit confirmation before proceeding.
+MUST get explicit confirmation before proceeding. If the SKU named in Step 4 has zero seats remaining or was not in the eligible list from Step 3, do not offer this confirmation — tell the user that SKU is unavailable and stop; they may restart the skill to choose a different one.
 
-**Step 11 — Execute the assignment**
+**Step 6 — Execute the assignment**
 
-Call `c_entra_assign_license` with the confirmed UPN and the `skuId` resolved in Step 8 or Step 9.
+Call `c_entra_assign_license` with the resolved `skuId` matching the confirmed `skuPartNumber`.
 
-- `status: "ok"` → proceed to verification
-- `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
+- `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
+- `status: "ok"` → proceed to verification
 
-**Step 12 — Verify the assignment**
+**Step 7 — Verify the assignment**
 
-Call `c_entra_get_licenses` with the confirmed UPN again to confirm the new `skuId` now appears in the returned list.
+Call `c_entra_get_licenses` again to confirm the new `skuPartNumber` now appears in the user's licence list.
 
-**Step 13 — Deliver guidance**
+**Step 8 — Guide the user**
 
 Tell the user:
-- The licence has been assigned to {displayName} ({upn})
-- Licence-based app access (e.g. Teams, Exchange) may take a few minutes to activate
-- If the user also needs specific app or group access, a separate access request skill can help; for directory role needs, a separate role assignment skill applies
+- {skuPartNumber} has been assigned to {displayName} ({upn})
+- Licence-based features (Teams, Office apps, etc.) may take a few minutes to propagate
+- If they were expecting app or group access rather than a licence entitlement, mention `entra-access-request`
+- If the account was disabled, remind them sign-in stays blocked until it is re-enabled
 
 ---
 
 ## Edge cases
 
-- **Missing `usageLocation`:** hard stop at Step 5 — never call `c_entra_assign_license` without it; the gateway call would fail.
-- **Licence already assigned:** excluded from the Step 7/8 selection so the user cannot request a no-op.
-- **No seats remaining:** SKUs with `usedSeats >= totalSeats` are excluded at Step 7; if nothing is eligible, tell the user to request procurement rather than attempting the assignment.
-- **More than 3 eligible SKUs:** captured via free text in Step 9 instead of overloading the 4-option limit of `wait_for_user_ack`.
-- **Account disabled:** licence assignment can still proceed at Step 5, but the user cannot sign in to use it until the account is re-enabled.
+- **No `usageLocation` set:** hard stop at Step 1 — never call the corrective without it; Microsoft's API will reject the request anyway.
+- **User already holds the licence:** excluded from the choices in Step 3; if the user insists, tell them it is already assigned and no action is needed.
+- **No seats available for desired SKU, or SKU not in the eligible list:** do not proceed past Step 5; tell the user to restart with a different SKU or ask an admin to purchase more seats.
+- **Account disabled:** the licence can still be assigned, but sign-in remains blocked until an admin re-enables the account — flag this, don't block on it.
+- **Tenant has no eligible SKUs at all:** stop after Step 3 and tell the user there is nothing purchasable to assign.

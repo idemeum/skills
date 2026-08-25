@@ -25,7 +25,8 @@ export const meta = {
   supportsDryRun:  true,
   auditRequired:   true,
   affectedScope:   ["network"],
-  sensitiveParams: ["userPrincipalName"],
+  requiresVerifiedIdentity: true,
+  sensitiveParams: [],
   outputKeys: [
     "status",
     "message",
@@ -35,14 +36,6 @@ export const meta = {
     "failureReason",
   ],
   schema: {
-    userPrincipalName: z
-      .string()
-      .min(1)
-      .regex(
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        "must be a UPN (e.g. alice@example.com)",
-      )
-      .describe("The Microsoft Entra ID user's UPN."),
     servicePrincipalId: z.string().min(1)
       .describe("Object ID (GUID) of the target enterprise application (service principal), as returned by an app search."),
     dryRun: z
@@ -71,19 +64,26 @@ export interface EntraAssignAppResult {
 // -- Implementation -----------------------------------------------------------
 
 export async function run(args: {
-  userPrincipalName: string;
   servicePrincipalId: string;
   dryRun?: boolean;
-}): Promise<EntraAssignAppResult> {
+}, ctx?: { verifiedUpn?: string; userSessionHandle?: string }): Promise<EntraAssignAppResult> {
   const baseUrl = process.env["CLOUD_GATEWAY_URL"];
-  const upn = encodeURIComponent(args.userPrincipalName);
+  // Subject comes from the verified session, never from args — see
+  // ToolRunContext.verifiedUpn in electron/agent/guards/execution.ts.
+  if (!ctx?.verifiedUpn) {
+    return {
+      status:  "failed",
+      message: "No verified identity for this run.",
+    } as never;
+  }
+  const upn = encodeURIComponent(ctx.verifiedUpn);
   const servicePrincipalId = encodeURIComponent(String(args.servicePrincipalId));
   const path = `/entra/users/${upn}/apps/${servicePrincipalId}`;
 
   if (args.dryRun) {
     return {
       status:   "ok",
-      message:  `Would POST assign app for ${args.userPrincipalName}.`,
+      message:  `Would POST assign app for ${ctx?.verifiedUpn ?? "the signed-in user"}.`,
       willPost: true,
       endpoint: baseUrl ? baseUrl.replace(/\/$/, "") + path : "(CLOUD_GATEWAY_URL not set)",
     };
@@ -92,6 +92,7 @@ export async function run(args: {
   const r = await cloudGatewayCall<EntraAssignAppData>({
     method: "POST",
     path,
+    userSessionHandle: ctx?.userSessionHandle,
   });
 
   if (r.status !== "ok") {

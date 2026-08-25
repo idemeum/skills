@@ -25,7 +25,8 @@ export const meta = {
   supportsDryRun:  true,
   auditRequired:   true,
   affectedScope:   ["network"],
-  sensitiveParams: ["userPrincipalName"],
+  requiresVerifiedIdentity: true,
+  sensitiveParams: [],
   outputKeys: [
     "status",
     "message",
@@ -35,14 +36,6 @@ export const meta = {
     "failureReason",
   ],
   schema: {
-    userPrincipalName: z
-      .string()
-      .min(1)
-      .regex(
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        "must be a UPN (e.g. alice@example.com)",
-      )
-      .describe("The Microsoft Entra ID user's UPN."),
     groupId: z.string().min(1)
       .describe("Object ID (GUID) of the target group, as returned by a group search."),
     dryRun: z
@@ -71,19 +64,26 @@ export interface EntraAddToGroupResult {
 // -- Implementation -----------------------------------------------------------
 
 export async function run(args: {
-  userPrincipalName: string;
   groupId: string;
   dryRun?: boolean;
-}): Promise<EntraAddToGroupResult> {
+}, ctx?: { verifiedUpn?: string; userSessionHandle?: string }): Promise<EntraAddToGroupResult> {
   const baseUrl = process.env["CLOUD_GATEWAY_URL"];
-  const upn = encodeURIComponent(args.userPrincipalName);
+  // Subject comes from the verified session, never from args — see
+  // ToolRunContext.verifiedUpn in electron/agent/guards/execution.ts.
+  if (!ctx?.verifiedUpn) {
+    return {
+      status:  "failed",
+      message: "No verified identity for this run.",
+    } as never;
+  }
+  const upn = encodeURIComponent(ctx.verifiedUpn);
   const groupId = encodeURIComponent(String(args.groupId));
   const path = `/entra/users/${upn}/groups/${groupId}`;
 
   if (args.dryRun) {
     return {
       status:   "ok",
-      message:  `Would POST add to group for ${args.userPrincipalName}.`,
+      message:  `Would POST add to group for ${ctx?.verifiedUpn ?? "the signed-in user"}.`,
       willPost: true,
       endpoint: baseUrl ? baseUrl.replace(/\/$/, "") + path : "(CLOUD_GATEWAY_URL not set)",
     };
@@ -92,6 +92,7 @@ export async function run(args: {
   const r = await cloudGatewayCall<EntraAddToGroupData>({
     method: "POST",
     path,
+    userSessionHandle: ctx?.userSessionHandle,
   });
 
   if (r.status !== "ok") {

@@ -4,17 +4,11 @@ description: Forces a password reset for a Microsoft Entra ID user via the admin
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
-  - detect_identity_provider
-  - detect_idp_username
   - wait_for_user_ack
-  - request_user_input
   - c_entra_get_user_info
   - c_entra_get_sign_in_logs
   - c_entra_reset_password
 metadata:
-  prerequisites:
-    before-corrective:
-      - detect_identity_provider
   maxAggregateRisk: high
   userLabel: "Reset an Entra user's password"
   examples:
@@ -24,6 +18,9 @@ metadata:
     - "SSPR is disabled for this Entra user, force reset password"
     - "user forgot their Microsoft 365 password and self-service reset isn't available"
     - "admin needs to reset an Entra account password after suspected compromise"
+  prerequisites:
+    before-corrective:
+      - c_entra_get_user_info
   pill:
     label: Reset Entra Password
     goal: I need to reset a Microsoft Entra user's password because self-service password reset is unavailable or an admin needs to force-reset it
@@ -48,25 +45,9 @@ Do NOT use for Okta or Google password resets. Do NOT use if the account is lock
 
 ## Steps
 
-**Step 1 — Detect the identity provider**
+**Step 1 — Verify account and recovery email**
 
-Call `detect_identity_provider`. Check if `"entra"` appears in `output.primary` OR `output.secondary`. If not detected, this skill does not apply — tell the user their device is not enrolled with Microsoft Entra and suggest a support ticket.
-
-**Step 2 — Auto-discover the username**
-
-Call `detect_idp_username` with `idp: "entra"`.
-
-**Step 3 — Confirm the account**
-
-Use `wait_for_user_ack` to confirm, e.g. "Is this your Microsoft account: {primaryUsername}?" If `candidates` has multiple entries, present up to 4 choices plus a "different account" escape option.
-
-**Step 4 — Capture UPN manually**
-
-Condition: only when Step 2 found no username, or the user chose "different account" in Step 3. Call `request_user_input` asking for their Entra UPN (may look like an email, may differ from personal email in hybrid AD setups).
-
-**Step 5 — Verify account and recovery email**
-
-Call `c_entra_get_user_info` with the confirmed UPN.
+Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 - `status: "failed"`, `httpStatus: 404` → UPN not found; ask user to check spelling
@@ -75,17 +56,17 @@ Call `c_entra_get_user_info` with the confirmed UPN.
 - **`recoveryEmail` is null/empty → STOP.** Tell the user there is no recovery address on file, so the gateway has nowhere to deliver a temporary password. Do not proceed; advise adding a recovery email or contacting an admin
 - On success with a valid `recoveryEmail`, note `displayName` for messaging
 
-**Step 6 — Review recent sign-in activity**
+**Step 2 — Review recent sign-in activity**
 
-Call `c_entra_get_sign_in_logs` with the confirmed UPN. Check for repeated failures or unusual locations suggesting compromise rather than a simply forgotten password. If found, mention it — a reset is still the right remedy.
+Call `c_entra_get_sign_in_logs`. Check for repeated failures or unusual locations suggesting compromise rather than a simply forgotten password. If found, mention it — a reset is still the right remedy.
 
-**Step 7 — Confirm the reset**
+**Step 3 — Confirm the reset**
 
 Use `wait_for_user_ack` to confirm: "This will reset the password for {displayName} ({upn}). A temporary password will be generated and, if possible, emailed to their recovery address. They must change it on next sign-in. Proceed?" MUST get explicit confirmation.
 
-**Step 8 — Execute the reset**
+**Step 4 — Execute the reset**
 
-Call `c_entra_reset_password` with the confirmed UPN.
+Call `c_entra_reset_password`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 - `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
@@ -93,7 +74,7 @@ Call `c_entra_reset_password` with the confirmed UPN.
   - `deliveryMethod: "email"` → the temporary password was sent to `notificationEmail`; tell the user to check that inbox, including spam/junk
   - `deliveryMethod: "none"` → the password changed but could NOT be emailed; tell the user their password has changed and they must contact IT to obtain it — do NOT tell them to check any inbox
 
-**Step 9 — Deliver guidance**
+**Step 5 — Deliver guidance**
 
 Tell the user (without stating the password itself):
 - The reset succeeded for {displayName} ({upn})
@@ -105,7 +86,7 @@ Tell the user (without stating the password itself):
 
 ## Edge cases
 
-- **No recovery email:** never call `c_entra_reset_password` (Step 5) — this is a hard stop, not a warning.
+- **No recovery email:** never call `c_entra_reset_password` (Step 4) — this is a hard stop, not a warning.
 - **`deliveryMethod: "none"`:** the reset still succeeded — never tell the user to check an inbox in this case; direct them to contact IT for the new password.
 - **Account disabled:** reset can still be issued, but sign-in remains blocked until an admin re-enables the account.
 - **Account locked out:** unlocking and resetting are independent; mention `entra-account-unlock` as a separate follow-up.

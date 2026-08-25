@@ -4,17 +4,11 @@ description: Unlocks a Microsoft Entra ID account that was locked out after too 
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
-  - detect_identity_provider
-  - detect_idp_username
-  - wait_for_user_ack
-  - request_user_input
   - c_entra_get_user_info
   - c_entra_get_sign_in_logs
+  - wait_for_user_ack
   - c_entra_unlock_account
 metadata:
-  prerequisites:
-    before-corrective:
-      - detect_identity_provider
   maxAggregateRisk: high
   userLabel: "Unlock a locked Entra account"
   examples:
@@ -24,6 +18,9 @@ metadata:
     - "unlock this user's Microsoft Entra account"
     - "Azure AD smart lockout triggered, user can't sign in"
     - "Entra account locked after repeated failed logins from a stale device"
+  prerequisites:
+    before-corrective:
+      - c_entra_get_user_info
   pill:
     label: Unlock Entra Account
     goal: I'm locked out of my Microsoft Entra account after too many failed sign-in attempts — unlock my account so I can sign in again
@@ -42,31 +39,9 @@ Do NOT use for Okta or Google account lockouts — those require different admin
 
 ## Steps
 
-**Step 1 — Detect the identity provider**
+**Step 1 — Verify lockout state**
 
-Call `detect_identity_provider`. Check if `"entra"` appears in `output.primary` OR `output.secondary`. If Entra is not detected in either field, this skill is not applicable — tell the user their device is not enrolled with Microsoft Entra and suggest they create a support ticket.
-
-**Step 2 — Auto-discover the UPN**
-
-Call `detect_idp_username` with `idp: "entra"`.
-
-**Step 3 — Confirm the account**
-
-Call `wait_for_user_ack`.
-
-- If `primaryUsername` was returned → ask "Is this your Microsoft account: {primaryUsername}?" with Yes / No options
-- If `candidates` has multiple entries → present each as an option, plus a "different account" escape option
-- Include the "different account" escape option in all cases
-
-**Step 4 — Capture the UPN manually**
-
-Call `request_user_input` asking for their Microsoft Entra UPN (explain it may look like an email address, e.g. alice@example.com, and may differ from their personal email in hybrid AD setups). Only when Step 2 found no username, or the user chose the escape option in Step 3.
-
-The confirmed UPN from Step 3 or Step 4 is used for all subsequent tool calls.
-
-**Step 5 — Verify lockout state**
-
-Call `c_entra_get_user_info` with the confirmed UPN.
+Call `c_entra_get_user_info`.
 
 - If `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
 - If `status: "failed"` with `httpStatus: 404` → the UPN was not found in Entra; ask the user to double-check the spelling
@@ -74,13 +49,13 @@ Call `c_entra_get_user_info` with the confirmed UPN.
 - If `lockedOut` is `true` → proceed with the unlock flow
 - On success, note the `displayName` for user-friendly messaging
 
-**Step 6 — Diagnose the lockout cause**
+**Step 2 — Diagnose the lockout cause**
 
-Call `c_entra_get_sign_in_logs` with the confirmed UPN.
+Call `c_entra_get_sign_in_logs`.
 
 Look for repeated failures from a single location/device (likely the user's own mistyped attempts) versus multiple diverse locations or IPs (possible brute-force). Note error codes and the time window of the failures.
 
-**Step 7 — Confirm the unlock**
+**Step 3 — Confirm the unlock**
 
 If sign-in logs show suspicious activity (diverse locations, unfamiliar devices), use `wait_for_user_ack` with options "Unlock and recommend password reset" / "Unlock only" / "Cancel" and warn the user about the unusual sign-in attempts.
 
@@ -88,19 +63,19 @@ Otherwise, use `wait_for_user_ack` to confirm: "Unlock account for {displayName}
 
 MUST get explicit confirmation before proceeding. Do not skip this step.
 
-**Step 8 — Execute the unlock**
+**Step 4 — Execute the unlock**
 
-Call `c_entra_unlock_account` with the confirmed UPN.
+Call `c_entra_unlock_account`.
 
 - If `status` is `"ok"` → proceed to verification
 - If `status` is `"failed"` → report the `failureReason` (and `httpStatus` if present) to the user and suggest retrying or filing a ticket
 - If `status` is `"not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
 
-**Step 9 — Verify the unlock**
+**Step 5 — Verify the unlock**
 
-Call `c_entra_get_user_info` with the confirmed UPN to confirm the lockout has been cleared (`lockedOut` should now be `false`).
+Call `c_entra_get_user_info` again to confirm the lockout has been cleared (`lockedOut` should now be `false`).
 
-**Step 10 — Post-unlock guidance**
+**Step 6 — Post-unlock guidance**
 
 Tell the user:
 - Their account has been unlocked and they can sign in again
