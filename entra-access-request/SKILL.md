@@ -1,11 +1,11 @@
 ---
 name: entra-access-request
-description: Grants a Microsoft Entra ID user access to a specific security group, Microsoft 365 group, or enterprise application they are currently missing, resolving the target by name search rather than requiring the user to know whether it is implemented as group membership or an app role assignment. Use when the user says "I need access to the Marketing group", "add me to a Teams/SharePoint group in Entra", "assign me the Salesforce app", "I can't see an app I should have access to", or similar Entra access-request complaints.
+description: Grants a Microsoft Entra ID user access to a specific security group, Microsoft 365 group, or enterprise application (service principal) they are currently missing — via direct group membership or an app role assignment, whichever the target actually requires. Use when the user says "I need access to the Finance SharePoint site", "add me to the Marketing distribution list", "I can't open Workday and think I need the app assigned", "request access to the Salesforce enterprise app in Entra", or similar Entra group/app access complaints.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
-  - request_user_input
   - c_entra_get_user_info
+  - request_user_input
   - c_entra_find_group
   - c_entra_find_app
   - c_entra_get_group_memberships
@@ -17,105 +17,106 @@ metadata:
   maxAggregateRisk: high
   userLabel: "Request Entra group or app access"
   examples:
-    - "user needs access to the Marketing SharePoint group in Entra"
-    - "add me to the VPN security group in Azure AD"
-    - "assign the Salesforce enterprise app to this Entra user"
-    - "user can't see the Finance Teams channel, needs group access in Entra ID"
-    - "grant a new hire access to the internal Wiki app in Entra"
-    - "user needs to be added to a distribution list in Microsoft Entra"
+    - "add me to the Finance security group in Entra"
+    - "I need access to the Marketing Microsoft 365 group"
+    - "assign me the Salesforce enterprise app in Entra ID"
+    - "I can't open Workday, I think I need the app assigned in Entra"
+    - "request access to a SharePoint site's Entra group"
+    - "grant this user membership in the Contractors distribution list"
   prerequisites:
     before-corrective:
       - c_entra_get_user_info
   pill:
     label: Request Entra Access
-    goal: I need access to a group or application in Microsoft Entra ID that I don't currently have
-    icon: UserPlus
+    goal: I need access to a Microsoft Entra group or application that I don't currently have
+    icon: Users
     iconClass: text-blue-500
-    order: 23
+    order: 22
 ---
 
 ## When to use
 
-Use this skill when a Microsoft Entra ID user needs access to a specific group (security group or Microsoft 365 group) or enterprise application they don't currently have. The user names the thing they need (a group or app by name); this skill resolves whether it is granted via group membership or an app role assignment and executes the matching corrective.
+Use when a Microsoft Entra ID user is missing access to a resource that is granted either as group membership (security group, Microsoft 365 group, distribution list, Teams, SharePoint site) or as an enterprise app assignment (service principal), and it is not obvious to the user which mechanism applies. This skill resolves the target by name and grants access via whichever mechanism it turns out to be.
 
-Do NOT use for MFA re-enrollment (`entra-mfa-reset`), forgotten passwords (`entra-password-reset`), or lockouts (`entra-account-unlock`) — those are unrelated failure modes. Do NOT use for licence assignment (`entra-license-assign`) or directory role assignment (`entra-role-assign`) — those are different Entra objects with their own skills, even though they also "grant access". Do NOT use for Okta or Google group/app requests — those require different admin APIs.
+Do NOT use for Okta or Google access requests — different admin APIs. Do NOT use for Microsoft 365 licence assignment (`entra-license-assign`) or Entra directory role assignment (`entra-role-assign`) — those are distinct grant types even when the user describes them as "access". Do NOT use for MFA problems (`entra-mfa-reset`) or password problems (`entra-password-reset`).
 
 ---
 
 ## Steps
 
-**Step 1 — Verify user account**
+**Step 1 — Verify user account exists**
 
 Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 - `status: "failed"`, `httpStatus: 404` → UPN not found; ask user to check spelling
-- `accountEnabled` is `false` → warn the account is disabled; access can still be granted but won't be usable until re-enabled
+- `accountEnabled` is `false` → warn the account is disabled; access grants will not restore sign-in
 - On success, note `displayName` for messaging
 
-**Step 2 — Ask what they need access to**
+**Step 2 — Capture what access is needed**
 
-Call `request_user_input` asking the user to name the group or application they need access to (e.g. "Marketing-Team", "Salesforce").
+Call `request_user_input` asking the user to name the group, distribution list, Teams, SharePoint site, or application they need access to.
 
 **Step 3 — Search matching groups**
 
 Call `c_entra_find_group` with the name from Step 2.
 
-Note any `membershipRule` — a non-null rule means that group is dynamic and cannot accept a direct member add; exclude it from candidates or flag it as not addable by this skill.
+- A non-null `membershipRule` means the group is dynamic — it cannot accept a direct member add. Exclude it from candidates and tell the user membership is rule-based (e.g. by department) and must be requested a different way.
 
 **Step 4 — Search matching apps**
 
 Call `c_entra_find_app` with the name from Step 2.
 
-**Step 5 — Exclude groups already held**
+**Step 5 — Check existing group memberships**
 
-Call `c_entra_get_group_memberships`.
+Call `c_entra_get_group_memberships`. Exclude any Step 3 candidate the user already belongs to — adding them again would be a no-op.
 
-Drop any Step 3 group already in this list — the user already has that access.
+**Step 6 — Check existing app assignments**
 
-**Step 6 — Exclude apps already assigned**
+Call `c_entra_get_app_assignments`. Exclude any Step 4 candidate the user is already assigned — assigning again would be a no-op.
 
-Call `c_entra_get_app_assignments`.
+**Step 7 — Confirm the exact target**
 
-Drop any Step 4 app already in this list — the user already has that access.
+Use `wait_for_user_ack` to present the remaining candidates (groups and apps combined, max 4 options) and let the user pick the one they need. If nothing remains after exclusions, tell the user they already have the access they described, or that no match was found, and stop.
 
-**Step 7 — Pick and confirm the exact target**
+**Step 8 — Add to group**
 
-Use `wait_for_user_ack` presenting the remaining candidates (max 4, combining groups and apps from Steps 3–6), each phrased as the concrete change it makes, e.g. "Add to Marketing-Team group" / "Assign Salesforce app". Include a "None of these" escape if space allows.
+If the user selected a group in Step 7, call `c_entra_add_to_group` with the `groupId` from Step 3.
 
-MUST get an explicit pick before proceeding. If more than 4 candidates remain, narrow with `request_user_input` for a more specific name before re-presenting (see Edge cases).
-
-**Step 8 — Add to group (if a group was chosen)**
-
-Call `c_entra_add_to_group` with the `groupId` of the group selected in Step 7. Only when the Step 7 selection was a group.
-
-- `status: "ok"` → proceed to guidance
+- `status: "ok"` → proceed to verification
 - `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 
-**Step 9 — Assign app (if an app was chosen)**
+**Step 9 — Assign app**
 
-Call `c_entra_assign_app` with the `servicePrincipalId` of the app selected in Step 7. Only when the Step 7 selection was an app.
+If the user selected an app in Step 7, call `c_entra_assign_app` with the `servicePrincipalId` from Step 4.
 
-- `status: "ok"` → proceed to guidance
+- `status: "ok"` → proceed to verification
 - `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 
-**Step 10 — Guide the user**
+**Step 10 — Verify group addition**
+
+If Step 8 ran, call `c_entra_get_group_memberships` again to confirm the group now appears.
+
+**Step 11 — Verify app assignment**
+
+If Step 9 ran, call `c_entra_get_app_assignments` again to confirm the app now appears.
+
+**Step 12 — Guide the user**
 
 Tell the user:
-- The access has been granted for {displayName}
-- Group membership changes can take a few minutes to propagate across Microsoft 365 services; app assignments are usually immediate but may require a sign-out/sign-in to appear
-- If the item they needed wasn't in the candidate list, ask them to double-check the exact name or contact IT to confirm it exists
-- Licence problems, role assignments, or MFA/password/lockout issues are handled by separate skills (`entra-license-assign`, `entra-role-assign`, `entra-mfa-reset`, `entra-password-reset`, `entra-account-unlock`)
+- Access to {target name} has been granted for {displayName}
+- Group membership and app assignment can take a few minutes to propagate; some apps also require a fresh sign-in to pick up the change
+- If access still doesn't work after propagation, check the app's own permission model — some apps require an in-app role separate from Entra
+- If they also need a licence or a directory role, mention `entra-license-assign` or `entra-role-assign` as separate follow-ups
 
 ---
 
 ## Edge cases
 
-- **Dynamic group (non-null `membershipRule`):** cannot accept a direct member add — exclude it from the Step 7 candidates or clearly flag it as not addable this way; direct the user to whatever attribute drives the rule instead.
-- **User already has the access:** if Steps 5/6 remove every candidate, tell the user they already have it and stop — do not call a corrective.
-- **No matches found:** if Steps 3 and 4 both return no candidates, tell the user nothing matched that name and ask them to try a different spelling or confirm the exact group/app name with their manager or IT.
-- **More than 4 remaining candidates:** narrow the search with a follow-up `request_user_input` for a more specific name rather than truncating silently — `wait_for_user_ack` cannot show more than 4 options.
-- **Name matches both a group and an app:** present both as distinct options in Step 7 and let the user pick; do not guess.
-- **Account disabled:** access can still be granted, but note it will not be usable until the account is re-enabled.
+- **Dynamic group requested:** never call `c_entra_add_to_group` on a group with a `membershipRule` — it will fail or silently not stick. Tell the user membership is automatic based on rules and direct add isn't possible.
+- **User already has the access:** exclude it in Step 7; if it was the only candidate, tell the user they already have it and stop rather than presenting an empty confirmation.
+- **No matches found in either search:** tell the user no matching group or app was found and ask them to confirm the exact name, or that the resource may not exist in this tenant.
+- **Ambiguous name matches both a group and an app:** present both as separate options in Step 7 — do not guess which one the user means.
+- **Account disabled:** flag it, but grants can still be issued; sign-in stays blocked until an admin re-enables the account.

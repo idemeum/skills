@@ -1,13 +1,13 @@
 ---
 name: entra-mfa-reset
-description: Resets all MFA registration methods for a Microsoft Entra ID user so they are prompted to re-enroll on next sign-in. Use when the user says "I lost my phone and can't do MFA on Entra", "reset my Microsoft Authenticator", "I got a new phone and need to re-register Entra MFA", or similar Microsoft Entra ID MFA complaints.
+description: Resets all MFA registration methods for a Microsoft Entra ID user so they are prompted to re-enroll on next sign-in. Use when the user says "I lost my phone and can't do MFA", "reset my Microsoft authenticator", "I got a new phone and need to re-register MFA", or similar Entra MFA complaints.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
+  - wait_for_user_ack
   - c_entra_get_user_info
   - c_entra_get_mfa_status
   - c_entra_get_sign_in_logs
-  - wait_for_user_ack
   - c_entra_reset_mfa
 metadata:
   maxAggregateRisk: high
@@ -34,20 +34,19 @@ metadata:
 
 Use this skill when a Microsoft Entra ID user cannot complete MFA (lost phone, broken authenticator app, new device) and needs all registered MFA methods cleared so they can re-enroll on next sign-in.
 
-Do NOT use for Okta or Google MFA issues — those require different admin APIs. Do NOT use when the user has forgotten their password (use `entra-password-reset`) or is locked out from repeated failed attempts (use `entra-account-unlock`) — those are different root causes even though the symptom feels similar. Do NOT use for missing app/group access (`entra-access-request`), licence problems (`entra-license-assign`), or role assignment requests (`entra-role-assign`). Do NOT use when the user just wants to add an additional MFA method without clearing existing ones — that is self-service in the Entra portal.
+Do NOT use for Okta or Google MFA issues — those require different admin APIs. Do NOT use when the user has forgotten their password or is locked out from repeated failed attempts (use `entra-password-reset` — a password reset also clears Smart Lockout) — these are different root causes even though the symptom feels similar. Do NOT use for missing app/group access (`entra-access-request`), licence problems (`entra-license-assign`), or role assignment requests (`entra-role-assign`). Do NOT use when the user just wants to add an additional MFA method without clearing existing ones — that is self-service in the Entra portal.
 
 ---
 
 ## Steps
 
-**Step 1 — Verify the user account**
+**Step 1 — Verify user account exists**
 
 Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
-- `status: "failed"`, `httpStatus: 404` → the account was not found; ask the user to double-check the UPN
+- `status: "failed"`, `httpStatus: 404` → the UPN was not found in Entra; ask the user to double-check the spelling
 - `accountEnabled` is `false` → warn the user their account is disabled and MFA reset may not help until it is re-enabled
-- `lockedOut` is `true` → note this is a separate issue; suggest `entra-account-unlock` as a follow-up if relevant
 - On success, note `displayName` for user-friendly messaging
 
 **Step 2 — Check current MFA status**
@@ -56,15 +55,15 @@ Call `c_entra_get_mfa_status`.
 
 Present the current registration state: number and types of registered methods, and whether registration is complete. If no methods are registered, tell the user the reset would be a no-op and confirm they still want to proceed.
 
-**Step 3 — Review recent sign-in activity**
+**Step 3 — Check recent sign-in activity**
 
 Call `c_entra_get_sign_in_logs`.
 
-Scan for recent MFA-related failures to confirm the complaint is consistent with an MFA problem (rather than a password or lockout issue), and flag any unusual locations.
+Scan for recent MFA-related failures to confirm the complaint is consistent with an MFA problem (rather than a password or lockout issue), and note any unusual locations worth flagging to the user.
 
 **Step 4 — Confirm the reset**
 
-Use `wait_for_user_ack` to confirm: "This will remove ALL registered MFA methods for {displayName}. They will be prompted to set up MFA again on next sign-in. Proceed?"
+Use `wait_for_user_ack` to confirm: "This will remove ALL registered MFA methods for {displayName} ({upn}). They will be prompted to set up MFA again on next sign-in. Proceed?"
 
 MUST get explicit confirmation before proceeding. Do not skip this step.
 
@@ -73,7 +72,7 @@ MUST get explicit confirmation before proceeding. Do not skip this step.
 Call `c_entra_reset_mfa`.
 
 - `status: "ok"` → proceed to verification
-- `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
+- `status: "failed"` → report `failureReason` (and `httpStatus` if present) to the user and stop
 - `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
 
 **Step 6 — Verify the reset**
@@ -83,10 +82,10 @@ Call `c_entra_get_mfa_status` again to confirm methods are cleared (empty method
 **Step 7 — Guide the user**
 
 Tell the user:
-- All MFA methods have been cleared for {displayName}
+- All MFA methods have been cleared
 - On their next sign-in to any Microsoft service, they will be prompted to set up MFA again
 - They should have their new phone or preferred authentication method ready
-- If they also report password or lockout problems, mention `entra-password-reset` or `entra-account-unlock` as separate follow-ups
+- If they also report password or lockout problems, mention `entra-password-reset` as a separate follow-up (it also clears Smart Lockout)
 
 ---
 
@@ -94,5 +93,5 @@ Tell the user:
 
 - **No MFA methods registered:** Step 2 shows an empty methods list — the reset would be a no-op; confirm the user still wants to proceed before continuing.
 - **Account disabled:** flag above but do not block the reset — MFA clearing is independent of `accountEnabled`, though sign-in stays blocked until re-enabled.
-- **Account locked out:** unrelated to MFA reset; mention `entra-account-unlock` as a separate follow-up rather than folding it into this flow.
+- **Account locked out:** unrelated to MFA reset; mention `entra-password-reset` as a separate follow-up (a password reset clears Smart Lockout) rather than folding it into this flow.
 - **Suspicious sign-in activity in logs:** proceed with the reset regardless, but flag it to the user as it may warrant a password reset too.

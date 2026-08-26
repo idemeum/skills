@@ -37,7 +37,6 @@ export const meta = {
     "department",
     "usageLocation",
     "recoveryEmail",
-    "lockedOut",
     "httpStatus",
     "failureReason",
   ],
@@ -55,7 +54,6 @@ interface EntraGetUserInfoData {
   department: string | null;
   usageLocation: string | null;
   recoveryEmail: string | null;
-  lockedOut: boolean;
 }
 
 export interface EntraGetUserInfoResult {
@@ -69,7 +67,6 @@ export interface EntraGetUserInfoResult {
   department?: string | null;
   usageLocation?: string | null;
   recoveryEmail?: string | null;
-  lockedOut?: boolean;
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
 }
@@ -112,6 +109,5 @@ export async function run(_args: Record<string, never>, ctx?: { verifiedUpn?: st
     department: d.department,
     usageLocation: d.usageLocation,
     recoveryEmail: d.recoveryEmail,
-    lockedOut: d.lockedOut,
   };
 }
