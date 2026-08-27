@@ -41,6 +41,8 @@ Do NOT use for Okta or Google password resets. Do NOT use for MFA re-enrollment 
 
 **Security boundary:** the temporary password is generated entirely by the gateway; it is never returned to the agent. Never type, paste, or interpolate a password into this conversation — only confirm that a reset occurred and how (or whether) it was delivered.
 
+**`notificationEmail` is not sensitive — do not add it to `sensitiveParams`.** `c_entra_reset_password` returns it already masked by the gateway (e.g. `d***y@e***e.com`), and Step 5 requires showing it to the user so they know which inbox to check. Redacting it to `[redacted]` breaks that requirement. `recoveryEmail` (from `c_entra_get_user_info`) is the unmasked address on file and is never shown to the user — that one stays sensitive.
+
 ---
 
 ## Steps
