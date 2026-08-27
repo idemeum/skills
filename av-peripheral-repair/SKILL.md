@@ -121,7 +121,7 @@ Call `list_video_devices`. Symptoms:
 - Step 3 returned at least one paired device with `connected: false` (something to reconnect)
 - The user has confirmed acceptance of a brief 2–5s disruption to active Bluetooth connections (laptop users without a wired or built-in alternative input device should NOT consent — they'll be locked out during the window; see Edge cases)
 
-Call `reset_bluetooth_module`. G4 fires the consent gate automatically (`requiresConsent: true`) with the dry-run preview surfaced inside (`supportsDryRun: true`) — the user sees the exact command (`launchctl kickstart` on macOS, `Restart-Service bthserv` on Windows) and the brief-connection-drop warning before approving. Active connections re-establish automatically within 2–5 seconds.
+Call `reset_bluetooth_module` with no arguments — **do NOT pass `dryRun`**. The dry-run preview + consent gate is applied automatically; an authored `dryRun` suppresses both gates, so the reset never runs while still reporting success. Active connections re-establish automatically within 2–5 seconds.
 
 This tool requires admin privilege — `affectedScope: ["system"]` triggers the G4 scope-boundary check. The privileged helper daemon (default `HELPER_DAEMON_ENABLED=true`) routes it transparently for non-admin users. If the helper is unavailable or the call is denied, the step aborts cleanly; surface IT-escalation advice in Step 8.
 

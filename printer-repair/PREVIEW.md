@@ -6,34 +6,34 @@ Diagnoses and repairs printing issues including stuck print queues, offline prin
 
 ## What it does, step by step
 
-**Step 1.** Lists all printers and their current status and connection type.
+**Step 1.** Lists all installed printers and reports each one's current status and type.
 _read-only_ · `list_printers`
 
-**Step 2.** Checks every print queue for stuck, held, or errored jobs.
+**Step 2.** Scans every print queue for stuck, error, or held jobs.
 _read-only_ · `check_print_queue`
 
-**Step 3.** Asks for the printer's IP address or hostname if it can't be found automatically.
+**Step 3.** Asks for the printer's IP address or hostname when it can't be found automatically.
 _no tools, conditional_
 
-**Step 4.** Tests whether the printer can be reached over the network.
+**Step 4.** Tests whether the printer responds on the network to determine if it's a connectivity or software issue.
 _read-only, conditional_ · `check_printer_connectivity`
 
-**Step 5.** Clears stuck or jammed jobs from all print queues after showing what will be removed.
+**Step 5.** Clears stuck print jobs from all queues after showing which jobs will be cancelled.
 _deletes data, asks permission, preview first, conditional_ · `clear_print_queue`
 
-**Step 6.** Confirms whether the print queue is now empty.
+**Step 6.** Confirms whether the queue is now empty after clearing stuck jobs.
 _read-only, conditional_ · `check_print_queue`
 
-**Step 7.** Restarts the print service to fix a stopped or unresponsive printer.
-_no tools, conditional_
+**Step 7.** Restarts the print service when a printer is offline, stopped, or jobs keep sticking.
+_deletes data, asks permission, preview first, conditional_ · `restart_cups`
 
-**Step 8.** Rechecks printer status after the restart to see if it's fixed.
+**Step 8.** Rechecks printer status after the restart and flags likely driver or configuration corruption if unresolved.
 _read-only, conditional_ · `list_printers`
 
-**Step 9.** Asks the user to send a real print job and confirm it printed successfully.
+**Step 9.** Asks the user to send a real test print and confirm whether it succeeded.
 _asks the user, conditional_ · `wait_for_user_ack`
 
-**Step 10.** Summarizes what was checked and fixed, plus any next steps needed.
+**Step 10.** Summarizes what was checked and fixed, the final status, and any next steps needed.
 _no tools_
 
 ## Tools it may use

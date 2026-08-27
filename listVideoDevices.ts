@@ -67,7 +67,15 @@ export interface ListVideoDevicesResult {
 
 interface SPCameraEntry {
   _name:                   string;
-  spcamera_model_id?:      string;      // e.g. "Model Id: FaceTime HD Camera"
+  /**
+   * macOS 13+ HYPHENATES these keys (`spcamera_model-id`); pre-Ventura used
+   * underscores.  Both are declared so the parser spans versions — reading
+   * only the underscore form silently yields an empty model string and
+   * collapses every classification to "unknown".
+   */
+  "spcamera_model-id"?:    string;      // e.g. "MacBook Pro Camera" / "iPhone16,1"
+  "spcamera_unique-id"?:   string;
+  spcamera_model_id?:      string;      // pre-Ventura key
   spcamera_unique_id?:     string;
 }
 
@@ -75,14 +83,30 @@ interface SPCameraData {
   SPCameraDataType?: SPCameraEntry[];
 }
 
+/**
+ * Apple names the built-in camera after the host model on Apple Silicon
+ * ("MacBook Pro Camera"), not "FaceTime" — matching only on "facetime"
+ * misses every M-series Mac.
+ */
+// `\bapple\b` preserves the pre-Ventura behaviour (model ids such as
+// "Apple Camera"); continuity is tested first, so an iPhone can't be
+// captured by it.
+const BUILTIN_CAMERA_RE   = /facetime|built-?in|\bapple\b|\bmacbook\b|\bimac\b|\bmac (mini|studio|pro)\b/i;
+const CONTINUITY_CAMERA_RE = /continuity|iphone|ipad/i;
+const USB_CAMERA_RE        = /\busb\b|logitech|razer|brio|elgato|anker|kiyo/i;
+
+function cameraModelId(entry: SPCameraEntry): string {
+  return entry["spcamera_model-id"] ?? entry.spcamera_model_id ?? "";
+}
+
 function classifyDarwinCamera(entry: SPCameraEntry): VideoDevice["connection"] {
-  const model = (entry.spcamera_model_id ?? "").toLowerCase();
-  const name  = entry._name.toLowerCase();
-  if (name.includes("facetime") || model.includes("apple"))      return "built-in";
-  if (name.includes("continuity") || name.includes("iphone"))    return "continuity";
-  if (model.includes("usb") || name.includes("logitech") || name.includes("razer")) {
-    return "usb";
-  }
+  const model = cameraModelId(entry);
+  const name  = entry._name;
+  // Continuity first: an iPhone's model id ("iPhone16,1") must not be
+  // out-competed by a host-model match on the camera name.
+  if (CONTINUITY_CAMERA_RE.test(name) || CONTINUITY_CAMERA_RE.test(model)) return "continuity";
+  if (BUILTIN_CAMERA_RE.test(name)    || BUILTIN_CAMERA_RE.test(model))    return "built-in";
+  if (USB_CAMERA_RE.test(name)        || USB_CAMERA_RE.test(model))        return "usb";
   return "unknown";
 }
 
@@ -213,6 +237,7 @@ export const __testing = {
   parseDarwinOutput,
   parseWinOutput,
   classifyDarwinCamera,
+  cameraModelId,
   classifyWinCamera,
   parseWinVidIdPid,
 };

@@ -71,8 +71,28 @@ interface SPAudioStream {
   coreaudio_default_audio_output_device?: string;
   coreaudio_default_audio_system_device?: string;
   coreaudio_device_transport?:       string;       // e.g. "coreaudio_device_type_builtin"
-  coreaudio_device_input?:           string;
-  coreaudio_device_output?:          string;
+  /**
+   * Direction markers.  macOS 13+ reports the CHANNEL COUNT here (a JSON
+   * number, e.g. `1` / `2`); older builds reported the string
+   * `"spaudio_device_yes"`.  The key is ABSENT when the device has no
+   * channels in that direction.  Match on presence + positive count, never
+   * on a fixed string — the string form no longer ships.
+   */
+  coreaudio_device_input?:           number | string;
+  coreaudio_device_output?:          number | string;
+}
+
+/**
+ * True when `raw` marks the device as having channels in that direction.
+ * Accepts both the modern numeric channel count and the legacy
+ * `"spaudio_device_yes"` string so the parser spans macOS versions.
+ */
+function hasChannels(raw: number | string | undefined | null): boolean {
+  if (raw === undefined || raw === null) return false;
+  if (typeof raw === "number") return raw > 0;
+  const n = Number(raw);
+  if (Number.isFinite(n)) return n > 0;
+  return raw === "spaudio_device_yes";
 }
 
 interface SPAudioBlock {
@@ -118,8 +138,8 @@ function parseDarwinOutput(stdout: string): ListAudioDevicesResult {
 
   for (const item of items) {
     const name      = item._name;
-    const isInput   = item.coreaudio_device_input  === "spaudio_device_yes";
-    const isOutput  = item.coreaudio_device_output === "spaudio_device_yes";
+    const isInput   = hasChannels(item.coreaudio_device_input);
+    const isOutput  = hasChannels(item.coreaudio_device_output);
     const isDefIn   = item.coreaudio_default_audio_input_device  === "spaudio_yes";
     const isDefOut  = item.coreaudio_default_audio_output_device === "spaudio_yes";
     const connection = classifyDarwinTransport(item.coreaudio_device_transport, name);
@@ -286,4 +306,5 @@ export const __testing = {
   parseWinOutput,
   classifyDarwinTransport,
   classifyWinConnection,
+  hasChannels,
 };

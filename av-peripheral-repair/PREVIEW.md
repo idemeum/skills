@@ -6,28 +6,28 @@ Diagnoses and repairs A/V and peripheral hardware problems including external mo
 
 ## What it does, step by step
 
-**Step 1.** Determines which type of peripheral is affected to route diagnosis appropriately.
+**Step 1.** Determines which peripheral type is affected and routes to the matching diagnostic path.
 _no tools_
 
-**Step 2.** Lists connected USB devices to spot missing, errored, or underpowered hardware.
+**Step 2.** Checks connected USB devices and flags missing, errored, or underpowered ones.
 _read-only_ · `list_usb_devices`
 
-**Step 3.** Lists paired Bluetooth devices to check power, pairing, and connection status.
+**Step 3.** Checks paired Bluetooth devices and flags radios that are off or peripherals paired but offline.
 _read-only_ · `list_bluetooth_devices`
 
-**Step 4.** Checks whether the right audio device is selected as the system default.
+**Step 4.** Checks audio device settings and flags mis-selected or duplicated default devices.
 _read-only_ · `list_audio_devices`
 
-**Step 5.** Checks whether the camera is detected and properly selected by apps.
+**Step 5.** Checks camera detection and flags devices missing, unselected, or blocked by network/range issues.
 _read-only_ · `list_video_devices`
 
-**Step 6.** Restarts the Bluetooth module to reconnect paired devices, with user consent first.
-_makes a change, asks permission, preview first_ · `reset_bluetooth_module`, `list_bluetooth_devices`
+**Step 6.** Resets the Bluetooth module as a last resort, with preview and user consent required first.
+_deletes data, asks permission, preview first_ · `reset_bluetooth_module`, `list_bluetooth_devices`
 
-**Step 7.** Asks the user to test the peripheral and reports whether it now works.
+**Step 7.** Asks the user to retest the peripheral and records whether the fix worked.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 8.** Summarizes the diagnosis, actions taken, and outcome, escalating to IT if unresolved.
+**Step 8.** Reports what was diagnosed, what was tried, and whether the issue is resolved or needs escalation.
 _no tools_
 
 ## Tools it may use

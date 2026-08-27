@@ -81,9 +81,18 @@ interface SPBluetoothEntry {
   /** Each device is a single-key object: { "<deviceName>": { ...details } } */
   [name: string]: {
     device_address?:        string;
-    device_minorClassOfDevice_string?: string;
-    device_majorClassOfDevice_string?: string;
-    device_battery_level_main?: string;     // "85%"
+    device_minorType?:      string;         // macOS 13+ ("Headphones", "Keyboard")
+    device_majorType?:      string;
+    /**
+     * Battery.  macOS 13+ uses camelCase after the `device_` prefix and
+     * splits AirPods-style devices into left / right / case with no "main";
+     * pre-Ventura used the snake_case `device_battery_level_main`.
+     */
+    device_batteryLevelMain?:  string;      // "85%"
+    device_batteryLevelLeft?:  string;
+    device_batteryLevelRight?: string;
+    device_batteryLevelCase?:  string;
+    device_battery_level_main?: string;     // pre-Ventura key
     device_rssi?:            string;
     device_vendorID?:        string;
     device_productID?:       string;
@@ -91,9 +100,20 @@ interface SPBluetoothEntry {
 }
 
 interface SPBluetoothControllerInfo {
-  controller_state?: string;       // "On" | "Off"
+  /**
+   * macOS 13+ reports `"attrib_on"` / `"attrib_off"`; older builds reported
+   * `"On"` / `"Off"`.  Never compare against a single literal — see
+   * `isControllerOn`.
+   */
+  controller_state?: string;
   device_title?: string;
   general_device_status?: string;
+}
+
+/** Spans the macOS 13+ `attrib_on` form and the legacy `On` form. */
+function isControllerOn(state: string | undefined): boolean {
+  const s = (state ?? "").trim().toLowerCase();
+  return s === "attrib_on" || s === "on";
 }
 
 interface SPBluetoothBlock {
@@ -123,10 +143,31 @@ function parseRssiDarwin(raw: string | undefined): number | undefined {
   return Number.isNaN(n) ? undefined : n;
 }
 
+/**
+ * Picks the most representative battery reading.  Prefers an explicit
+ * "main" level; for split devices (AirPods) falls back to the LOWER of the
+ * two buds — that is the one that will die first, which is what the user
+ * needs to act on.  The case level is deliberately ignored (it doesn't
+ * affect whether the device can connect).
+ */
+function pickBatteryDarwin(details: SPBluetoothEntry[string]): number | undefined {
+  const main = parseBatteryDarwin(
+    details.device_batteryLevelMain ?? details.device_battery_level_main,
+  );
+  if (main !== undefined) return main;
+
+  const buds = [
+    parseBatteryDarwin(details.device_batteryLevelLeft),
+    parseBatteryDarwin(details.device_batteryLevelRight),
+  ].filter((n): n is number => n !== undefined);
+
+  return buds.length > 0 ? Math.min(...buds) : undefined;
+}
+
 function flattenDarwinDevices(entries: SPBluetoothEntry[], connected: boolean, out: BluetoothDevice[]): void {
   for (const entry of entries) {
     for (const [name, details] of Object.entries(entry)) {
-      const battery = parseBatteryDarwin(details.device_battery_level_main);
+      const battery = pickBatteryDarwin(details);
       const rssi    = parseRssiDarwin(details.device_rssi);
       const dev: BluetoothDevice = {
         name,
@@ -150,7 +191,7 @@ function parseDarwinOutput(stdout: string): ListBluetoothDevicesResult {
   let poweredOn = false;
 
   for (const block of blocks) {
-    if (block.controller_properties?.controller_state === "On") poweredOn = true;
+    if (isControllerOn(block.controller_properties?.controller_state)) poweredOn = true;
     if (block.device_connected)     flattenDarwinDevices(block.device_connected,     true,  devices);
     if (block.device_not_connected) flattenDarwinDevices(block.device_not_connected, false, devices);
   }
@@ -259,7 +300,9 @@ export const __testing = {
   parseDarwinOutput,
   parseWinOutput,
   parseBatteryDarwin,
+  pickBatteryDarwin,
   parseRssiDarwin,
+  isControllerOn,
   extractWinAddress,
   flattenDarwinDevices,
 };

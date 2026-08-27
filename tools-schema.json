@@ -2793,7 +2793,7 @@
       "toolId": "reset_bluetooth_module",
       "description": "Restarts the system Bluetooth daemon (macOS bluetoothd / Windows bthserv) so the OS re-enumerates paired devices and re-establishes connections. Last-resort fix for paired-but-disconnected devices when toggling the device itself has failed. Requires admin privilege; will briefly drop all Bluetooth connections including any audio call in progress.",
       "riskLevel": "medium",
-      "destructive": false,
+      "destructive": true,
       "requiresConsent": true,
       "supportsDryRun": true,
       "affectedScope": [
@@ -2804,6 +2804,7 @@
         "dryRun",
         "command",
         "succeeded",
+        "settled",
         "message",
         "durationMs"
       ],
