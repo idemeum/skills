@@ -55,7 +55,14 @@ Call `c_entra_get_user_info`.
 
 **Step 2 — Capture what access is needed**
 
-Call `request_user_input` asking the user to name the group, distribution list, Teams, SharePoint site, or application they need access to.
+Call `request_user_input`:
+
+```yaml
+prompt: "What do you need access to? Name the group, distribution list, Teams, SharePoint site, or application."
+placeholder: "e.g. Marketing Team, Salesforce"
+```
+
+Skip this step if the user already named the target in their request.
 
 **Step 3 — Search matching groups**
 
@@ -77,11 +84,23 @@ Call `c_entra_get_app_assignments`. Exclude any Step 4 candidate the user is alr
 
 **Step 7 — Confirm the exact target**
 
-Use `wait_for_user_ack` to present the remaining candidates (groups and apps combined, max 4 options) and let the user pick the one they need. If nothing remains after exclusions, tell the user they already have the access they described, or that no match was found, and stop.
+Call `wait_for_user_ack`:
+
+```yaml
+prompt: "Which one do you need access to?"
+options:
+  - { id: "none-of-these", label: "None of these", kind: "cancel" }
+```
+
+Then prepend one option per remaining candidate (max 3, before the `none-of-these` entry) — the groups and apps left after Steps 5/6 excluded what the user already has. Prefix each `id` so the downstream branch is testable: `group:` followed by the `groupId` for a group, `app:` followed by the `servicePrincipalId` for an app. Set `label` to the candidate's display name. `inputsFrom: [{ step: 3, field: "groups" }, { step: 4, field: "apps" }]`.
+
+If nothing remains after exclusions, do NOT call this gate — tell the user they already have the access they described, or that no match was found, and stop. On `none-of-these` → end the run and ask the user to describe the target more precisely.
 
 **Step 8 — Add to group**
 
-If the user selected a group in Step 7, call `c_entra_add_to_group` with the `groupId` from Step 3.
+`Condition:` only run if Step 7 returned an id starting with `group:`.
+
+Call `c_entra_add_to_group` with the `groupId` from Step 3.
 
 - `status: "ok"` → proceed to verification
 - `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
@@ -89,7 +108,9 @@ If the user selected a group in Step 7, call `c_entra_add_to_group` with the `gr
 
 **Step 9 — Assign app**
 
-If the user selected an app in Step 7, call `c_entra_assign_app` with the `servicePrincipalId` from Step 4.
+`Condition:` only run if Step 7 returned an id starting with `app:`.
+
+Call `c_entra_assign_app` with the `servicePrincipalId` from Step 4.
 
 - `status: "ok"` → proceed to verification
 - `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop

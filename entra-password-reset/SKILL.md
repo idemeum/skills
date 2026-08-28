@@ -33,7 +33,7 @@ metadata:
 
 Use when a Microsoft Entra ID user needs a password reset via the admin Graph API — generates a temporary password the user must change on next sign-in, delivered by the gateway to the user's recovery email.
 
-Appropriate for: forgotten Entra/Microsoft 365 password, SSPR disabled or failed, admin force-reset (suspected compromise, onboarding), or account locked out after too many failed sign-in attempts (Entra Smart Lockout). Smart Lockout has no dedicated Graph API to clear it — a password reset is the only programmatic remedy.
+Appropriate for: forgotten Entra/Microsoft 365 password, SSPR disabled or failed, admin force-reset (suspected compromise, onboarding), or account locked out after too many failed sign-in attempts (Entra Smart Lockout). Smart Lockout has no dedicated Graph API to clear it — a password reset is the only programmatic remedy (or waiting out the lockout timer).
 
 Do NOT use for Okta or Google password resets. Do NOT use for MFA re-enrollment (`entra-mfa-reset`), access requests (`entra-access-request`), licensing (`entra-license-assign`), or role assignment (`entra-role-assign`).
 
@@ -66,11 +66,24 @@ Call `c_entra_get_sign_in_logs`. Check for:
 
 **Step 3 — Confirm the reset**
 
-Use `wait_for_user_ack` to confirm: "This will reset the password for {displayName} ({upn}). A temporary password will be generated and, if possible, emailed to their recovery address. They must change it on next sign-in. Proceed?" MUST get explicit confirmation.
+`Condition:` only run if Step 1 returned a non-empty `recoveryEmail`.
+
+Call `wait_for_user_ack`:
+
+```yaml
+prompt: "This will reset the password for {displayName} ({upn}). A temporary password will be generated and, if possible, emailed to their recovery address. They must change it on next sign-in. Proceed?"
+options:
+  - { id: "reset",  label: "Reset the password", kind: "primary" }
+  - { id: "cancel", label: "Cancel",             kind: "cancel"  }
+```
+
+MUST get explicit confirmation. On `cancel` → end the run without resetting.
 
 **Step 4 — Execute the reset**
 
-Call `c_entra_reset_password`.
+`Condition:` only run if (a) Step 1 returned a non-empty `recoveryEmail` AND (b) Step 3 returned `reset`.
+
+Call `c_entra_reset_password`. Do NOT author `dryRun` — the tool declares `supportsDryRun: false` and takes no parameters.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
 - `status: "failed"` → report `failureReason` (and `httpStatus` if present) and stop
@@ -84,7 +97,7 @@ Tell the user (without stating the password itself):
 - The reset succeeded for {displayName} ({upn})
 - If `deliveryMethod` was `"email"` — check {notificationEmail} (including spam) for the temporary password, then change it on next sign-in
 - If `deliveryMethod` was `"none"` — the password has changed but was not delivered; contact IT directly to obtain the new temporary password
-- If the user was Smart Lockout-locked, confirm the password reset has cleared the lockout — they can sign in with the new temporary password
+- If the user was Smart Lockout-locked, confirm that the password reset has cleared the lockout — they can sign in with the new temporary password
 - If MFA needs re-registration, run `entra-mfa-reset`
 
 ---

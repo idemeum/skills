@@ -54,7 +54,14 @@ Call `c_entra_get_user_info`.
 
 **Step 2 — Capture the role name**
 
-Call `request_user_input` asking for the exact name of the directory role to assign (e.g. "Global Reader", "Helpdesk Administrator"), if not already stated.
+Call `request_user_input`:
+
+```yaml
+prompt: "Which directory role should I assign?"
+placeholder: "e.g. Global Reader, Helpdesk Administrator"
+```
+
+Skip this step if the user already named the role in their request.
 
 **Step 3 — Resolve the role**
 
@@ -66,7 +73,17 @@ Call `c_entra_find_role` with the name from Step 2.
 
 **Step 4 — Confirm the exact role**
 
-Only when Step 3 returned more than one match (up to 4). Use `wait_for_user_ack` to let the user pick the exact role from the matches. Skip this step if Step 3 returned exactly one match — use it directly.
+`Condition:` only run if Step 3 returned more than one match. Skip if it returned exactly one — use that role directly.
+
+Call `wait_for_user_ack`:
+
+```yaml
+prompt: "More than one role matches. Which one should I assign?"
+options:
+  - { id: "none-of-these", label: "None of these", kind: "cancel" }
+```
+
+Then prepend one option per entry in Step 3's `roles` array (max 3, before the `none-of-these` entry), setting the option's `id` to that entry's `id`, its `label` to that entry's `displayName`, and `kind` to `"primary"`. `inputsFrom: [{ step: 3, field: "roles" }]`. On `none-of-these` → end the run and ask the user to re-run with a more precise role name.
 
 **Step 5 — Check existing role assignments**
 
@@ -77,11 +94,20 @@ Call `c_entra_get_role_assignments`.
 
 **Step 6 — Confirm the assignment**
 
-Use `wait_for_user_ack` to confirm: "This will assign the {roleDisplayName} role to {displayName} ({upn}), granting the tenant-wide permissions of that role. Proceed?"
+Call `wait_for_user_ack`:
 
-MUST get explicit confirmation before proceeding. Do not skip this step.
+```yaml
+prompt: "This will assign the {roleDisplayName} role to {displayName} ({upn}), granting the tenant-wide permissions of that role. Proceed?"
+options:
+  - { id: "assign", label: "Assign the role", kind: "primary" }
+  - { id: "cancel", label: "Cancel",          kind: "cancel"  }
+```
+
+MUST get explicit confirmation before proceeding. Do not skip this step. On `cancel` → end the run without assigning.
 
 **Step 7 — Execute the assignment**
+
+`Condition:` only run if Step 6 returned `assign`.
 
 Call `c_entra_assign_role` with the confirmed `roleDefinitionId` from Step 3/4.
 

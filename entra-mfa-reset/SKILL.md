@@ -63,11 +63,20 @@ Scan for recent MFA-related failures to confirm the complaint is consistent with
 
 **Step 4 — Confirm the reset**
 
-Use `wait_for_user_ack` to confirm: "This will remove ALL registered MFA methods for {displayName} ({upn}). They will be prompted to set up MFA again on next sign-in. Proceed?"
+Call `wait_for_user_ack`:
 
-MUST get explicit confirmation before proceeding. Do not skip this step.
+```yaml
+prompt: "This will remove ALL registered MFA methods for {displayName} ({upn}). They will be prompted to set up MFA again on next sign-in. Proceed?"
+options:
+  - { id: "reset",  label: "Reset MFA methods", kind: "primary" }
+  - { id: "cancel", label: "Cancel",            kind: "cancel"  }
+```
+
+MUST get explicit confirmation before proceeding. Do not skip this step. On `cancel` → end the run without resetting.
 
 **Step 5 — Execute the reset**
+
+`Condition:` only run if Step 4 returned `reset`.
 
 Call `c_entra_reset_mfa`.
 

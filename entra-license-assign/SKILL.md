@@ -67,17 +67,31 @@ Filter to SKUs the user does not already have (from Step 2) and that have at lea
 
 **Step 4 — Ask which licence to assign**
 
-Call `request_user_input` presenting the filtered list of available SKU part numbers with remaining seat counts, asking the user to name the one to assign.
+Call `request_user_input`:
 
-Match their answer to a `skuId` from Step 3's results — never ask the user to supply a raw SKU ID.
+```yaml
+prompt: "Which licence should I assign? Available: {skuList}"
+placeholder: "e.g. ENTERPRISEPACK"
+```
+
+Substitute `{skuList}` with the filtered SKU part numbers and their remaining seat counts from Step 3. Match their answer to a `skuId` from Step 3's results — never ask the user to supply a raw SKU ID.
 
 **Step 5 — Confirm the assignment**
 
-Use `wait_for_user_ack` to confirm: "This will assign the {skuPartNumber} licence to {displayName} ({upn}). Proceed?" plus a cancel option.
+Call `wait_for_user_ack`:
 
-MUST get explicit confirmation before proceeding.
+```yaml
+prompt: "This will assign the {skuPartNumber} licence to {displayName} ({upn}). Proceed?"
+options:
+  - { id: "assign", label: "Assign the licence", kind: "primary" }
+  - { id: "cancel", label: "Cancel",             kind: "cancel"  }
+```
+
+MUST get explicit confirmation before proceeding. On `cancel` → end the run without assigning.
 
 **Step 6 — Execute the assignment**
+
+`Condition:` only run if Step 5 returned `assign`.
 
 Call `c_entra_assign_license`.
 

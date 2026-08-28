@@ -22,7 +22,13 @@ export const meta = {
   riskLevel:       "high",
   destructive:     false,
   requiresConsent: true,
-  supportsDryRun:  true,
+  // Deliberately false — diverges from the `kind: corrective` codegen template
+  // (see scaffold-once policy in CLAUDE.md). The dry-run branch only echoed the
+  // gateway URL it *would* POST to; it previewed no consequence, so it bought a
+  // second confirmation card without telling the user anything the consent card
+  // doesn't. The single G4 consent gate is the confirmation for this tool.
+  // Matches add_printer, which ships high-risk + consent + no dry-run.
+  supportsDryRun:  false,
   auditRequired:   true,
   affectedScope:   ["network"],
   requiresVerifiedIdentity: true,
@@ -32,17 +38,10 @@ export const meta = {
     "message",
     "deliveryMethod",
     "notificationEmail",
-    "willPost",
-    "endpoint",
     "httpStatus",
     "failureReason",
   ],
-  schema: {
-    dryRun: z
-      .boolean()
-      .nullable().optional()
-      .describe("When true, returns the operation preview without executing."),
-  },
+  schema: {},
 } as const;
 
 // -- Types --------------------------------------------------------------------
@@ -57,8 +56,6 @@ interface EntraResetPasswordData {
 export interface EntraResetPasswordResult {
   status:         "ok" | "failed" | "not-configured";
   message:        string;
-  willPost?:      boolean;
-  endpoint?:      string;
   deliveryMethod?: string;
   notificationEmail?: string;
   httpStatus?:    number;
@@ -67,10 +64,7 @@ export interface EntraResetPasswordResult {
 
 // -- Implementation -----------------------------------------------------------
 
-export async function run(args: {
-  dryRun?: boolean;
-}, ctx?: { verifiedUpn?: string; userSessionHandle?: string }): Promise<EntraResetPasswordResult> {
-  const baseUrl = process.env["CLOUD_GATEWAY_URL"];
+export async function run(_args: Record<string, never>, ctx?: { verifiedUpn?: string; userSessionHandle?: string }): Promise<EntraResetPasswordResult> {
   // Subject comes from the verified session, never from args — see
   // ToolRunContext.verifiedUpn in electron/agent/guards/execution.ts.
   if (!ctx?.verifiedUpn) {
@@ -81,15 +75,6 @@ export async function run(args: {
   }
   const upn = encodeURIComponent(ctx.verifiedUpn);
   const path = `/entra/users/${upn}/password/reset`;
-
-  if (args.dryRun) {
-    return {
-      status:   "ok",
-      message:  `Would POST reset password for ${ctx?.verifiedUpn ?? "the signed-in user"}.`,
-      willPost: true,
-      endpoint: baseUrl ? baseUrl.replace(/\/$/, "") + path : "(CLOUD_GATEWAY_URL not set)",
-    };
-  }
 
   const r = await cloudGatewayCall<EntraResetPasswordData>({
     method: "POST",
