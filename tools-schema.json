@@ -2517,6 +2517,32 @@
       ]
     },
     {
+      "toolId": "record_screen",
+      "description": "Offers the user a short full-screen recording so they can show IT the problem.  The user controls start/stop; the recording is uploaded and the URL is returned.  Returns { videoUrl: string | null } — null when the user declines or the upload fails.\n\nIMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses the 60s TOOL_TIMEOUT_MS ceiling for this call and uses the video recording's own timeouts (offer + recording duration + reviewing).",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "isUserWaitGate": true,
+      "affectedScope": [
+        "user"
+      ],
+      "tccCategories": [
+        "ScreenRecording"
+      ],
+      "outputKeys": [
+        "videoUrl"
+      ],
+      "params": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true,
+          "description": "Short message explaining why a recording would help (e.g. 'Record your screen to show the issue to IT"
+        }
+      ]
+    },
+    {
       "toolId": "remove_printer",
       "description": "Removes a printer from the system. Use when a printer is stuck in permanent error state or needs to be re-added with fresh configuration.",
       "riskLevel": "high",
