@@ -107,7 +107,9 @@ G4 fires the dry-run preview then the consent gate. Be accurate in the rationale
 Call `check_firewall_status`. If `blockAllConnections` is true, that's the likely cause.
 
 **Step 11 — Is this device MDM-managed?**
-`Condition:` only run if connectivity is still broken after Steps 5–6. Call `check_mdm_enrollment`. Continue to Step 12 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 12–15 and go to Step 17, stating which of these it was: not enrolled; managed by another provider (name it — a Jamf Mac is not reachable from here yet); or serial unreadable (common on VMs).
+`Condition:` only run if Step 2's `check_connectivity` returned `allReachable: false`. A machine that reached every target has no connectivity fault for a configuration profile to explain — there is nothing here for MDM to fix, so this step and Steps 12–16 do not run. Do NOT read this as "connectivity is still broken after the correctives": when Steps 5–7 were themselves skipped, nothing changed and Step 2's reading is still the current one.
+
+Call `check_mdm_enrollment`. Continue to Step 12 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 12–15 and go to Step 17, stating which of these it was: not enrolled; managed by another provider (name it — a Jamf Mac is not reachable from here yet); or serial unreadable (common on VMs).
 
 **Step 12 — Locate the device in Intune**
 `Condition:` only run if Step 11 continued. Call `c_intune_find_device` — takes no parameters, the serial comes from the runtime.
