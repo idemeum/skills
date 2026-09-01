@@ -114,13 +114,13 @@ Call `check_firewall_status`. If `blockAllConnections` is true, that's the likel
 
 Check `matchCount` first. Continue ONLY when it is exactly 1; otherwise skip to Step 16. `0` means not in this tenant. `>1` means the serial is ambiguous — VM templates and some OEM batches ship duplicates — so the record returned may be a different machine; **act on none of them**, and say IT must identify the right one.
 
-With one match, check `lastSyncDateTime`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 13–15, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that a profile is wrong.
+With one match, check `lastCheckIn`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 13–15, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that a profile is wrong.
 
 **Step 13 — Which profile failed?**
 `Condition:` only run if Step 12 found the device. Call `c_intune_get_configuration_states`. Name the specific failing profile — a Wi-Fi payload for Step 4's symptom, a proxy payload for Step 7's. Report it by name even if Step 14 is skipped; that is what makes the escalation actionable.
 
 **Step 14 — Re-apply the device's configuration**
-`Condition:` only run if Step 13 shows a profile in error / non-compliant / pending state matching the diagnosed fault. Skip when all profiles applied cleanly — the fault lies elsewhere and a sync would be a no-op.
+`Condition:` only run if Step 13 shows a profile whose `state` is `failed` and which matches the diagnosed fault. **Only `failed` warrants a sync.** `pending` and `deferred` mean the device has the command and has not finished with it — syncing again just re-queues it. `conflict` means two policies disagree, which IT must resolve; a sync cannot. `applied` means the fault lies elsewhere.
 
 Call `c_intune_sync_device`. State plainly in the rationale that this tells the device to check in and re-apply **all** its assigned configuration — it is not a targeted re-push of one profile (no such operation exists), it creates and changes no policy, and it completes asynchronously after the tool returns.
 

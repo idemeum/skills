@@ -29,12 +29,12 @@ export const meta = {
   outputKeys: [
     "status",
     "message",
-    "managedDeviceId",
+    "deviceId",
     "deviceName",
     "complianceState",
-    "operatingSystem",
+    "osName",
     "osVersion",
-    "lastSyncDateTime",
+    "lastCheckIn",
     "matchCount",
     "httpStatus",
     "failureReason",
@@ -45,24 +45,24 @@ export const meta = {
 // -- Types --------------------------------------------------------------------
 
 interface IntuneFindDeviceData {
-  managedDeviceId: string;
+  deviceId: string;
   deviceName: string;
   complianceState: string;
-  operatingSystem: string;
+  osName: string;
   osVersion: string;
-  lastSyncDateTime: string;
+  lastCheckIn: string;
   matchCount: number;
 }
 
 export interface IntuneFindDeviceResult {
   status:         "ok" | "failed" | "not-configured";
   message:        string;
-  managedDeviceId?: string;
+  deviceId?: string;
   deviceName?: string;
   complianceState?: string;
-  operatingSystem?: string;
+  osName?: string;
   osVersion?: string;
-  lastSyncDateTime?: string;
+  lastCheckIn?: string;
   matchCount?: number;
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
@@ -98,12 +98,12 @@ export async function run(_args: Record<string, never>, ctx?: { deviceSerial?: s
   return {
     status:  "ok",
     message: "Found device " + (d.deviceName ?? "") + ".",
-    managedDeviceId: d.managedDeviceId,
+    deviceId: d.deviceId,
     deviceName: d.deviceName,
     complianceState: d.complianceState,
-    operatingSystem: d.operatingSystem,
+    osName: d.osName,
     osVersion: d.osVersion,
-    lastSyncDateTime: d.lastSyncDateTime,
+    lastCheckIn: d.lastCheckIn,
     matchCount: d.matchCount,
   };
 }

@@ -39,10 +39,11 @@ export const meta = {
 // -- Types --------------------------------------------------------------------
 
 interface StatesEntry {
-  displayName: string;
+  name: string;
   platformType: string;
   state: string;
   version: number | null;
+  stateReason: string | null;
 }
 interface IntuneGetComplianceStatesData {
   states: StatesEntry[];
