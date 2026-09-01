@@ -2776,7 +2776,7 @@
     },
     {
       "toolId": "reset_av_device_selection",
-      "description": "Clears the per-app microphone, camera, and speaker selection for one collab app (Teams, Slack, Zoom, Webex) so the app re-detects on next launch. Use when the user reports the app is stuck on a disconnected or unintended A/V device. Does not change broader preferences or sign the user out.",
+      "description": "Clears the per-app microphone, camera, and speaker selection for one or more collab apps (Teams, Slack, Zoom, Webex) so each app re-detects on next launch. Use when the user reports an app is stuck on a disconnected or unintended A/V device. Takes a batch — pass every app to reset in a single call so the user sees one preview and approves once. Does not change broader preferences or sign the user out.",
       "riskLevel": "medium",
       "destructive": true,
       "requiresConsent": true,
@@ -2788,7 +2788,7 @@
         "FullDiskAccess"
       ],
       "outputKeys": [
-        "app",
+        "apps",
         "platform",
         "dryRun",
         "actions",
@@ -2796,10 +2796,9 @@
       ],
       "params": [
         {
-          "name": "app",
-          "type": "string",
+          "name": "apps",
+          "type": "string[]",
           "required": true,
-          "description": "Which collab app's A/V selection to reset.",
           "enum": [
             "teams",
             "slack",

@@ -106,7 +106,7 @@ On `fixed`: end the run with success (Step 8 final report). On `still-broken` / 
 **Step 4 — Reset A/V device selection (mic / camera / speaker stuck on wrong device)**
 `Condition:` only run if (a) the user's complaint involves mic / camera / speaker AND (b) Step 3b either was skipped (no denied permissions) or returned `still-broken` / `skip` AND (c) Step 1b either was skipped or returned `still-broken` / `skip`.
 
-Call `reset_av_device_selection` with `app: <app>`. The required parameter is `app` (one of `"teams" | "slack" | "zoom" | "webex"`) — wildcards are rejected at the schema layer. G4 auto-triggers the dry-run preview (`destructive: true` + `supportsDryRun: true`) surfacing the affected file paths and which keys would be cleared, then the consent gate fires. The tool clears only the audio/video selection keys — broader app preferences and sign-in state are preserved.
+Call `reset_av_device_selection` with `apps: ["<app>"]` — the single app the user reported. The required parameter is `apps`, an array of `"teams" | "slack" | "zoom" | "webex"`; wildcards are rejected at the schema layer. G4 auto-triggers the dry-run preview (`destructive: true` + `supportsDryRun: true`) surfacing the affected file paths and which keys would be cleared, then the consent gate fires. The tool clears only the audio/video selection keys — broader app preferences and sign-in state are preserved.
 
 Step 6's restart picks up the cleared selection — the user does NOT need to manually quit and relaunch between Steps 4 and 6.
 

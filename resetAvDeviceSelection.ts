@@ -46,11 +46,12 @@ import type { CollabApp } from "./checkCollabAppStatus";
 export const meta = {
   name: "reset_av_device_selection",
   description:
-    "Clears the per-app microphone, camera, and speaker selection for one " +
-    "collab app (Teams, Slack, Zoom, Webex) so the app re-detects on next " +
-    "launch. Use when the user reports the app is stuck on a disconnected " +
-    "or unintended A/V device. Does not change broader preferences or sign " +
-    "the user out.",
+    "Clears the per-app microphone, camera, and speaker selection for one or " +
+    "more collab apps (Teams, Slack, Zoom, Webex) so each app re-detects on " +
+    "next launch. Use when the user reports an app is stuck on a disconnected " +
+    "or unintended A/V device. Takes a batch — pass every app to reset in a " +
+    "single call so the user sees one preview and approves once. Does not " +
+    "change broader preferences or sign the user out.",
   riskLevel:       "medium",
   destructive:     true,
   requiresConsent: true,
@@ -58,11 +59,20 @@ export const meta = {
   affectedScope:   ["user"],
   auditRequired:   true,
   tccCategories:   ["FullDiskAccess"],
-  outputKeys: ["app","platform","dryRun","actions","errors"],
+  outputKeys: ["apps","platform","dryRun","actions","errors"],
   schema: {
-    app: z
-      .enum(["teams", "slack", "zoom", "webex"])
-      .describe("Which collab app's A/V selection to reset."),
+    // Batch, not a single app: G4 gates per tool CALL, so a forEach over four
+    // apps would raise four dry-run previews and four consent cards for one
+    // user decision. Called once with every app, the preview lists all the
+    // affected files and one consent covers them (the disable_startup_item /
+    // delete_files pattern — see SKILL-AUDIT-CHECKLIST §4).
+    apps: z
+      .array(z.enum(["teams", "slack", "zoom", "webex"]))
+      .min(1)
+      .describe(
+        "Which collab apps' A/V selection to reset, in one batch. Pass every " +
+        "app to reset in a single call — do NOT invoke this tool once per app.",
+      ),
     dryRun: z
       .boolean()
       .nullable().optional()
@@ -220,6 +230,8 @@ async function clearPlistDefaults(file: string, keys: string[]): Promise<{ remov
 // -- Types --------------------------------------------------------------------
 
 export interface ResetActionResult {
+  /** Which app in the batch this row belongs to. */
+  app:        CollabApp;
   file:       string;
   strategy:   ResetTarget["strategy"];
   keysFound:  string[];
@@ -227,20 +239,20 @@ export interface ResetActionResult {
 }
 
 export interface ResetAvDeviceSelectionResult {
-  app:         CollabApp;
+  apps:        CollabApp[];
   platform:    NodeJS.Platform;
   dryRun:      boolean;
   actions:     ResetActionResult[];
-  errors:      { file: string; message: string }[];
+  errors:      { app: CollabApp; file: string; message: string }[];
 }
 
 // -- Exported run function ----------------------------------------------------
 
 export async function run({
-  app,
+  apps,
   dryRun = false,
 }: {
-  app:     CollabApp;
+  apps:    CollabApp[];
   dryRun?: boolean;
 }): Promise<ResetAvDeviceSelectionResult> {
   const platform = os.platform();
@@ -248,14 +260,25 @@ export async function run({
     throw new Error(`reset_av_device_selection: unsupported platform "${platform}"`);
   }
 
-  const targets = resetTargets(app, platform);
+  const list = (apps ?? []).filter(Boolean);
+  if (list.length === 0) {
+    throw new Error("[reset_av_device_selection] 'apps' is required and must contain at least one app.");
+  }
+  // De-duplicate so a repeated app doesn't clear the same file twice.
+  const unique = [...new Set(list)];
+
   const actions: ResetActionResult[] = [];
-  const errors:  { file: string; message: string }[] = [];
+  const errors:  { app: CollabApp; file: string; message: string }[] = [];
+
+  for (const app of unique) {
+  const targets = resetTargets(app, platform);
 
   for (const t of targets) {
     if (!(await pathExists(t.file))) {
-      // File absent — nothing to do for this target.  Not an error.
-      actions.push({ file: t.file, strategy: t.strategy, keysFound: [], keysCleared: [] });
+      // File absent — nothing to do for this target.  NOT an error: an app
+      // that isn't installed (or has never saved a device choice) simply has
+      // no config file, and reports a no-op action with empty key arrays.
+      actions.push({ app, file: t.file, strategy: t.strategy, keysFound: [], keysCleared: [] });
       continue;
     }
 
@@ -277,28 +300,29 @@ export async function run({
         // plist or delete-file — assume all configured keys are candidates.
         keysFound = [...t.keys];
       }
-      actions.push({ file: t.file, strategy: t.strategy, keysFound, keysCleared: [] });
+      actions.push({ app, file: t.file, strategy: t.strategy, keysFound, keysCleared: [] });
       continue;
     }
 
     try {
       if (t.strategy === "json") {
         const { removed } = await clearJsonKeys(t.file, t.keys);
-        actions.push({ file: t.file, strategy: t.strategy, keysFound: removed, keysCleared: removed });
+        actions.push({ app, file: t.file, strategy: t.strategy, keysFound: removed, keysCleared: removed });
       } else if (t.strategy === "plist-defaults") {
         const { removed } = await clearPlistDefaults(t.file, t.keys);
-        actions.push({ file: t.file, strategy: t.strategy, keysFound: removed, keysCleared: removed });
+        actions.push({ app, file: t.file, strategy: t.strategy, keysFound: removed, keysCleared: removed });
       } else {
         // delete-file
         await fs.rm(t.file, { force: true });
-        actions.push({ file: t.file, strategy: t.strategy, keysFound: t.keys, keysCleared: t.keys });
+        actions.push({ app, file: t.file, strategy: t.strategy, keysFound: t.keys, keysCleared: t.keys });
       }
     } catch (err) {
-      errors.push({ file: t.file, message: (err as Error).message });
+      errors.push({ app, file: t.file, message: (err as Error).message });
     }
   }
+  }
 
-  return { app, platform, dryRun, actions, errors };
+  return { apps: unique, platform, dryRun, actions, errors };
 }
 
 // -- Test helpers -------------------------------------------------------------
