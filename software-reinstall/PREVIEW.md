@@ -1,63 +1,63 @@
-# App crashing or needs reinstall
+# Install an app, or reinstall a broken one
 
 **Skill:** `software-reinstall` · **Risk:** high · **Steps:** 18
 
-Diagnoses application integrity issues and performs clean software reinstallation. Covers signature verification, thorough uninstallation, installer download with checksum validation, silent installation, and MDM-managed reinstalls.
+Installs an application the user does not have, and repairs one that is broken by reinstalling it cleanly. Covers Self Service catalog install on managed devices, signature verification, thorough uninstallation, installer download with checksum validation, and silent installation.
 
 ## What it does, step by step
 
-**Step 1.** Checks whether the application is currently installed and identifies its version and location.
+**Step 1.** Checks whether the application is already installed and reports its version and location.
 _read-only_ · `list_installed_apps`
 
-**Step 2.** Verifies the application's code signature to determine if its files are corrupted.
+**Step 2.** Verifies the app's code signature to determine if it's corrupted or intact.
 _read-only_ · `check_app_integrity`
 
-**Step 3.** Checks whether the app has all required system permissions granted.
+**Step 3.** Checks whether the app has all required system permissions and flags any missing ones.
 _read-only_ · `check_app_permissions`
 
-**Step 4.** Checks whether the device is managed by MDM to determine the best install method.
+**Step 4.** Determines whether the device is managed by MDM to decide the best install route.
 _read-only_ · `check_mdm_enrollment`
 
-**Step 4b.** Asks whether to try safe fixes first or go straight to a clean reinstall.
+**Step 4b.** Asks the user whether to try non-destructive fixes first or go straight to a clean reinstall.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 5.** Resets the app's preferences as a safe first attempt to fix the issue.
+**Step 5.** Resets the app's preferences after confirming the change with the user, keeping other data intact.
 _deletes data, asks permission, preview first_ · `reset_app_preferences`
 
-**Step 5b.** Clears the app's cache as a safe first attempt to fix the issue.
+**Step 5b.** Clears the app's cache to help resolve misbehavior without affecting user data.
 _makes a change, preview first_ · `clear_app_cache`
 
-**Step 6.** Asks the user to relaunch the app and report whether the safe fixes worked.
+**Step 6.** Asks the user to test the app and reports whether the non-destructive fixes resolved the issue.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 7.** Checks the managed software catalog for an available, supported version of the app.
+**Step 7.** Checks which managed app catalog is available on the device and looks up the app there.
 _read-only_ · `query_self_service_catalog`
 
-**Step 8.** Opens the managed software catalog directly to the app's install screen.
+**Step 8.** Opens the managed app catalog directly to the app's install screen for the user.
 _read-only_ · `trigger_self_service_install`
 
-**Step 9.** Asks the user to complete the install through the managed catalog and report the result.
+**Step 9.** Asks the user to complete the catalog install and reports the outcome.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 10.** Removes the existing application and its related files for a clean reinstall.
+**Step 10.** Removes the existing app and all its related files after user confirmation, for a clean reinstall.
 _deletes data, asks permission, preview first_ · `uninstall_app`
 
 **Step 11.** Asks the user for the official vendor download link and checksum for the app.
 _asks the user_ · `request_user_input`
 
-**Step 12.** Downloads the installer from the provided link and verifies its integrity.
+**Step 12.** Downloads the installer from the provided link and validates its integrity.
 _read-only_ · `download_installer`
 
-**Step 13.** Runs the downloaded installer to reinstall the application.
+**Step 13.** Runs the installer after user confirmation to install the app silently.
 _makes a change, asks permission, preview first, conditional_ · `run_installer`
 
-**Step 14.** Confirms the new installation is registered and recognized by the system.
+**Step 14.** Confirms the newly installed app version is registered on the device.
 _read-only_ · `list_installed_apps`
 
-**Step 15.** Asks the user to re-grant permissions and confirm the app now launches correctly.
+**Step 15.** Asks the user to grant needed permissions and confirm the app now launches correctly.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 16.** Summarizes the issue found, the fix applied, and any remaining follow-up actions.
+**Step 16.** Reports what caused the issue, how it was fixed, and any remaining steps for the user.
 _no tools_
 
 ## Tools it may use

@@ -291,8 +291,8 @@
     },
     {
       "skillId": "software-reinstall",
-      "name": "App crashing or needs reinstall",
-      "description": "Diagnoses application integrity issues and performs clean software reinstallation. Covers signature verification, thorough uninstallation, installer download with checksum validation, silent installation, and MDM-managed reinstalls. Use when an application is crashing, corrupted, or behaving incorrectly and a reinstall is the appropriate resolution.",
+      "name": "Install an app, or reinstall a broken one",
+      "description": "Installs an application the user does not have, and repairs one that is broken by reinstalling it cleanly. Covers Self Service catalog install on managed devices, signature verification, thorough uninstallation, installer download with checksum validation, and silent installation. Use when a user needs software they are missing, or when an application is crashing, corrupted, or behaving incorrectly and a reinstall is the appropriate resolution.",
       "risk": "high",
       "allowedTools": [
         "list_installed_apps",

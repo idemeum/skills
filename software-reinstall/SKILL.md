@@ -1,6 +1,6 @@
 ---
 name: software-reinstall
-description: Diagnoses application integrity issues and performs clean software reinstallation. Covers signature verification, thorough uninstallation, installer download with checksum validation, silent installation, and MDM-managed reinstalls. Use when an application is crashing, corrupted, or behaving incorrectly and a reinstall is the appropriate resolution.
+description: Installs an application the user does not have, and repairs one that is broken by reinstalling it cleanly. Covers Self Service catalog install on managed devices, signature verification, thorough uninstallation, installer download with checksum validation, and silent installation. Use when a user needs software they are missing, or when an application is crashing, corrupted, or behaving incorrectly and a reinstall is the appropriate resolution.
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
@@ -25,19 +25,26 @@ metadata:
       - check_app_permissions
       - check_mdm_enrollment
   maxAggregateRisk: high
-  userLabel: "App crashing or needs reinstall"
+  userLabel: "Install an app, or reinstall a broken one"
+    # Two intents, both already served by the steps below: install-from-scratch
+    # (Step 1 finds nothing, the run proceeds via Steps 7-13) and repair-by-
+    # reinstall. Only the second was expressed here, so 'I need Slack' routed
+    # nowhere despite the capability existing.
+    #
     # Crash/freeze examples anchor on PERSISTENCE — crashes every launch / won't
     # launch / stays broken after a restart — the reinstall signal. A one-off
     # frozen app is process-manager; an email/Outlook crash is email-repair.
   examples:
+    - "I need Slack installed on my laptop"
+    - "how do I get Zoom on this machine"
     - "an app keeps crashing every time I open it"
     - "my application is corrupted and won't launch"
     - "software is behaving strangely and needs a fresh install"
     - "I need to reinstall an application cleanly"
     - "the app is still broken even after restarting it"
   pill:
-    label: App Issue
-    goal: An app is crashing, won't launch, or is behaving incorrectly — check what's wrong, try non-destructive fixes (preferences, cache, permissions), and either guide me through a reinstall via Self Service / IT, or escalate
+    label: Install or Fix App
+    goal: I need an app installed, or one I have is crashing or misbehaving — install it from the company catalogue if I don't have it, or check what's wrong and try non-destructive fixes before reinstalling
     icon: Download
     iconClass: text-cyan-500
     order: 7
@@ -46,6 +53,7 @@ metadata:
 ## When to use
 
 Use this skill when the user:
+- Needs an application they do not currently have — Step 1 finds nothing installed and the run proceeds via the install-from-scratch path (Steps 7–13), preferring the Self Service catalogue on a managed device
 - Reports an application crashes immediately on launch or is stuck in a crash loop
 - Gets "app is damaged and can't be opened" or code signature errors
 - Reports an application that was working has started behaving incorrectly after an OS update
