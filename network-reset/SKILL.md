@@ -107,12 +107,12 @@ G4 fires the dry-run preview then the consent gate. Be accurate in the rationale
 Call `check_firewall_status`. If `blockAllConnections` is true, that's the likely cause.
 
 **Step 11 — Is this device MDM-managed?**
-`Condition:` only run if connectivity is still broken after Steps 5–6. Call `check_mdm_enrollment`. Continue to Step 12 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 12–15 and go to Step 16, stating which of these it was: not enrolled; managed by another provider (name it — a Jamf Mac is not reachable from here yet); or serial unreadable (common on VMs).
+`Condition:` only run if connectivity is still broken after Steps 5–6. Call `check_mdm_enrollment`. Continue to Step 12 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 12–15 and go to Step 17, stating which of these it was: not enrolled; managed by another provider (name it — a Jamf Mac is not reachable from here yet); or serial unreadable (common on VMs).
 
 **Step 12 — Locate the device in Intune**
 `Condition:` only run if Step 11 continued. Call `c_intune_find_device` — takes no parameters, the serial comes from the runtime.
 
-Check `matchCount` first. Continue ONLY when it is exactly 1; otherwise skip to Step 16. `0` means not in this tenant. `>1` means the serial is ambiguous — VM templates and some OEM batches ship duplicates — so the record returned may be a different machine; **act on none of them**, and say IT must identify the right one.
+Check `matchCount` first. Continue ONLY when it is exactly 1; otherwise skip to Step 17. `0` means not in this tenant. `>1` means the serial is ambiguous — VM templates and some OEM batches ship duplicates — so the record returned may be a different machine; **act on none of them**, and say IT must identify the right one.
 
 With one match, check `lastCheckIn`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 13–15, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that a profile is wrong.
 
@@ -136,8 +136,13 @@ options:
 
 On `skip`, report the sync as initiated but unverified.
 
-**Step 16 — Final verification + last-resort guidance**
-Call `check_connectivity` once more.
+**Step 16 — Re-test, if anything was actually changed**
+`Condition:` only run if a corrective actually ran — Step 5 (`renew_dhcp_lease`), Step 6 (`flush_dns_cache`), Step 9 (`disable_proxy`) or Step 14 (`c_intune_sync_device`). Skip when none of them fired: nothing on the device changed, so Step 2's result still stands and re-probing only repeats a measurement already taken.
+
+Call `check_connectivity` once more and compare against Step 2.
+
+**Step 17 — Final report**
+Report what was found and what, if anything, was fixed. Be precise about which reading you are quoting: Step 16's re-test when a corrective ran, otherwise Step 2's original result — never imply a fresh check happened when Step 16 was skipped.
 - Reachable → report what was found and fixed; stop.
 - Still broken → the remaining options (forget-and-rejoin Wi-Fi, then a full network reset) **sever this device's connection, cutting the agent off from its cloud service mid-run**, so the skill does NOT run them. Present them as manual self-service, in order:
   - **Forget Wi-Fi (macOS):** System Settings → Wi-Fi → "Details…" → "Forget This Network", then reconnect.

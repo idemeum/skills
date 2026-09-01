@@ -224,7 +224,7 @@
         "c_intune_sync_device",
         "wait_for_user_ack"
       ],
-      "steps": 16,
+      "steps": 17,
       "enabled": true
     },
     {
