@@ -6,28 +6,28 @@ Diagnoses and repairs A/V and peripheral hardware problems including external mo
 
 ## What it does, step by step
 
-**Step 1.** Determines which peripheral type is affected and routes to the matching diagnostic path.
+**Step 1.** Determines which type of peripheral is affected and routes to the matching diagnostic step.
 _no tools_
 
-**Step 2.** Checks connected USB devices and flags missing, errored, or underpowered ones.
+**Step 2.** Checks which USB devices the system currently detects and flags missing or errored ones.
 _read-only_ · `list_usb_devices`
 
-**Step 3.** Checks paired Bluetooth devices and flags radios that are off or peripherals paired but offline.
+**Step 3.** Checks paired Bluetooth devices, their connection state, power, and battery level.
 _read-only_ · `list_bluetooth_devices`
 
-**Step 4.** Checks audio device settings and flags mis-selected or duplicated default devices.
+**Step 4.** Reviews audio input and output devices to find default-selection or duplicate-pairing issues.
 _read-only_ · `list_audio_devices`
 
-**Step 5.** Checks camera detection and flags devices missing, unselected, or blocked by network/range issues.
+**Step 5.** Reviews detected cameras to identify whether the problem is connection- or app-related.
 _read-only_ · `list_video_devices`
 
-**Step 6.** Resets the Bluetooth module as a last resort, with preview and user consent required first.
-_deletes data, asks permission, preview first_ · `reset_bluetooth_module`, `list_bluetooth_devices`
+**Step 6.** Resets the Bluetooth radio, with user consent, to restore paired-but-offline devices.
+_makes a change, asks permission, preview first_ · `reset_bluetooth_module`, `list_bluetooth_devices`
 
-**Step 7.** Asks the user to retest the peripheral and records whether the fix worked.
+**Step 7.** Asks the user to try the suggested fixes and reports whether the peripheral now works.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 8.** Reports what was diagnosed, what was tried, and whether the issue is resolved or needs escalation.
+**Step 8.** Summarizes the diagnosis, actions taken, and outcome, escalating to IT if unresolved.
 _no tools_
 
 ## Tools it may use

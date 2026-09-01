@@ -185,7 +185,7 @@
       "skillId": "identity-auth-repair",
       "name": "Login or SSO keeps failing across multiple apps",
       "description": "Diagnoses and repairs SSO / Kerberos / client-certificate authentication failures. Use when multiple identity-dependent apps (Outlook, VPN, Teams, Slack, corporate web apps) fail simultaneously — the root cause is often a single issue like NTP drift, an expired Kerberos TGT, or an expired client certificate. Fixes the underlying cause so all the downstream apps start working again.",
-      "risk": "medium",
+      "risk": "high",
       "allowedTools": [
         "check_ntp_status",
         "sync_system_time",
@@ -194,17 +194,21 @@
         "list_client_certificates",
         "check_certificate_expiry",
         "check_ad_binding",
+        "check_mdm_enrollment",
+        "c_intune_find_device",
+        "c_intune_get_configuration_states",
+        "c_intune_sync_device",
         "wait_for_user_ack",
         "request_user_input"
       ],
-      "steps": 11,
+      "steps": 17,
       "enabled": false
     },
     {
       "skillId": "network-reset",
       "name": "No internet or Wi-Fi connection",
       "description": "Diagnoses and repairs network connectivity issues including no internet access, Wi-Fi problems, DNS failures, DHCP lease errors, misconfigured proxies, and corrupt network settings. Use when user has no or intermittent internet access.",
-      "risk": "medium",
+      "risk": "high",
       "allowedTools": [
         "check_connectivity",
         "get_network_interfaces",
@@ -212,10 +216,15 @@
         "renew_dhcp_lease",
         "flush_dns_cache",
         "check_proxy_settings",
+        "disable_proxy",
         "check_firewall_status",
+        "check_mdm_enrollment",
+        "c_intune_find_device",
+        "c_intune_get_configuration_states",
+        "c_intune_sync_device",
         "wait_for_user_ack"
       ],
-      "steps": 9,
+      "steps": 16,
       "enabled": true
     },
     {
@@ -258,7 +267,7 @@
       "skillId": "security-agent-repair",
       "name": "Security or endpoint agent not running",
       "description": "Diagnoses and repairs endpoint security agent issues including stopped processes, outdated versions, unapproved system extensions, connectivity failures to management consoles, and compliance posture problems. Supports CrowdStrike Falcon, SentinelOne, Jamf Protect, Carbon Black, Cylance, and Microsoft Defender.",
-      "risk": "medium",
+      "risk": "high",
       "allowedTools": [
         "check_agent_process",
         "check_agent_heartbeat",
@@ -269,10 +278,15 @@
         "check_agent_logs",
         "restart_process",
         "check_filevault_status",
+        "check_firewall_status",
+        "enable_firewall",
         "check_mdm_enrollment",
+        "c_intune_find_device",
+        "c_intune_get_compliance_states",
+        "c_intune_sync_device",
         "wait_for_user_ack"
       ],
-      "steps": 13,
+      "steps": 20,
       "enabled": false
     },
     {
@@ -321,7 +335,7 @@
       "skillId": "vpn-repair",
       "name": "VPN not connecting",
       "description": "Diagnoses and repairs VPN connectivity issues including stale connections, misconfigured profiles, expired certificates, missing network extensions, and DNS leaks. Use when user cannot connect to VPN or VPN appears connected but traffic is not routing.",
-      "risk": "medium",
+      "risk": "high",
       "allowedTools": [
         "check_vpn_status",
         "get_vpn_profiles",
@@ -330,10 +344,14 @@
         "check_network_extension",
         "reconnect_vpn",
         "flush_dns_cache",
+        "check_mdm_enrollment",
+        "c_intune_find_device",
+        "c_intune_get_configuration_states",
+        "c_intune_sync_device",
         "wait_for_user_ack",
         "request_user_input"
       ],
-      "steps": 14,
+      "steps": 20,
       "enabled": true
     }
   ]

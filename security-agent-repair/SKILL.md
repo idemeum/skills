@@ -13,7 +13,12 @@ allowed-tools:
   - check_agent_logs
   - restart_process
   - check_filevault_status
+  - check_firewall_status
+  - enable_firewall
   - check_mdm_enrollment
+  - c_intune_find_device
+  - c_intune_get_compliance_states
+  - c_intune_sync_device
   - wait_for_user_ack
 metadata:
   prerequisites:
@@ -24,7 +29,11 @@ metadata:
       - get_agent_version
       - check_connectivity
       - check_agent_logs
-  maxAggregateRisk: medium
+  # Raised from medium when the MDM branch landed: c_intune_sync_device is
+  # riskLevel high, and G2 blocks the whole plan when any step exceeds this
+  # ceiling. The local correctives remain medium; the high step is the Intune
+  # re-sync, which is consent-gated and non-destructive.
+  maxAggregateRisk: high
   userLabel: "Security or endpoint agent not running"
   examples:
     - "my security software is not running"
@@ -60,7 +69,7 @@ Do NOT use this skill to disable or remove security agents — that is a complia
 Call `check_agent_process` with `agent: "auto"` to detect all known security agents and their running status. This establishes which agents are installed, which are running, and which have stopped. If no known agents are detected, end the run with: *"I couldn't detect a known security agent on this device. If you know your IT uses a custom or non-standard EDR, please contact IT directly — this skill supports CrowdStrike, SentinelOne, Jamf Protect, Carbon Black, Cylance, and Microsoft Defender."* The remaining Steps' `Condition:` clauses will all skip cleanly when no agent is detected.
 
 **Step 2 — Check SIP and Secure Boot compliance**
-Call `check_sip_status` to verify System Integrity Protection (macOS) or Secure Boot (Windows) is enabled. Most security agents require SIP to be enabled — if it is disabled, the agent may refuse to start or operate in a degraded mode. If SIP is disabled, escalate to IT immediately rather than attempting further repair — re-enabling SIP requires Recovery Mode and is an IT-controlled operation. Step 11's final report will surface this.
+Call `check_sip_status` to verify System Integrity Protection (macOS) or Secure Boot (Windows) is enabled. Most security agents require SIP to be enabled — if it is disabled, the agent may refuse to start or operate in a degraded mode. If SIP is disabled, escalate to IT immediately rather than attempting further repair — re-enabling SIP requires Recovery Mode and is an IT-controlled operation. Step 18's final report will surface this.
 
 **Step 3 — Check system extension approval (macOS only)**
 `Condition:` only run if platform is `darwin`. On Windows, `check_system_extension` falls back to checking services / Defender status — the macOS-specific approval flow does not apply, so skip Step 3b's user-approval ack on Windows.
@@ -95,7 +104,7 @@ Call `get_agent_version` with `agent` set to the identified agent from Step 1. T
 An outdated version may be intentionally stopped by the management console (some platforms auto-quarantine agents below a minimum version). Compare the installed version against what IT has specified as the required minimum, if known.
 
 **Step 5 — Check console connectivity**
-`Condition:` only run if Step 1's detected agent is one of the six known vendors with a default console hostname. Skip silently for exotic / unknown / custom-console vendors — Step 6's heartbeat check provides a vendor-agnostic console-reporting signal that does NOT require a hostname. Surface "Console reachability not tested (custom or unknown vendor)" in the Step 11 final report when skipped.
+`Condition:` only run if Step 1's detected agent is one of the six known vendors with a default console hostname. Skip silently for exotic / unknown / custom-console vendors — Step 6's heartbeat check provides a vendor-agnostic console-reporting signal that does NOT require a hostname. Surface "Console reachability not tested (custom or unknown vendor)" in the Step 18 final report when skipped.
 
 Call `check_connectivity` with the vendor's default console hostname as a target:
 - CrowdStrike → `falcon.crowdstrike.com`
@@ -144,10 +153,50 @@ On `refreshed`: re-call `check_agent_heartbeat` to confirm the agent recovered p
 **Step 9 — Check compliance posture: FileVault**
 Call `check_filevault_status` to verify disk encryption is active — most security platforms require FileVault (macOS) or BitLocker (Windows) as part of their compliance baseline. A non-encrypted machine will show as out of compliance in the management console even if the agent itself is running correctly.
 
-**Step 10 — Check MDM enrollment**
-Call `check_mdm_enrollment` to verify the device is still enrolled in MDM (Jamf, Intune, etc.). A lost MDM enrollment means IT cannot push policy updates, agent upgrades, or remotely trigger reinstalls. If enrollment is lost, escalate to IT — re-enrollment typically requires IT intervention.
+If it is **disabled**, this is guidance, not a fix — the agent must not enable it. Turning on disk encryption needs the user's login password, reboots the machine, and generates a recovery key that has to be escrowed to the management console; enabling it outside that flow risks permanent data loss if the key is lost. Tell the user to enable it themselves — macOS: System Settings → Privacy & Security → FileVault → Turn On; Windows: Settings → Privacy & security → Device encryption / BitLocker — and to expect a restart. Note in the report that IT may prefer to push it by policy so the recovery key is escrowed automatically.
 
-**Step 11 — Final report**
+**Step 10 — Check compliance posture: firewall**
+Call `check_firewall_status`. A disabled firewall fails the compliance baseline on every major platform. Unlike FileVault, this one the agent can fix — see Step 11.
+
+**Step 11 — Turn the firewall back on**
+`Condition:` only run if Step 10 returned `enabled: false`. Call `enable_firewall`. This is the one compliance failure with a local remedy: re-pushing policy does **not** fix a firewall the user switched off, because the policy is already assigned and applied — the device state simply diverged from it. Fixing it here also avoids a pointless Intune round-trip in Steps 12–15.
+
+The tool cannot disable a firewall and takes no state parameter. On macOS it flips the global state only, leaving stealth mode and per-application rules alone; on Windows it enables all three profiles, since a compliance rule fails if any one is off. Say that in the rationale — a user who thinks their firewall rules are being rewritten will decline.
+
+If the tool returns `enabled: false` with an admin-rights message, the privileged helper was unavailable: surface the escalation hint verbatim and continue.
+
+**Step 12 — Check MDM enrollment**
+Call `check_mdm_enrollment`. A lost enrollment means IT cannot push policy updates, agent upgrades, or remote reinstalls — escalate, re-enrollment needs IT. Continue to Step 13 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 13–15 and say which it was: unenrolled; managed by another provider (name it — a Jamf Mac is not reachable from here yet); or serial unreadable.
+
+**Step 13 — Locate the device in Intune**
+`Condition:` only run if Step 12 continued AND a fault remains that a **policy re-delivery could plausibly fix** — Step 1 found the agent stopped, Step 9 FileVault disabled, or Step 11 could not re-enable the firewall. Skip when every check was clean; note the word *remains* — a firewall Step 11 successfully re-enabled is fixed and must NOT pull the run into Intune.
+
+Deliberately NOT triggers: an **outdated version** (the console controls agent version; a re-sync does not upgrade software), a **stale heartbeat** (that is the agent failing to reach its own vendor console, which is unrelated to MDM policy delivery), and an **unapproved system extension** (Step 3b already asks the user to approve it, which is the actual remedy — a re-sync cannot approve an extension on the user's behalf). Syncing for those produces a two-minute wait and a Step 14 that finds no matching policy.
+
+Call `c_intune_find_device` — no parameters, the serial comes from the runtime. Check `matchCount` first: continue ONLY when it is exactly 1. `0` means not in this tenant; `>1` means the serial is ambiguous (VM templates and some OEM batches ship duplicates) so the record may be a different machine — **act on none of them** and say IT must identify the right one. Then check `lastSyncDateTime`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 14–17, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that the agent is misconfigured.
+
+**Step 14 — Which policy is failing?**
+`Condition:` only run if Step 13 found exactly one device. Call `c_intune_get_compliance_states`. Name the specific failing policy and match it to the fault: an unapproved system extension, a FileVault policy, a firewall policy, or an agent-deployment policy that never landed. Report it by name even if Step 15 is skipped — that is what makes the escalation actionable.
+
+**Step 15 — Re-apply the device's configuration**
+`Condition:` only run if Step 14 shows a policy in error / non-compliant state matching the diagnosed fault. Skip when every policy applied cleanly — the fault is local and Steps 2–8 already addressed what they could.
+
+Call `c_intune_sync_device`. State plainly in the rationale that this tells the device to check in and re-apply **all** its assigned configuration; it is not a targeted re-push, it creates and changes no policy, and it completes asynchronously after the tool returns. It cannot approve a system extension that IT has never authored — if no matching policy exists in Step 14, say so and escalate rather than syncing.
+
+**Step 16 — Wait, then re-check whether the policy landed**
+`Condition:` only run if Step 15 returned `status: "initiated"`. `status: "initiated"` proves only that Intune accepted the request — it is not evidence that the device re-applied anything. Call `wait_for_user_ack`:
+
+```yaml
+prompt: "I've asked Intune to re-send your device's configuration. That usually takes a minute or two. Tell me when to re-check."
+options:
+  - { id: "ready", label: "Ready — re-check now", kind: "primary" }
+  - { id: "skip",  label: "Skip the re-check",    kind: "cancel" }
+```
+
+**Step 17 — Re-check the agent after the policy landed**
+`Condition:` only run if Step 16 returned `ready`. Call `check_agent_process` with the agent from Step 1 and report the settled state. If it is still not running, the re-sync did not resolve it — escalate with the failing policy named in Step 14. Never describe the agent as repaired on the strength of Step 15 alone; on `skip` at Step 16, report the sync as initiated and unverified.
+
+**Step 18 — Final report**
 Summarise the agent's health across all dimensions checked:
 - Process running (Step 1 + Step 8 post-restart re-check): yes/no
 - System extension (Step 3 + Step 3b user approval): approved/pending/missing/n/a-windows
@@ -155,8 +204,12 @@ Summarise the agent's health across all dimensions checked:
 - Console connectivity (Step 5): reachable/unreachable/not-tested-custom-vendor
 - Agent heartbeat (Step 6 + Step 8 post-restart re-check): healthy/stale/n/a
 - Recent log errors (Step 7): clean / specific error categories
-- FileVault (Step 9): enabled/disabled
-- MDM enrollment (Step 10): enrolled/unenrolled
+- FileVault (Step 9): enabled/disabled — if disabled, whether the user was given the self-service steps
+- Firewall (Steps 10–11): was enabled / was off and re-enabled / was off and could not be re-enabled
+- MDM enrollment (Step 12): enrolled/unenrolled
+- Intune device record (Step 13): found/not-in-tenant/ambiguous-serial/not-checked
+- Failing policy (Step 14): named policy, or none
+- Re-sync (Step 15) + re-check (Steps 16–17): initiated-and-settled / initiated-unverified / skipped
 
 Advise on any items that require IT intervention (SIP disabled, MDM unenrolled, expired enrollment certificate, tamper protection active, MDM-blocked system extension, missing system extension requiring reinstall via `software-reinstall`).
 

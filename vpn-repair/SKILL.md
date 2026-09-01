@@ -11,6 +11,10 @@ allowed-tools:
   - check_network_extension
   - reconnect_vpn
   - flush_dns_cache
+  - check_mdm_enrollment
+  - c_intune_find_device
+  - c_intune_get_configuration_states
+  - c_intune_sync_device
   - wait_for_user_ack
   - request_user_input
 metadata:
@@ -21,7 +25,11 @@ metadata:
       - check_connectivity
       - check_certificate_expiry
       - check_network_extension
-  maxAggregateRisk: medium
+  # Raised from medium when the MDM branch landed: c_intune_sync_device is
+  # riskLevel high, and G2 blocks the whole plan when any step exceeds this
+  # ceiling. The local correctives remain medium; the high step is the Intune
+  # re-sync, which is consent-gated and non-destructive.
+  maxAggregateRisk: high
   userLabel: "VPN not connecting"
   examples:
     - "my VPN won't connect"
@@ -104,8 +112,39 @@ Call `flush_dns_cache` (clears pre-tunnel DNS entries that make internal hostnam
 **Step 13 — Verify routing**
 `check_connectivity` with `targets: [<Step 12 value>]`. `inputsFrom: [{ step: 12, field: "value" }]`. `Condition:` only if Step 12 returned a non-empty `value`.
 
-**Step 14 — Final report**
-Summarise findings and fixes. Escalate: cert expired → IT renewal; extension blocked → IT (MDM policy); server unreachable → IT (server/firewall).
+**Step 14 — Stale client certificate? Check MDM enrollment**
+`Condition:` only run if Step 9's reconnect failed AND Step 4 showed the server reachable AND Step 5 did NOT report an expired server cert (absent, inconclusive, or valid).
+
+That combination — server up, server cert fine, authentication still failing — is **consistent with** a stale client certificate, which Step 5 cannot observe directly. It is not proof: an expired AD password, a failed MFA challenge, a disabled account, or a server-side config change produce the identical signature, and a re-sync fixes none of them.
+
+So treat this arm as a cheap hypothesis, not a diagnosis. Two consequences for how you report it: say the certificate is a *possible* cause rather than the cause, and if Step 16 finds no certificate profile assigned, stop — do not sync on the hypothesis alone. When Step 19's retry still fails, name the alternatives above in the escalation so IT does not re-tread the certificate path.
+
+Call `check_mdm_enrollment`. Continue to Step 15 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 15–19 and escalate, saying which it was: unenrolled; managed by another provider (name it); or serial unreadable.
+
+**Step 15 — Locate the device in Intune**
+`Condition:` only run if Step 14 continued to this point. Call `c_intune_find_device` — no parameters, the serial comes from the runtime. Check `matchCount` first: continue ONLY when it is exactly 1. `0` means not in this tenant; `>1` means the serial is ambiguous (VM templates and some OEM batches ship duplicates), so **act on none of them** and say IT must identify the right record. Then check `lastSyncDateTime`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 16–19, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that a profile is wrong.
+
+**Step 16 — Is a certificate profile assigned, and did it apply?**
+`Condition:` only run if Step 15 found exactly one device. Call `c_intune_get_configuration_states`. Look for a SCEP / PKCS / certificate profile. If none is assigned, this VPN does not get its client certificate from Intune — stop, skip Steps 17–19, and escalate with that finding. If one is assigned but in error / non-compliant / pending state, name it; that is the likely cause.
+
+**Step 17 — Re-apply the device's configuration**
+`Condition:` only run if Step 16 found an assigned certificate profile that failed to apply. Call `c_intune_sync_device`. State plainly in the rationale that this tells the device to check in and re-apply **all** its assigned configuration, that it cannot issue a certificate IT has never authored a profile for, and that re-issuance completes asynchronously after the tool returns.
+
+**Step 18 — Wait for the certificate to be re-issued**
+`Condition:` only run if Step 17 returned `status: "initiated"`. `initiated` proves only that Intune accepted the request — it is not evidence a certificate was issued. Call `wait_for_user_ack`:
+
+```yaml
+prompt: "I've asked Intune to re-send your device's configuration, which should re-issue the VPN certificate. That usually takes a minute or two. Tell me when to retry the connection."
+options:
+  - { id: "ready", label: "Ready — retry now", kind: "primary" }
+  - { id: "skip",  label: "Skip the retry",    kind: "cancel" }
+```
+
+**Step 19 — Retry the connection**
+`Condition:` only run if Step 18 returned `ready`. Call `reconnect_vpn` again and trust its settled result exactly as Step 9 does: `reconnected === true` AND `newStatus === "Connected"` is a real success. Anything else means the re-sync did not resolve it — escalate with the certificate profile named in Step 16. Never report the VPN as fixed on the strength of Step 17 alone; on `skip` at Step 18, report the sync as initiated and unverified.
+
+**Step 20 — Final report**
+Summarise findings and fixes. Escalate: server cert expired → IT renewal; extension blocked → IT (MDM policy); server unreachable → IT (server/firewall); certificate profile missing or still failing after re-sync → IT.
 
 ---
 

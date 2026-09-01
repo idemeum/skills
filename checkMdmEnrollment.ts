@@ -25,6 +25,7 @@
 
 import * as os         from "os";
 import { execAsync }   from "./_shared/platform";
+import { readDeviceSerial } from "./_shared/deviceIdentity";
 
 // -- Internal timing constants ------------------------------------------------
 //
@@ -51,7 +52,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
-  outputKeys: ["isEnrolled","mdmProvider","enrollmentType","serverUrl","supervised","lastCheckinAttempt","source"],
+  outputKeys: ["isEnrolled","mdmProvider","enrollmentType","serverUrl","supervised","lastCheckinAttempt","serialNumber","source"],
   schema: {},
 } as const;
 
@@ -73,6 +74,13 @@ interface MdmEnrollmentResult {
   serverUrl:           string | null;
   supervised:          boolean | null;
   lastCheckinAttempt:  string | null;
+  /**
+   * Hardware serial.  Carried here rather than in a tool of its own because
+   * every MDM-connector skill checks enrollment before acting anyway, and the
+   * connector's device lookup is keyed on the serial — one probe, one call.
+   * Null whenever the read fails; callers must treat it as optional.
+   */
+  serialNumber:        string | null;
   source:              ResultSource;
 }
 
@@ -84,6 +92,7 @@ function emptyResult(source: ResultSource): MdmEnrollmentResult {
     serverUrl:          null,
     supervised:         null,
     lastCheckinAttempt: null,
+    serialNumber:       null,
     source,
   };
 }
@@ -277,6 +286,29 @@ if ($enrollments) { @($enrollments) | ConvertTo-Json -Depth 2 -Compress } else {
 // code sees `source: "timeout"` and treats the device as not-enrolled, which
 // is the correct conservative default for the software-reinstall workflow.
 
+/**
+ * Generic deadline race — resolves to `fallback` if `work` has not settled
+ * within `ms`, and swallows rejections the same way.  Used for the serial
+ * read so it can never outlive the tool's overall budget.
+ */
+function withDeadline<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (val: T) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(fallback);
+    }, ms);
+    work.then(done, () => done(fallback));
+  });
+}
+
 function withOverallBudget<T extends MdmEnrollmentResult>(
   work:    Promise<T>,
   budget:  number,
@@ -312,7 +344,17 @@ export async function run(_args: Record<string, never> = {}) {
   const work = platform === "win32"
     ? checkMdmEnrollmentWin32()
     : checkMdmEnrollmentDarwin();
-  return withOverallBudget(work, __testing.budgetMs);
+
+  // The serial read is independent of the enrollment probe, so it runs
+  // concurrently.  It races the SAME budget — otherwise a wedged `ioreg`
+  // would hold the whole call past OVERALL_BUDGET_MS and break the timing
+  // contract the G-layers rely on.  A late serial is dropped, not awaited.
+  const [result, serialNumber] = await Promise.all([
+    withOverallBudget(work, __testing.budgetMs),
+    withDeadline(readDeviceSerial(), __testing.budgetMs, null),
+  ]);
+
+  return { ...result, serialNumber };
 }
 
 /**

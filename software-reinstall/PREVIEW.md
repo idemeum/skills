@@ -6,58 +6,58 @@ Diagnoses application integrity issues and performs clean software reinstallatio
 
 ## What it does, step by step
 
-**Step 1.** Checks whether the app is already installed and notes its version and location.
+**Step 1.** Checks whether the application is currently installed and identifies its version and location.
 _read-only_ · `list_installed_apps`
 
-**Step 2.** Verifies the app's code signature is intact to determine if the bundle is corrupted.
+**Step 2.** Verifies the application's code signature to determine if its files are corrupted.
 _read-only_ · `check_app_integrity`
 
-**Step 3.** Checks whether the app has the system permissions it needs to run properly.
+**Step 3.** Checks whether the app has all required system permissions granted.
 _read-only_ · `check_app_permissions`
 
-**Step 4.** Checks whether the device is managed by MDM to determine the best install route.
+**Step 4.** Checks whether the device is managed by MDM to determine the best install method.
 _read-only_ · `check_mdm_enrollment`
 
 **Step 4b.** Asks whether to try safe fixes first or go straight to a clean reinstall.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 5.** Resets the app's saved preferences as a safe first attempt to fix the problem.
+**Step 5.** Resets the app's preferences as a safe first attempt to fix the issue.
 _deletes data, asks permission, preview first_ · `reset_app_preferences`
 
-**Step 5b.** Clears the app's cached data as a safe first attempt to fix the problem.
+**Step 5b.** Clears the app's cache as a safe first attempt to fix the issue.
 _makes a change, preview first_ · `clear_app_cache`
 
-**Step 6.** Asks the user to relaunch the app and reports whether the safe fixes resolved it.
+**Step 6.** Asks the user to relaunch the app and report whether the safe fixes worked.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 7.** Looks up the company's app store to see if the app can be reinstalled through it.
+**Step 7.** Checks the managed software catalog for an available, supported version of the app.
 _read-only_ · `query_self_service_catalog`
 
-**Step 8.** Opens the company app store directly to the app's install screen for the user.
+**Step 8.** Opens the managed software catalog directly to the app's install screen.
 _read-only_ · `trigger_self_service_install`
 
-**Step 9.** Asks the user to complete the install through the company app store and reports the outcome.
+**Step 9.** Asks the user to complete the install through the managed catalog and report the result.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 10.** Removes the app and its leftover files completely to prepare for a clean reinstall.
+**Step 10.** Removes the existing application and its related files for a clean reinstall.
 _deletes data, asks permission, preview first_ · `uninstall_app`
 
-**Step 11.** Asks the user for the official vendor download link for the app.
+**Step 11.** Asks the user for the official vendor download link and checksum for the app.
 _asks the user_ · `request_user_input`
 
-**Step 12.** Downloads the installer from the vendor and verifies it hasn't been tampered with.
+**Step 12.** Downloads the installer from the provided link and verifies its integrity.
 _read-only_ · `download_installer`
 
-**Step 13.** Runs the downloaded installer to install the app without further prompts.
-_deletes data, asks permission, preview first, conditional_ · `run_installer`
+**Step 13.** Runs the downloaded installer to reinstall the application.
+_makes a change, asks permission, preview first, conditional_ · `run_installer`
 
-**Step 14.** Confirms the newly installed app version is properly registered on the device.
+**Step 14.** Confirms the new installation is registered and recognized by the system.
 _read-only_ · `list_installed_apps`
 
-**Step 15.** Asks the user to re-grant permissions and confirm the app now opens successfully.
+**Step 15.** Asks the user to re-grant permissions and confirm the app now launches correctly.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 16.** Summarizes the issue found, the fix applied, and any follow-up actions needed.
+**Step 16.** Summarizes the issue found, the fix applied, and any remaining follow-up actions.
 _no tools_
 
 ## Tools it may use

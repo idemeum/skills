@@ -10,7 +10,12 @@ allowed-tools:
   - renew_dhcp_lease
   - flush_dns_cache
   - check_proxy_settings
+  - disable_proxy
   - check_firewall_status
+  - check_mdm_enrollment
+  - c_intune_find_device
+  - c_intune_get_configuration_states
+  - c_intune_sync_device
   - wait_for_user_ack
 metadata:
   prerequisites:
@@ -18,7 +23,11 @@ metadata:
       - check_connectivity
       - get_network_interfaces
       - get_wifi_info
-  maxAggregateRisk: medium
+  # Raised from medium when the MDM branch landed: c_intune_sync_device is
+  # riskLevel high, and G2 blocks the whole plan when any step exceeds this
+  # ceiling. The local correctives remain medium; the high step is the Intune
+  # re-sync, which is consent-gated and non-destructive.
+  maxAggregateRisk: high
   userLabel: "No internet or Wi-Fi connection"
   examples:
     - "I can't connect to the internet"
@@ -62,13 +71,13 @@ Call `check_connectivity` (default targets 8.8.8.8, 1.1.1.1, google.com). Classi
 - All unreachable → no connectivity.
 - IP targets reachable but `google.com` failing → DNS failure (Step 6).
 - Intermittent → unstable link (Step 4 signal check).
-- All reachable → layer-3 is up, but ICMP success does NOT prove HTTP(S) works. Do NOT declare success — let Steps 7–8 (proxy/firewall) run first; skip the DHCP/DNS correctives.
+- All reachable → layer-3 is up, but ICMP success does NOT prove HTTP(S) works. Do NOT declare success — let Steps 7–10 (proxy/firewall) run first; skip the DHCP/DNS correctives.
 
 **Step 3 — Inspect interfaces**
 Call `get_network_interfaces` → `primaryInterface` (the default-route uplink — the deterministic "which interface is my connection"; do NOT hand-scan `interfaces[]`), `interfaces[]` (`name`/`type`/`status`/`ipv4`), `activeCount`. The **target interface** for Steps 4–5 is `primaryInterface` when non-null; if `primaryInterface` is null (no default route), fall back to the active physical interface (`status === "active"` AND `type` is `"Wi-Fi"` or `"Ethernet"` — ignore loopback, tunnels, `awdl0`/`llw0`). Classify:
 - `primaryInterface` null AND no active physical interface → hardware/driver issue or link fully down; stop and escalate.
 - Target interface has `169.254.x.x` or no IPv4 → DHCP failure (Step 5).
-- Target interface has a valid (non-`169.254`) IPv4 → routing/proxy/firewall (Steps 7–8).
+- Target interface has a valid (non-`169.254`) IPv4 → routing/proxy/firewall (Steps 7–10).
 
 **Step 4 — Wi-Fi signal (if Wi-Fi)**
 Call `get_wifi_info`. Poor signal (RSSI < -70 dBm, `linkQuality: "poor"`) explains intermittent drops — advise moving closer to the router before software fixes.
@@ -84,12 +93,50 @@ Call `flush_dns_cache`, then re-call `check_connectivity` on google.com to verif
 `Condition:` only if Step 2 showed IP targets (8.8.8.8, 1.1.1.1) reachable but `google.com` failing. Skip otherwise.
 
 **Step 7 — Check proxy**
-Call `check_proxy_settings`. It returns `proxies[]` (per-protocol `enabled`/`server`/`port`) — iterate, don't assume one. A proxy pointing to an unreachable server silently blocks HTTP(S) while ICMP succeeds. If `anyEnabled` and any entry looks wrong, report each by protocol; proxy changes are manual (this skill doesn't automate them).
+Call `check_proxy_settings`. It returns `proxies[]` (per-protocol `enabled`/`server`/`port`) — iterate, don't assume one. A proxy pointing to an unreachable server silently blocks HTTP(S) while ICMP succeeds. Report each enabled entry by protocol.
 
-**Step 8 — Check firewall**
+**Step 8 — Is the proxy server itself reachable?**
+`Condition:` only run if Step 7 returned `anyEnabled: true` with at least one entry carrying a `server`. Call `check_connectivity` targeting that proxy's `server`. This is what separates "a proxy is configured" (normal on a corporate network) from "a proxy is configured and dead" (the fault). Do NOT offer Step 9 on a reachable proxy — a working corporate proxy must stay on.
+
+**Step 9 — Switch off an unreachable proxy**
+`Condition:` only run if Step 8 showed the proxy server unreachable. Call `disable_proxy` with `interface` set to the network **service** name for Step 3's target interface — on macOS that is the label from System Settings → Network (`"Wi-Fi"`, `"Ethernet"`), not the BSD device (`en0`). Pass `protocols` limited to the kinds Step 7 reported as enabled.
+
+G4 fires the dry-run preview then the consent gate. Be accurate in the rationale: this switches the proxy **off** and leaves the server and port configured, so the user can turn it back on from System Settings when they are back on the network that needs it. Say that explicitly — a user who thinks they are losing their corporate proxy address will decline.
+
+**Step 10 — Check firewall**
 Call `check_firewall_status`. If `blockAllConnections` is true, that's the likely cause.
 
-**Step 9 — Final verification + last-resort guidance**
+**Step 11 — Is this device MDM-managed?**
+`Condition:` only run if connectivity is still broken after Steps 5–6. Call `check_mdm_enrollment`. Continue to Step 12 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 12–15 and go to Step 16, stating which of these it was: not enrolled; managed by another provider (name it — a Jamf Mac is not reachable from here yet); or serial unreadable (common on VMs).
+
+**Step 12 — Locate the device in Intune**
+`Condition:` only run if Step 11 continued. Call `c_intune_find_device` — takes no parameters, the serial comes from the runtime.
+
+Check `matchCount` first. Continue ONLY when it is exactly 1; otherwise skip to Step 16. `0` means not in this tenant. `>1` means the serial is ambiguous — VM templates and some OEM batches ship duplicates — so the record returned may be a different machine; **act on none of them**, and say IT must identify the right one.
+
+With one match, check `lastSyncDateTime`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 13–15, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that a profile is wrong.
+
+**Step 13 — Which profile failed?**
+`Condition:` only run if Step 12 found the device. Call `c_intune_get_configuration_states`. Name the specific failing profile — a Wi-Fi payload for Step 4's symptom, a proxy payload for Step 7's. Report it by name even if Step 14 is skipped; that is what makes the escalation actionable.
+
+**Step 14 — Re-apply the device's configuration**
+`Condition:` only run if Step 13 shows a profile in error / non-compliant / pending state matching the diagnosed fault. Skip when all profiles applied cleanly — the fault lies elsewhere and a sync would be a no-op.
+
+Call `c_intune_sync_device`. State plainly in the rationale that this tells the device to check in and re-apply **all** its assigned configuration — it is not a targeted re-push of one profile (no such operation exists), it creates and changes no policy, and it completes asynchronously after the tool returns.
+
+**Step 15 — Wait for the policy to land**
+`Condition:` only run if Step 14 returned `status: "initiated"`. Call `wait_for_user_ack`:
+
+```yaml
+prompt: "I've asked Intune to re-send your device's configuration. That usually takes a minute or two. Tell me when to re-test."
+options:
+  - { id: "ready", label: "Ready — re-test now", kind: "primary" }
+  - { id: "skip",  label: "Skip the re-test",    kind: "cancel" }
+```
+
+On `skip`, report the sync as initiated but unverified.
+
+**Step 16 — Final verification + last-resort guidance**
 Call `check_connectivity` once more.
 - Reachable → report what was found and fixed; stop.
 - Still broken → the remaining options (forget-and-rejoin Wi-Fi, then a full network reset) **sever this device's connection, cutting the agent off from its cloud service mid-run**, so the skill does NOT run them. Present them as manual self-service, in order:
@@ -98,7 +145,7 @@ Call `check_connectivity` once more.
   - **Network reset (macOS):** contact IT, or System Settings → Network (removes custom locations, static IPs, manual DNS, VPN profiles).
   - **Network reset (Windows):** Settings → Network & Internet → Advanced network settings → "Network reset".
   - On an MDM-managed machine a reset may remove IT-pushed config — tell the user to contact IT first.
-- Always state the diagnosis (interface, signal, proxy, firewall) is packaged for IT escalation.
+- Always state the diagnosis (interface, signal, proxy, firewall, and any failing MDM profile from Step 13) is packaged for IT escalation.
 
 ---
 

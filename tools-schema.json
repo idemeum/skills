@@ -525,6 +525,7 @@
         "serverUrl",
         "supervised",
         "lastCheckinAttempt",
+        "serialNumber",
         "source"
       ]
     },
@@ -1165,6 +1166,49 @@
       ]
     },
     {
+      "toolId": "disable_proxy",
+      "description": "Switches the system proxy off for a network service, leaving the configured server and port intact so it can be re-enabled from System Settings. Use when check_proxy_settings shows an enabled proxy pointing at an unreachable server — the classic 'I have internet but no websites load'.",
+      "riskLevel": "medium",
+      "destructive": false,
+      "requiresConsent": true,
+      "supportsDryRun": true,
+      "affectedScope": [
+        "network",
+        "system"
+      ],
+      "outputKeys": [
+        "interface",
+        "disabled",
+        "dryRun",
+        "message",
+        "platform"
+      ],
+      "params": [
+        {
+          "name": "interface",
+          "type": "string",
+          "required": true,
+          "description": "Network service to disable the proxy on. macOS: the service name as shown in System Settings → Network (e.g. \\\"Wi-Fi\\\", \\\"Ethernet\\"
+        },
+        {
+          "name": "protocols",
+          "type": "string[]",
+          "required": false,
+          "enum": [
+            "web",
+            "secureweb",
+            "auto"
+          ]
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false,
+          "description": "If true, report what would be disabled without changing anything. Default: true"
+        }
+      ]
+    },
+    {
       "toolId": "disable_startup_item",
       "description": "Removes an application from the login items list so it no longer launches at startup. Use to reduce boot time or stop unwanted background apps. Does not uninstall the application.",
       "riskLevel": "medium",
@@ -1293,6 +1337,32 @@
           "name": "dryRun",
           "type": "boolean",
           "required": false
+        }
+      ]
+    },
+    {
+      "toolId": "enable_firewall",
+      "description": "Turns the operating system firewall on. Use when a compliance check reports the firewall is disabled. Cannot disable a firewall — there is no such option.",
+      "riskLevel": "medium",
+      "destructive": false,
+      "requiresConsent": true,
+      "supportsDryRun": true,
+      "affectedScope": [
+        "network",
+        "system"
+      ],
+      "outputKeys": [
+        "enabled",
+        "dryRun",
+        "message",
+        "platform"
+      ],
+      "params": [
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false,
+          "description": "If true, report what would change without enabling. Default: true"
         }
       ]
     },

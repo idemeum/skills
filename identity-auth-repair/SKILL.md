@@ -11,6 +11,10 @@ allowed-tools:
   - list_client_certificates
   - check_certificate_expiry
   - check_ad_binding
+  - check_mdm_enrollment
+  - c_intune_find_device
+  - c_intune_get_configuration_states
+  - c_intune_sync_device
   - wait_for_user_ack
   - request_user_input
 metadata:
@@ -19,7 +23,11 @@ metadata:
       - check_ntp_status
       - check_kerberos_ticket
       - check_ad_binding
-  maxAggregateRisk: medium
+  # Raised from medium when the MDM branch landed: c_intune_sync_device is
+  # riskLevel high, and G2 blocks the whole plan when any step exceeds this
+  # ceiling. The local correctives remain medium; the high step is the Intune
+  # re-sync, which is consent-gated and non-destructive.
+  maxAggregateRisk: high
   userLabel: "Login or SSO keeps failing across multiple apps"
   examples:
     - "I can't log in to SSO"
@@ -114,12 +122,12 @@ options:
 
 `Condition:` only run if Step 5 ran AND returned `status === "interactive"`. Skip silently if Step 5 completed via the helper (`"renewed"`) or failed for other reasons.
 
-On `done`: re-run `check_kerberos_ticket` (re-fire Step 4) so Step 11's summary reflects the post-`kinit` state, not the stale interactive state.
+On `done`: re-run `check_kerberos_ticket` (re-fire Step 4) so Step 17's summary reflects the post-`kinit` state, not the stale interactive state.
 
 **Step 7 — Enumerate client certificates**
 Call `list_client_certificates` with `expiryWarnDays: 30`. The tool reports every personal / machine client cert with its expiry status.
 - `status === "ok"` or `"empty"` → certs are not the problem; continue to Step 8.
-- `status === "expired"` or `"expiring"` → surface the specific subjects/thumbprints to the user. Client certs cannot be silently renewed — they must be re-issued by the user's MDM or certificate authority. Point the user to their IT team with the specific cert details so the renewal request is actionable. Continue to Step 8 to verify remaining components; do NOT end the run yet.
+- `status === "expired"` or `"expiring"` → surface the specific subjects/thumbprints to the user. The agent cannot issue a certificate itself; re-issuance comes from the device's MDM or certificate authority. On an Intune-managed device, Steps 11–16 can ask Intune to re-send the certificate profile — otherwise this goes to IT with the cert details so the request is actionable. Continue to Step 8 to verify remaining components; do NOT end the run yet.
 
 **Step 8 — Capture VPN/SSO endpoint hostname (if user mentioned one)**
 Call `request_user_input` to capture the failing VPN or SSO endpoint hostname when the user has reported endpoint-specific failures but the goal didn't include the hostname:
@@ -150,7 +158,34 @@ Call `check_ad_binding`. A broken binding causes symptoms that mimic every other
 
 `Condition:` always safe to run — on Entra-joined and non-domain-joined machines the tool cleanly returns "not domain-joined" without error. The result feeds Step 4's `missing` interpretation (does the machine expect Kerberos at all?).
 
-**Step 11 — Summarise + guide the user**
+**Step 11 — Can MDM re-issue the certificate?**
+`Condition:` only run if Step 7 returned `status: "expired"` or `"expiring"`. Skip entirely when certificates were fine — the fault is NTP, Kerberos or AD binding, and those are already handled.
+
+Call `check_mdm_enrollment`. Continue to Step 12 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 12–16 and escalate with the cert details from Step 7, saying which it was: unenrolled; managed by another provider (name it); or serial unreadable.
+
+**Step 12 — Locate the device in Intune**
+`Condition:` only run if Step 11 continued. Call `c_intune_find_device` — no parameters, the serial comes from the runtime. Check `matchCount` first: continue ONLY when it is exactly 1. `0` means not in this tenant; `>1` means the serial is ambiguous (VM templates and some OEM batches ship duplicates), so **act on none of them** and say IT must identify the right record. Then check `lastSyncDateTime`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 13–16, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that a profile is wrong.
+
+**Step 13 — Is a certificate profile assigned, and did it apply?**
+`Condition:` only run if Step 12 found exactly one device. Call `c_intune_get_configuration_states`. Look for a SCEP / PKCS / certificate profile. If none is assigned, this device does not get its client certificate from Intune — stop, skip Steps 14–16, and escalate with that finding plus the Step 7 cert details. If one is assigned but in error / non-compliant / pending state, name it; that is the likely cause.
+
+**Step 14 — Re-apply the device's configuration**
+`Condition:` only run if Step 13 found an assigned certificate profile that failed to apply. Call `c_intune_sync_device`. State plainly in the rationale that this tells the device to check in and re-apply **all** its assigned configuration, that it cannot issue a certificate IT has never authored a profile for, and that re-issuance completes asynchronously after the tool returns.
+
+**Step 15 — Wait for the certificate to be re-issued**
+`Condition:` only run if Step 14 returned `status: "initiated"`. `initiated` proves only that Intune accepted the request — it is not evidence a certificate was issued. Call `wait_for_user_ack`:
+
+```yaml
+prompt: "I've asked Intune to re-send your device's configuration, which should re-issue the certificate. That usually takes a minute or two. Tell me when to re-check."
+options:
+  - { id: "ready", label: "Ready — re-check now", kind: "primary" }
+  - { id: "skip",  label: "Skip the re-check",    kind: "cancel" }
+```
+
+**Step 16 — Re-check the certificates**
+`Condition:` only run if Step 15 returned `ready`. Call `list_client_certificates` again with `expiryWarnDays: 30` and compare against Step 7. A fresh certificate with a later expiry is the evidence the re-sync worked; an unchanged list means it did not — escalate with the profile named in Step 13. Never report the certificate as renewed on the strength of Step 14 alone; on `skip` at Step 15, report the sync as initiated and unverified.
+
+**Step 17 — Summarise + guide the user**
 Summarise what was found and what was fixed:
 - NTP drift corrected → apps should start working within a few minutes as auth retries succeed.
 - Kerberos TGT renewed (helper path or post-`kinit` ack) → file shares + SSO should work immediately; VPN may need a reconnect.
