@@ -25,8 +25,9 @@ export const meta = {
   description:
     "Offers the user a short full-screen recording so they can show IT the " +
     "problem.  The user controls start/stop; the recording is uploaded and " +
-    "the URL is returned.  Returns { videoUrl: string | null } — null when " +
-    "the user declines or the upload fails.\n" +
+    "the URL is returned.  Returns { status, message, videoUrl } — status " +
+    "is 'ok' on success, 'declined' when the user skips or the upload fails, " +
+    "'not-configured' when recording is disabled, or 'failed' on error.\n" +
     "\n" +
     "IMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses " +
     "the 60s TOOL_TIMEOUT_MS ceiling for this call and uses the video " +
@@ -39,7 +40,7 @@ export const meta = {
   auditRequired:   false,
   isUserWaitGate:  true,
   tccCategories:   ["ScreenRecording"],
-  outputKeys:      ["videoUrl"],
+  outputKeys:      ["status", "message", "videoUrl"],
   schema: {
     prompt: z
       .string()
