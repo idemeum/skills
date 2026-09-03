@@ -10,7 +10,16 @@
  * POST ${CLOUD_GATEWAY_URL}/api/eoc/email/send
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
  *   X-Idemeum-User-Session: ${userSessionHandle}
+ *   Content-Type: application/vnd.dvmi.eoc.email.send+json
+ *   Accept:       application/vnd.dvmi.eoc.email.send.response+json
  *   Body: { "subject": "...", "body": "..." }
+ *
+ * On success (2xx) the gateway MUST return
+ *   { "status": "sent" | "failed", "message": "..." }
+ * — this is the unchanged response contract the client parses; do not
+ * substitute a different success body shape. HTTP status (401/404/502/etc.)
+ * still drives failure classification upstream of this parsing in
+ * cloudGatewayCall — a non-2xx never reaches this body-shape check at all.
  */
 
 import { z } from "zod";
@@ -79,10 +88,12 @@ export async function run(
   }
 
   const r = await cloudGatewayCall<SendEmailData>({
-    method: "POST",
-    path:   "/email/send",
-    body:   { subject: args.subject, body: args.body },
+    method:      "POST",
+    path:        "/email/send",
+    body:        { subject: args.subject, body: args.body },
     userSessionHandle: ctx?.userSessionHandle,
+    contentType: "application/vnd.dvmi.eoc.email.send+json",
+    accept:      "application/vnd.dvmi.eoc.email.send.response+json",
   });
 
   if (r.status !== "ok") {
