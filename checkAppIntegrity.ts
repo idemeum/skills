@@ -7,7 +7,7 @@
  *
  * Platform strategy
  * -----------------
- * darwin  `codesign --verify --deep --strict` and `spctl --assess`
+ * darwin  `codesign --verify` and `spctl --assess`
  * win32   PowerShell Get-AuthenticodeSignature
  *
  * Smoke test
@@ -118,17 +118,39 @@ async function checkAppIntegrityDarwin(
   let signatureDetails   = "";
   let gatekeeperDetails  = "";
 
-  // Code signature check
+  // Code signature check.
+  //
+  // Plain `--verify`, deliberately: it validates the seal, which is the
+  // question being asked — has this bundle been altered since it was signed.
+  //
+  // `--deep --strict` answers a stricter question and fails legitimately
+  // signed apps. Observed 2026-09-05: /Applications/zoom.us.app passes
+  // `codesign -v` ("valid on disk", "satisfies its Designated Requirement",
+  // exit 0) and fails `--verify --deep --strict` with "resource fork, Finder
+  // information, or similar detritus not allowed" — stray extended attributes
+  // that a copy or a download leaves behind. Cosmetic, and near-universal.
+  //
+  // The cost of getting this wrong is not a mislabelled field.
+  // software-reinstall reads `signatureValid: false` as "the bundle is
+  // corrupt, resets cannot help", skips its entire non-destructive branch and
+  // goes to `uninstall_app`. A false negative here uninstalls a working
+  // application.
+  //
+  // Note also what is NOT redirected: piping stderr into stdout left
+  // `err.stderr` empty, so the verdict arrived with its reason missing —
+  // "Code signature invalid: " and nothing after it.
   try {
     await execAsync(
-      `codesign --verify --deep --strict '${safePath}' 2>&1`,
+      `codesign --verify --verbose=2 '${safePath}'`,
       { maxBuffer: 1024 * 1024, shell: "/bin/bash" },
     );
     signatureValid   = true;
     signatureDetails = "Code signature is valid.";
   } catch (err) {
+    const e      = err as { stderr?: string; stdout?: string };
+    const reason = (e.stderr ?? "").trim() || (e.stdout ?? "").trim() || (err as Error).message;
     signatureValid   = false;
-    signatureDetails = `Code signature invalid: ${(err as { stderr?: string }).stderr ?? (err as Error).message}`;
+    signatureDetails = `Code signature invalid: ${reason}`;
   }
 
   // Gatekeeper check

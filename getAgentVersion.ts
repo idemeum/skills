@@ -15,6 +15,7 @@
  */
 
 import * as os       from "os";
+import * as fs       from "fs/promises";
 import { exec }      from "child_process";
 import { promisify } from "util";
 import { z }         from "zod";
@@ -81,6 +82,29 @@ async function versionFromPlist(plistPath: string): Promise<string | null> {
 
 // -- darwin implementation ----------------------------------------------------
 
+/**
+ * The candidate path, or null when nothing is there.
+ *
+ * Every vendor below has a well-known install location, and it is tempting to
+ * report that constant as `installPath` and be done. Doing so makes `found`
+ * — derived from `installPath !== null` — true on every machine for every
+ * vendor whose path is hardcoded, which is what shipped: only sentinelone,
+ * the one case that actually searched, could ever come back not-found.
+ *
+ * Observed 2026-09-04: a Mac with Falcon and the jamf binary installed
+ * reported Defender, Carbon Black and Cylance as present too, so
+ * survey_security_agent's presence filter had nothing to exclude and the
+ * skill's "no known agent" exit stayed unreachable.
+ */
+export async function pathIfPresent(candidate: string): Promise<string | null> {
+  try {
+    await fs.access(candidate);
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 async function getAgentVersionDarwin(
   agent: string,
 ): Promise<AgentVersionResult> {
@@ -91,9 +115,11 @@ async function getAgentVersionDarwin(
   try {
     switch (agent) {
       case "crowdstrike": {
-        installPath = "/Applications/Falcon.app";
-        version     = await versionFromPlist(`${installPath}/Contents/Info.plist`);
-        message     = version ? `CrowdStrike Falcon version ${version}` : "Falcon.app found but version unreadable";
+        installPath = await pathIfPresent("/Applications/Falcon.app");
+        version     = installPath ? await versionFromPlist(`${installPath}/Contents/Info.plist`) : null;
+        message     = !installPath
+          ? "Falcon.app not found in /Applications"
+          : version ? `CrowdStrike Falcon version ${version}` : "Falcon.app found but version unreadable";
         break;
       }
       case "sentinelone": {
@@ -113,16 +139,21 @@ async function getAgentVersionDarwin(
         break;
       }
       case "jamf": {
-        installPath = "/usr/local/bin/jamf";
-        const { stdout } = await execAsync("jamf version 2>/dev/null", { maxBuffer: 1024 * 1024 });
-        const match = stdout.match(/(\d+\.\d+[\.\d]*)/);
-        version     = match ? match[1] : null;
-        message     = version ? `Jamf version ${version}` : "jamf command found but version unreadable";
+        installPath = await pathIfPresent("/usr/local/bin/jamf");
+        if (installPath) {
+          const { stdout } = await execAsync("jamf version 2>/dev/null", { maxBuffer: 1024 * 1024 });
+          const match = stdout.match(/(\d+\.\d+[\.\d]*)/);
+          version     = match ? match[1] : null;
+        }
+        message = !installPath
+          ? "jamf binary not found at /usr/local/bin/jamf"
+          : version ? `Jamf version ${version}` : "jamf command found but version unreadable";
         break;
       }
       case "defender": {
-        installPath = "/Applications/Microsoft Defender.app";
-        // Try mdatp command first
+        installPath = await pathIfPresent("/Applications/Microsoft Defender.app");
+        // mdatp answers even when the bundle sits elsewhere, so try it first
+        // and let a version it reports stand as evidence of an install.
         try {
           const { stdout } = await execAsync("mdatp version 2>/dev/null", { maxBuffer: 1024 * 1024 });
           const match = stdout.match(/(\d+\.\d+[\.\d]*)/);
@@ -130,22 +161,28 @@ async function getAgentVersionDarwin(
         } catch {
           version = null;
         }
-        if (!version) {
+        if (!version && installPath) {
           version = await versionFromPlist(`${installPath}/Contents/Info.plist`);
         }
-        message = version ? `Microsoft Defender version ${version}` : "Defender not found or version unreadable";
+        message = !installPath && !version
+          ? "Microsoft Defender not found"
+          : version ? `Microsoft Defender version ${version}` : "Defender found but version unreadable";
         break;
       }
       case "carbonblack": {
-        installPath = "/Applications/VMware Carbon Black Cloud.app";
-        version     = await versionFromPlist(`${installPath}/Contents/Info.plist`);
-        message     = version ? `Carbon Black version ${version}` : "Carbon Black app found but version unreadable";
+        installPath = await pathIfPresent("/Applications/VMware Carbon Black Cloud.app");
+        version     = installPath ? await versionFromPlist(`${installPath}/Contents/Info.plist`) : null;
+        message     = !installPath
+          ? "Carbon Black app not found in /Applications"
+          : version ? `Carbon Black version ${version}` : "Carbon Black app found but version unreadable";
         break;
       }
       case "cylance": {
-        installPath = "/Applications/Cylance/CylanceSvc.app";
-        version     = await versionFromPlist(`${installPath}/Contents/Info.plist`);
-        message     = version ? `Cylance version ${version}` : "CylanceSvc.app found but version unreadable";
+        installPath = await pathIfPresent("/Applications/Cylance/CylanceSvc.app");
+        version     = installPath ? await versionFromPlist(`${installPath}/Contents/Info.plist`) : null;
+        message     = !installPath
+          ? "CylanceSvc.app not found in /Applications/Cylance"
+          : version ? `Cylance version ${version}` : "CylanceSvc.app found but version unreadable";
         break;
       }
       default:

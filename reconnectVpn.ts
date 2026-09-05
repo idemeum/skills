@@ -46,7 +46,7 @@ export const meta = {
   // default headroom so the disconnect + pause + start + poll chain never races
   // the G4 deadline.
   timeoutMs:       90_000,
-  outputKeys: ["profileName","disconnected","reconnected","dryRun","newStatus","vendorManaged","message"],
+  outputKeys: ["profileName","disconnected","reconnected","dryRun","newStatus","vendorManaged","failureReason","failureDetail","message"],
   schema: {
     profileName: z
       .string()
@@ -70,6 +70,18 @@ interface ReconnectVpnResult {
    *  that scutil cannot drive — the corrective can't reconnect it and the user
    *  must use the vendor client. Distinct from a genuinely missing profile. */
   vendorManaged?: VpnVendor;
+  /**
+   * Why the reconnect failed, when the OS says. Present only on failure;
+   * `"unknown"` when the cause could not be determined — always paired with
+   * `failureDetail` so an unclassified failure still carries the raw text.
+   *
+   * This is what lets a skill branch on the failure instead of running probes
+   * beforehand to guess between auth, reachability and certificate causes.
+   */
+  failureReason?: VpnFailureReason;
+  /** The raw OS text the reason was derived from — a RAS line on Windows, a
+   *  NetworkExtension log entry on macOS. Null when nothing was readable. */
+  failureDetail?: string | null;
   message?:       string;
 }
 
@@ -85,6 +97,107 @@ async function runPS(script: string): Promise<string> {
 }
 
 // -- darwin status helper -----------------------------------------------------
+
+/**
+ * Why a reconnect failed, when the OS says.
+ *
+ * `newStatus` alone ("Disconnected", "Invalid") says a tunnel is not up but not
+ * why, so `vpn-repair` had to run separate probes beforehand to guess between
+ * these causes — reachability, certificate expiry, extension approval. Each of
+ * those is a plan step, an executor iteration, and a guess the failure itself
+ * can answer for free.
+ *
+ * `unknown` is the honest default and is always paired with `failureDetail`
+ * carrying the raw text, so an unclassified failure still reaches the user with
+ * something actionable rather than being flattened to "did not connect".
+ */
+export type VpnFailureReason =
+  | "auth"                    // credentials, MFA, disabled account
+  | "unreachable"             // server or network path
+  | "certificate"             // client or server certificate
+  | "no-configuration"        // profile missing or unusable
+  | "extension-not-approved"  // macOS system extension pending approval
+  | "timeout"                 // still negotiating when the deadline elapsed
+  | "unknown";
+
+/**
+ * Windows RAS error codes → reason.
+ *
+ * Deliberately partial: only codes whose meaning is unambiguous are mapped, and
+ * anything else falls through to `unknown` with the raw message attached.
+ * Guessing at a code is worse than saying so — a wrong reason sends the skill
+ * down the wrong branch, which is exactly the failure mode this replaces.
+ */
+const RAS_CODES: Record<string, VpnFailureReason> = {
+  "691": "auth",             // username/password not recognised
+  "649": "auth",             // account has no dial-in permission
+  "718": "auth",             // timeout waiting for a valid response from server
+  "691v": "auth",
+  "800": "unreachable",      // unable to establish the VPN connection
+  "809": "unreachable",      // no response — commonly a blocked/NAT'd path
+  "807": "unreachable",      // connection was terminated
+  "13801": "certificate",    // IKE authentication credentials are unacceptable
+  "13806": "certificate",    // no valid machine certificate
+  "798": "certificate",      // no certificate found for EAP
+  "623": "no-configuration", // cannot find the phone book entry
+  "703": "no-configuration", // connection needs information not configured
+};
+
+/**
+ * macOS reason extraction from the NetworkExtension unified log.
+ *
+ * Best-effort by design. Apple does not document these strings and they change
+ * between releases, so every pattern here is conservative and unmatched text
+ * yields `unknown` plus the raw line. Verified only that the log is READABLE
+ * without elevation; the patterns themselves are untested against real
+ * failures on this machine, which has no VPN profile configured.
+ */
+const NE_PATTERNS: Array<[RegExp, VpnFailureReason]> = [
+  [/authentication (?:failed|error)|EAP failure|credentials.{0,20}(?:reject|invalid)/i, "auth"],
+  [/certificate.{0,30}(?:expired|invalid|untrusted|not found)|no valid identity/i, "certificate"],
+  [/(?:server|peer).{0,20}(?:unreachable|not responding|no response)|connection timed out/i, "unreachable"],
+  [/extension.{0,30}(?:not approved|awaiting approval|waiting for user)/i, "extension-not-approved"],
+  [/(?:configuration|profile).{0,20}(?:missing|not found|invalid)/i, "no-configuration"],
+];
+
+/** Maps a raw failure string to a reason, defaulting to `unknown`. */
+export function classifyVpnFailure(raw: string | null | undefined): VpnFailureReason {
+  if (!raw) return "unknown";
+  const ras = raw.match(/(?:error|Error)\s+(\d{3,5})/)?.[1];
+  if (ras && RAS_CODES[ras]) return RAS_CODES[ras]!;
+  for (const [pattern, reason] of NE_PATTERNS) {
+    if (pattern.test(raw)) return reason;
+  }
+  return "unknown";
+}
+
+/**
+ * Reads recent NetworkExtension log entries for a failure reason.
+ *
+ * Never throws and never blocks the result: a failed or slow `log show` yields
+ * null, and the caller reports `unknown` — the same answer it gave before this
+ * existed. Runs only on a FAILED reconnect, so the cost is not paid on the
+ * common path.
+ */
+async function readNeFailureDetail(): Promise<string | null> {
+  try {
+    const { stdout } = await execAsync(
+      "log show --predicate 'subsystem == \"com.apple.networkextension\"' " +
+      "--last 2m --style compact 2>/dev/null",
+      { maxBuffer: 4 * 1024 * 1024, timeout: 10_000 },
+    );
+    // Keep only lines that look like a VPN failure; the subsystem is noisy with
+    // widget and cache chatter that would drown the signal.
+    const line = stdout
+      .split("\n")
+      .filter((l) => /fail|error|reject|invalid|denied|unreachable|timed out|expired/i.test(l))
+      .filter((l) => !/UUID cache|sandbox check/i.test(l))
+      .pop();
+    return line?.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Read the current connection state of a native (scutil) profile from
@@ -211,6 +324,21 @@ async function reconnectVpnDarwin(
 
   reconnected = newStatus === "Connected";
   const waited = Math.round((Date.now() - startedAt) / 1000);
+
+  // Only on failure: the log read costs ~1s and there is nothing to explain
+  // when the tunnel came up. "Connecting" at the deadline is a timeout by
+  // definition — the OS never reached a terminal state — so it is classified
+  // directly rather than guessed at from the log.
+  let failureReason: VpnFailureReason = "unknown";
+  let failureDetail: string | null = null;
+  if (!reconnected) {
+    if (newStatus === "Connecting" || newStatus === null) {
+      failureReason = "timeout";
+    } else {
+      failureDetail = await readNeFailureDetail();
+      failureReason = classifyVpnFailure(failureDetail);
+    }
+  }
   const message = reconnected
     ? `VPN profile "${profileName}" reconnected — status: Connected.`
     : newStatus === "Connecting" || newStatus === null
@@ -220,7 +348,10 @@ async function reconnectVpnDarwin(
       : `VPN profile "${profileName}" did not connect — status: ${newStatus}. ` +
         "Toggle Disconnect → Connect from the VPN menu-bar icon, or escalate to IT if it persists.";
 
-  return { profileName, disconnected, reconnected, dryRun: false, newStatus, message };
+  return {
+    profileName, disconnected, reconnected, dryRun: false, newStatus,
+    failureReason, failureDetail, message,
+  };
 }
 
 // -- win32 vendor detection ---------------------------------------------------
@@ -328,17 +459,20 @@ try { Disconnect-VpnConnection -Name '${safeName}' -Force -ErrorAction SilentlyC
 Start-Sleep -Seconds 2
 $connected = $false
 try {
-  rasdial '${safeName}' | Out-Null
-  $connected = $true
-} catch {}
+  # rasdial prints the RAS error number and message on failure. It was piped to
+  # Out-Null with the error swallowed, which threw away the only discriminating
+  # signal Windows gives — 691 (auth), 809 (unreachable), 13801 (certificate).
+  $rasOut = rasdial '${safeName}' 2>&1 | Out-String
+  if ($LASTEXITCODE -eq 0) { $connected = $true }
+} catch { $rasOut = $_.Exception.Message }
 $status = $null
 $c = Get-VpnConnection -Name '${safeName}' -ErrorAction SilentlyContinue
 if ($c) { $status = $c.ConnectionStatus }
-[PSCustomObject]@{ reconnected = $connected; status = $status } |
+[PSCustomObject]@{ reconnected = $connected; status = $status; rasOut = $rasOut } |
   ConvertTo-Json -Compress`.trim();
 
   const raw = await runPS(ps);
-  let parsed: { reconnected: boolean; status: string | null } = {
+  let parsed: { reconnected: boolean; status: string | null; rasOut?: string | null } = {
     reconnected: false,
     status:      null,
   };
@@ -346,12 +480,20 @@ if ($c) { $status = $c.ConnectionStatus }
     parsed = JSON.parse(raw);
   } catch { /* ignore */ }
 
+  const failureDetail = parsed.reconnected ? null : (parsed.rasOut?.trim() || null);
+
   return {
     profileName,
     disconnected: true,
     reconnected:  parsed.reconnected,
     dryRun:       false,
     newStatus:    parsed.status,
+    failureReason: parsed.reconnected ? "unknown" : classifyVpnFailure(failureDetail),
+    failureDetail,
+    message: parsed.reconnected
+      ? `VPN profile "${profileName}" reconnected — status: ${parsed.status ?? "Connected"}.`
+      : `VPN profile "${profileName}" did not connect${parsed.status ? ` — status: ${parsed.status}` : ""}.` +
+        (failureDetail ? ` ${failureDetail}` : ""),
   };
 }
 

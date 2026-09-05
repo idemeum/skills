@@ -28,7 +28,7 @@ metadata:
     goal: My cloud sync (OneDrive, iCloud, Google Drive, Dropbox) or Time Machine backup is stuck, stale, or showing errors — please diagnose and fix it
     icon: CloudUpload
     iconClass: text-blue-500
-    order: 13
+    order: 15
 ---
 
 ## When to use

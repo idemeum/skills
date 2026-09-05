@@ -153,7 +153,22 @@ function parseWin32Klist(stdout: string, warnMs: number, now: number): KerberosT
  * as unhandled rejections even inside try/catch).
  */
 export function classifyKlistError(msg: string): "missing" | "error" {
-  return /No credentials|cc_default|No such file/i.test(msg) ? "missing" : "error";
+  // Every implementation words "there is no ticket cache" differently, and the
+  // distinction matters: "missing" is the normal state of a Mac that was never
+  // AD-bound, while "error" says the probe itself failed. Misfiling the first
+  // as the second leaves the skill with an unhandled status, and observed
+  // 2026-09-04 that pushed the executor into a kinit gate no condition
+  // licensed, on a machine with no domain binding at all.
+  //
+  // Observed spellings:
+  //   macOS 15 Heimdal  klist: Cache not found: API:628C2F0E-...
+  //   MIT krb5          klist: No credentials cache found (filename: /tmp/krb5cc_0)
+  //   older MIT         klist: No ticket file: /tmp/krb5cc_0
+  //   Heimdal variants  krb5_cc_get_principal: No credentials cache file found
+  return /No credentials|cc_default|No such file|No ticket file|cache (?:not found|file not found)|not found: (?:API|FILE|KCM|DIR):/i
+    .test(msg)
+    ? "missing"
+    : "error";
 }
 
 // Exported for unit tests.

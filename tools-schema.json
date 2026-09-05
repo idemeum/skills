@@ -2569,6 +2569,8 @@
         "dryRun",
         "newStatus",
         "vendorManaged",
+        "failureReason",
+        "failureDetail",
         "message"
       ],
       "params": [
@@ -2665,7 +2667,7 @@
         {
           "name": "interface",
           "type": "string",
-          "required": false,
+          "required": true,
           "description": "Network interface name (e.g. 'en0', 'Wi-Fi"
         }
       ]
@@ -3052,6 +3054,7 @@
         "killed",
         "relaunched",
         "newPid",
+        "stillRunning",
         "message"
       ],
       "params": [
@@ -3156,6 +3159,132 @@
           "type": "boolean",
           "required": false
         }
+      ]
+    },
+    {
+      "toolId": "survey_app",
+      "description": "Reads one application's state in one call: whether it is installed, whether its code signature and Gatekeeper approval are intact, and which system permissions it has been granted or denied. Read-only. Use at the start of an application-repair workflow instead of list_installed_apps, check_app_integrity and check_app_permissions separately.",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "affectedScope": [
+        "user"
+      ],
+      "outputKeys": [
+        "appName",
+        "installed",
+        "matches",
+        "integrity",
+        "permissions"
+      ]
+    },
+    {
+      "toolId": "survey_compliance_posture",
+      "description": "Reads the three device-compliance controls in one call: System Integrity Protection (macOS) or Secure Boot (Windows), disk encryption (FileVault / BitLocker), and the OS firewall. Read-only. Use instead of check_sip_status, check_filevault_status and check_firewall_status separately.",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "affectedScope": [
+        "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "sip",
+        "diskEncryption",
+        "firewall"
+      ]
+    },
+    {
+      "toolId": "survey_identity",
+      "description": "Reads the four local causes of authentication failure in one call: system clock drift against a reference NTP source, Kerberos ticket state, client certificate expiry, and Active Directory / domain binding. Read-only. Use at the start of an authentication workflow instead of check_ntp_status, check_kerberos_ticket, list_client_certificates and check_ad_binding separately.",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "affectedScope": [
+        "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "ntp",
+        "kerberos",
+        "certificates",
+        "adBinding"
+      ]
+    },
+    {
+      "toolId": "survey_network",
+      "description": "Reads the machine's whole network picture in one call: reachability of external targets, every network interface, the active uplink, and Wi-Fi signal quality when the uplink is Wi-Fi. Read-only. Use at the start of a network workflow instead of check_connectivity, get_network_interfaces and get_wifi_info separately.",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "affectedScope": [
+        "user"
+      ],
+      "outputKeys": [
+        "platform",
+        "targets",
+        "allReachable",
+        "anyReachable",
+        "interfaces",
+        "primaryInterface",
+        "targetInterface",
+        "targetType",
+        "targetIpv4",
+        "hasApipa",
+        "activeCount",
+        "wifi"
+      ]
+    },
+    {
+      "toolId": "survey_security_agent",
+      "description": "Reads endpoint security agent health in one call: which known agents are installed, which are running, their installed versions, and when each last reported to its management console. Read-only. Use at the start of a security-agent workflow instead of check_agent_process, get_agent_version and check_agent_heartbeat separately.",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "affectedScope": [
+        "user"
+      ],
+      "tccCategories": [
+        "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "platform",
+        "detectedAgents",
+        "checkedAgents",
+        "anyRunning",
+        "anyDetected",
+        "versions",
+        "heartbeat",
+        "unsupportedVendors"
+      ]
+    },
+    {
+      "toolId": "survey_vpn",
+      "description": "Reads VPN state in one call: active connections, installed vendor clients, and every configured profile with its type. Reports whether the machine's VPN is a native profile (drivable by reconnect_vpn) or vendor-managed (not). Read-only. Use at the start of a VPN workflow instead of check_vpn_status and get_vpn_profiles separately.",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "affectedScope": [
+        "user"
+      ],
+      "tccCategories": [
+        "FullDiskAccess"
+      ],
+      "outputKeys": [
+        "platform",
+        "isConnected",
+        "activeConnections",
+        "installedClients",
+        "profiles",
+        "nativeProfiles",
+        "nativeProfileCount",
+        "vendorPresent"
       ]
     },
     {

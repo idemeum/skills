@@ -1,62 +1,50 @@
 # No internet or Wi-Fi connection
 
-**Skill:** `network-reset` · **Risk:** high · **Steps:** 17
+**Skill:** `network-reset` · **Risk:** high · **Steps:** 13
 
 Diagnoses and repairs network connectivity issues including no internet access, Wi-Fi problems, DNS failures, DHCP lease errors, misconfigured proxies, and corrupt network settings.
 
 ## What it does, step by step
 
-**Step 1.** Asks whether other devices are also offline, to tell a router/ISP issue from a device issue.
+**Step 1.** Asks whether other devices also lack internet, to rule out a router or ISP issue first.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 2.** Tests whether the device can reach the internet and pinpoints the type of failure.
-_read-only_ · `check_connectivity`
+**Step 2.** Surveys network reachability, interfaces, and Wi-Fi signal to pinpoint the connectivity problem.
+_read-only, conditional_ · `survey_network`
 
-**Step 3.** Examines the device's network interfaces to find which one is active and misconfigured.
-_read-only_ · `get_network_interfaces`
-
-**Step 4.** Checks Wi-Fi signal strength to see if a weak connection explains intermittent drops.
-_read-only_ · `get_wifi_info`
-
-**Step 5.** Requests a fresh network address for the connection when it lacks a valid one.
+**Step 3.** Renews the device's network address lease when it lacks a valid IP.
 _read-only, conditional_ · `renew_dhcp_lease`
 
-**Step 6.** Clears the DNS cache and confirms whether website addresses now resolve correctly.
-_read-only, conditional_ · `flush_dns_cache`, `check_connectivity`
+**Step 4.** Clears the DNS cache when websites fail to resolve despite a working connection.
+_read-only, conditional_ · `flush_dns_cache`
 
-**Step 7.** Reviews configured proxy settings that could be silently blocking web access.
+**Step 5.** Checks whether a proxy is configured and reports its settings for each protocol.
 _read-only_ · `check_proxy_settings`
 
-**Step 8.** Checks whether a configured proxy server can actually be reached.
+**Step 6.** Tests whether a configured proxy server is actually reachable.
 _read-only_ · `check_connectivity`
 
-**Step 9.** Turns off a proxy that is configured but unreachable, after confirming with the user.
+**Step 7.** Turns off a proxy found to be unreachable, after confirming with the user.
 _makes a change, asks permission, preview first_ · `disable_proxy`
 
-**Step 10.** Checks whether the firewall is blocking all network connections.
+**Step 8.** Checks whether the firewall is blocking all network connections.
 _read-only_ · `check_firewall_status`
 
-**Step 11.** Determines whether the device is managed by Intune before pursuing a policy-based fix.
-_read-only, conditional_ · `check_mdm_enrollment`
+**Step 9.** Checks the device's management configuration for failed profiles when connectivity is broken.
+_read-only_ · `c_mdm_diagnose_configuration`
 
-**Step 12.** Looks up the device's record in Intune to check its management status.
-_read-only, conditional_ · `c_intune_find_device`
+**Step 10.** Reapplies the device's full management configuration to fix a diagnosed policy problem.
+_makes a change, asks permission, preview first_ · `c_mdm_reapply_configuration`
 
-**Step 13.** Identifies which specific configuration profile is failing on the device.
-_read-only_ · `c_intune_get_configuration_states`
-
-**Step 14.** Asks the device to re-sync and reapply all its assigned configuration policies.
-_makes a change, asks permission, preview first_ · `c_intune_sync_device`
-
-**Step 15.** Waits for the resynced configuration to take effect before retesting.
+**Step 11.** Waits for the reapplied configuration to take effect before re-testing the connection.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 16.** Retests connectivity after a fix was applied to confirm it worked.
+**Step 12.** Re-checks connectivity after a fix was applied, to confirm whether it worked.
 _read-only_ · `check_connectivity`
 
-**Step 17.** Summarizes findings and fixes, and gives manual next steps if problems remain.
+**Step 13.** Reports the diagnosis and any fixes applied, plus manual steps if problems remain.
 _no tools_
 
 ## Tools it may use
 
-`check_connectivity`, `get_network_interfaces`, `get_wifi_info`, `renew_dhcp_lease`, `flush_dns_cache`, `check_proxy_settings`, `disable_proxy`, `check_firewall_status`, `check_mdm_enrollment`, `c_intune_find_device`, `c_intune_get_configuration_states`, `c_intune_sync_device`, `wait_for_user_ack`
+`survey_network`, `check_connectivity`, `renew_dhcp_lease`, `flush_dns_cache`, `check_proxy_settings`, `disable_proxy`, `check_firewall_status`, `c_mdm_diagnose_configuration`, `c_mdm_reapply_configuration`, `wait_for_user_ack`

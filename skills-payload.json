@@ -200,21 +200,17 @@
       "description": "Diagnoses and repairs SSO / Kerberos / client-certificate authentication failures. Use when multiple identity-dependent apps (Outlook, VPN, Teams, Slack, corporate web apps) fail simultaneously — the root cause is often a single issue like NTP drift, an expired Kerberos TGT, or an expired client certificate. Fixes the underlying cause so all the downstream apps start working again.",
       "risk": "high",
       "allowedTools": [
-        "check_ntp_status",
+        "survey_identity",
         "sync_system_time",
-        "check_kerberos_ticket",
         "renew_kerberos_ticket",
         "list_client_certificates",
-        "check_certificate_expiry",
-        "check_ad_binding",
-        "check_mdm_enrollment",
-        "c_intune_find_device",
-        "c_intune_get_configuration_states",
-        "c_intune_sync_device",
-        "wait_for_user_ack",
-        "request_user_input"
+        "check_ntp_status",
+        "check_kerberos_ticket",
+        "c_mdm_diagnose_configuration",
+        "c_mdm_reapply_configuration",
+        "wait_for_user_ack"
       ],
-      "steps": 17,
+      "steps": 10,
       "enabled": false
     },
     {
@@ -223,21 +219,18 @@
       "description": "Diagnoses and repairs network connectivity issues including no internet access, Wi-Fi problems, DNS failures, DHCP lease errors, misconfigured proxies, and corrupt network settings. Use when user has no or intermittent internet access.",
       "risk": "high",
       "allowedTools": [
+        "survey_network",
         "check_connectivity",
-        "get_network_interfaces",
-        "get_wifi_info",
         "renew_dhcp_lease",
         "flush_dns_cache",
         "check_proxy_settings",
         "disable_proxy",
         "check_firewall_status",
-        "check_mdm_enrollment",
-        "c_intune_find_device",
-        "c_intune_get_configuration_states",
-        "c_intune_sync_device",
+        "c_mdm_diagnose_configuration",
+        "c_mdm_reapply_configuration",
         "wait_for_user_ack"
       ],
-      "steps": 17,
+      "steps": 13,
       "enabled": true
     },
     {
@@ -282,24 +275,18 @@
       "description": "Diagnoses and repairs endpoint security agent issues including stopped processes, outdated versions, unapproved system extensions, connectivity failures to management consoles, and compliance posture problems. Supports CrowdStrike Falcon, SentinelOne, Jamf Protect, Carbon Black, Cylance, and Microsoft Defender.",
       "risk": "high",
       "allowedTools": [
-        "check_agent_process",
-        "check_agent_heartbeat",
-        "check_sip_status",
+        "survey_security_agent",
+        "survey_compliance_posture",
         "check_system_extension",
-        "get_agent_version",
-        "check_connectivity",
         "check_agent_logs",
+        "check_agent_process",
         "restart_process",
-        "check_filevault_status",
-        "check_firewall_status",
         "enable_firewall",
-        "check_mdm_enrollment",
-        "c_intune_find_device",
-        "c_intune_get_compliance_states",
-        "c_intune_sync_device",
+        "c_mdm_diagnose_configuration",
+        "c_mdm_reapply_configuration",
         "wait_for_user_ack"
       ],
-      "steps": 20,
+      "steps": 13,
       "enabled": false
     },
     {
@@ -308,9 +295,8 @@
       "description": "Installs an application the user does not have, and repairs one that is broken by reinstalling it cleanly. Covers Self Service catalog install on managed devices, signature verification, thorough uninstallation, installer download with checksum validation, and silent installation. Use when a user needs software they are missing, or when an application is crashing, corrupted, or behaving incorrectly and a reinstall is the appropriate resolution.",
       "risk": "high",
       "allowedTools": [
+        "survey_app",
         "list_installed_apps",
-        "check_app_integrity",
-        "check_app_permissions",
         "check_mdm_enrollment",
         "query_self_service_catalog",
         "trigger_self_service_install",
@@ -322,7 +308,7 @@
         "wait_for_user_ack",
         "request_user_input"
       ],
-      "steps": 18,
+      "steps": 16,
       "enabled": false
     },
     {
@@ -365,21 +351,17 @@
       "description": "Diagnoses and repairs VPN connectivity issues including stale connections, misconfigured profiles, expired certificates, missing network extensions, and DNS leaks. Use when user cannot connect to VPN or VPN appears connected but traffic is not routing.",
       "risk": "high",
       "allowedTools": [
-        "check_vpn_status",
-        "get_vpn_profiles",
+        "survey_vpn",
         "check_connectivity",
-        "check_certificate_expiry",
         "check_network_extension",
         "reconnect_vpn",
         "flush_dns_cache",
-        "check_mdm_enrollment",
-        "c_intune_find_device",
-        "c_intune_get_configuration_states",
-        "c_intune_sync_device",
+        "c_mdm_diagnose_configuration",
+        "c_mdm_reapply_configuration",
         "wait_for_user_ack",
         "request_user_input"
       ],
-      "steps": 20,
+      "steps": 16,
       "enabled": true
     }
   ]

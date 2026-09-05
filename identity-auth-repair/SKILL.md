@@ -4,29 +4,23 @@ description: Diagnoses and repairs SSO / Kerberos / client-certificate authentic
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
-  - check_ntp_status
+  - survey_identity
   - sync_system_time
-  - check_kerberos_ticket
   - renew_kerberos_ticket
   - list_client_certificates
-  - check_certificate_expiry
-  - check_ad_binding
-  - check_mdm_enrollment
-  - c_intune_find_device
-  - c_intune_get_configuration_states
-  - c_intune_sync_device
+  - check_ntp_status
+  - check_kerberos_ticket
+  - c_mdm_diagnose_configuration
+  - c_mdm_reapply_configuration
   - wait_for_user_ack
-  - request_user_input
 metadata:
   prerequisites:
     before-corrective:
-      - check_ntp_status
-      - check_kerberos_ticket
-      - check_ad_binding
-  # Raised from medium when the MDM branch landed: c_intune_sync_device is
-  # riskLevel high, and G2 blocks the whole plan when any step exceeds this
-  # ceiling. The local correctives remain medium; the high step is the Intune
-  # re-sync, which is consent-gated and non-destructive.
+      - survey_identity
+  # Raised from medium when the MDM branch landed: c_mdm_reapply_configuration
+  # is riskLevel high, and G2 blocks the whole plan when any step exceeds this
+  # ceiling. The local correctives remain medium; the high step is the MDM
+  # re-apply, which is consent-gated and non-destructive.
   maxAggregateRisk: high
   userLabel: "Login or SSO keeps failing across multiple apps"
   examples:
@@ -64,8 +58,14 @@ The big win of this skill is catching **NTP drift** as the root cause. A clock s
 
 ## Steps
 
-**Step 1 — Check NTP drift (root cause #1)**
-Call `check_ntp_status` (no parameters). The tool reports the endpoint's clock offset from a reference NTP source in milliseconds. An `absOffsetMs > 300000` (5 minutes) explains simultaneous Kerberos + SAML + TOTP failures — surface this to the user immediately as the likely root cause.
+**Step 1 — Survey the four local causes**
+Call `survey_identity`. One call returns all four things that break authentication locally, as separate fields:
+- `ntp` — clock offset. `status: "drifted"` (over 5 minutes) is **root cause #1**: it breaks Kerberos, SAML and TOTP at the same time, which is exactly the "everything is broken at once" report. Surface it immediately as the likely single cause, and read the other three in that light — a drifted clock plus an expired ticket is usually one fault, not two.
+- `kerberos` — `status` is `ok` / `expiring` / `expired` / `missing`. `missing` means no Kerberos credentials at all: normal on a Mac that is not AD-bound, a logon problem on Windows. Read `adBinding` before judging it.
+- `certificates` — `status` `ok` / `empty` / `expiring` / `expired`. On expiry, name the specific subjects and thumbprints; the agent cannot issue a certificate, so re-issuance comes from MDM or the CA.
+- `adBinding` — safe everywhere; on Entra-joined and non-domain machines it cleanly reports not domain-joined. A broken binding mimics every other auth failure at once and cannot be repaired locally — escalate with the specific error.
+
+Any field may carry `status: "error"` when that one probe failed; the other three still stand and one of them may be the whole answer.
 
 **Step 2 — Sync system time (if drifted)**
 Call `sync_system_time`. G4 fires the consent gate automatically (`tool.meta.requiresConsent: true`) with the dry-run preview inside (`tool.meta.supportsDryRun: true`) so the user sees the exact command before approving. The op needs admin and routes through the privileged helper daemon when available.
@@ -89,27 +89,21 @@ options:
 
 On `done`: re-run `check_ntp_status` (re-fire Step 1) to confirm the drift is resolved before continuing. Without this gate, the re-check fires while the user is still typing their sudo password.
 
-**Step 4 — Check Kerberos tickets (root cause #2)**
-Call `check_kerberos_ticket` with `expiryWarnMinutes: 60`. The tool lists active TGTs + service tickets and flags ones that are expired or expiring within the window.
-- `status === "ok"` → Kerberos is healthy; skip to Step 7.
-- `status === "expiring"` or `"expired"` → proceed to Step 5 to renew.
-- `status === "missing"` → the user has no Kerberos credentials at all. On macOS this is normal if they aren't AD-bound; on Windows it suggests a logon problem. Step 10's `check_ad_binding` will clarify whether the machine expects AD credentials; if it does, escalate to helpdesk because interactive re-authentication is required and the agent will not handle passwords.
-
-**Step 5 — Renew Kerberos ticket (if expiring or expired)**
+**Step 4 — Renew Kerberos ticket (if expiring or expired)**
 Call `renew_kerberos_ticket`. G4 fires the consent gate automatically (`tool.meta.requiresConsent: true`) with the dry-run preview inside (`tool.meta.supportsDryRun: true`) — the preview shows `kinit -R` on macOS, `klist purge && gpupdate /force` on Windows.
 
-`Condition:` only run if Step 4's `check_kerberos_ticket` returned `status === "expiring"` OR `"expired"`. Skip for `"ok"` (nothing to renew) and `"missing"` (no ticket to renew from — Step 10's AD check handles that case).
+`Condition:` only run if Step 1's `kerberos.status` is `"expiring"` or `"expired"`. Skip for `"ok"` (nothing to renew) and `"missing"` (no ticket to renew from — read `adBinding` instead: a domain-joined machine with no ticket needs interactive re-authentication, which the agent will not do).
 
 **On Windows** with the privileged helper daemon installed (default), the op runs through the helper as `LocalSystem` and completes silently for **all users — admin and non-admin alike**. AD reissues a fresh TGT on next access.
 
-**On macOS** the op is **not yet supported via the helper** in v1 fast-follow — Heimdal / MIT-KfM integration is deferred. The handler returns `helper-error` with `stderr: "Platform not supported"` on macOS; Step 6 will ack the user's interactive `kinit`.
+**On macOS** the op is **not yet supported via the helper** in v1 fast-follow — Heimdal / MIT-KfM integration is deferred. The handler returns `helper-error` with `stderr: "Platform not supported"` on macOS; Step 5 will ack the user's interactive `kinit`.
 
 Status outcomes:
 - `status === "renewed"` → success; re-run `check_kerberos_ticket` to confirm a valid ticket is back in place.
-- `status === "interactive"` → the ticket is not renewable (macOS path; or Windows when the helper is unavailable / disabled). Step 6's `wait_for_user_ack` will surface the `kinit <principal>` instruction and wait for the user's confirmation; the agent will **not** handle the password.
-- `status === "failed"` → surface the tool's error message and continue to Step 7.
+- `status === "interactive"` → the ticket is not renewable (macOS path; or Windows when the helper is unavailable / disabled). Step 5's `wait_for_user_ack` will surface the `kinit <principal>` instruction and wait for the user's confirmation; the agent will **not** handle the password.
+- `status === "failed"` → surface the tool's error message and continue.
 
-**Step 6 — Wait for user to complete interactive kinit**
+**Step 5 — Wait for user to complete interactive kinit**
 Call `wait_for_user_ack` to pause until the user finishes the manual `kinit` step:
 
 ```yaml
@@ -120,60 +114,27 @@ options:
   - { id: "skip",    label: "Skip — leave ticket as-is", kind: "cancel" }
 ```
 
-`Condition:` only run if Step 5 ran AND returned `status === "interactive"`. Skip silently if Step 5 completed via the helper (`"renewed"`) or failed for other reasons.
+`Condition:` only run if Step 4 ran AND returned `status === "interactive"`. Skip silently if Step 4 completed via the helper (`"renewed"`) or failed for other reasons.
 
-On `done`: re-run `check_kerberos_ticket` (re-fire Step 4) so Step 17's summary reflects the post-`kinit` state, not the stale interactive state.
+On `done`: re-run `check_kerberos_ticket` so the closing summary reflects the post-`kinit` state, not the stale interactive state. This is the one place the fine-grained tool is called directly — the survey has already run and only this one field needs refreshing.
 
-**Step 7 — Enumerate client certificates**
-Call `list_client_certificates` with `expiryWarnDays: 30`. The tool reports every personal / machine client cert with its expiry status.
-- `status === "ok"` or `"empty"` → certs are not the problem; continue to Step 8.
-- `status === "expired"` or `"expiring"` → surface the specific subjects/thumbprints to the user. The agent cannot issue a certificate itself; re-issuance comes from the device's MDM or certificate authority. On an Intune-managed device, Steps 11–16 can ask Intune to re-send the certificate profile — otherwise this goes to IT with the cert details so the request is actionable. Continue to Step 8 to verify remaining components; do NOT end the run yet.
+**Step 6 — Can MDM re-issue the certificate?**
+`Condition:` only run if Step 1 reported the client certificates as expired or expiring. Skip entirely when certificates were fine — the fault is NTP, Kerberos or AD binding, and those are already handled.
 
-**Step 8 — Capture VPN/SSO endpoint hostname (if user mentioned one)**
-Call `request_user_input` to capture the failing VPN or SSO endpoint hostname when the user has reported endpoint-specific failures but the goal didn't include the hostname:
+Call `c_mdm_diagnose_configuration`. It reads enrollment, locates the device in the tenant, and returns the per-item states in one call. Every eligibility rule — reachable provider, readable serial, exactly one matching device, checked in within 7 days, at least one item in `failed` — is enforced inside the tool, so do not re-derive them here.
 
-```yaml
-prompt: "Which VPN or SSO endpoint is failing? Step 9 will check its TLS certificate to rule out a far-side expiry — server certs on the IdP/VPN gateway expiring look identical to a local identity problem and are a common false positive."
-placeholder: "vpn.example.com or sso.example.com"
-validator: "^[A-Za-z0-9.\\-]+$"
-```
+Only `outcome: "failed-items"` continues. On anything else, skip Steps 7–7 and escalate with the tool's `message` — it is already written for the user. On `stale-checkin` lead with the check-in age: a device that fell off management is more useful to IT than any symptom.
 
-`Condition:` (goal-text test — no upstream tool flags this; evaluate against the raw goal string) only run if BOTH:
-- (a) the goal matches the case-insensitive keyword regex `/\b(vpn|sso|saml|idp|gateway|endpoint|portal)\b/i` — i.e. the user named an endpoint class, not a generic "login is broken"; AND
-- (b) the goal does NOT already contain a hostname token matching `/\b[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+\b/` (an FQDN-style string with at least one dot, consistent with Step 9's `host` input and the `^[A-Za-z0-9.\-]+$` validator above).
+On `failed-items`, make the judgement the tool deliberately does not: **look through `items` for a SCEP / PKCS / certificate profile.**
+- None present at all → this device does not get its client certificate from MDM. Stop and escalate with that finding. This is a real answer, not a failure.
+- Present but absent from `failedItems` → it applied cleanly, so the expiry has another cause. Escalate rather than re-applying.
+- Present in `failedItems` → name it; that is the likely cause. Quote its `stateReason` when set — it says *why* the profile failed.
 
-Skip silently otherwise — Step 9 will use the goal-provided hostname directly (when (b) already matched) or skip entirely if no endpoint was named (when (a) did not match).
+**Step 7 — Re-apply the device's configuration**
+`Condition:` only run if Step 6 found an assigned certificate profile that failed to apply. Call `c_mdm_reapply_configuration`. State plainly in the rationale that this tells the device to check in and re-apply **all** its assigned configuration, that it cannot issue a certificate IT has never authored a profile for, and that re-issuance completes asynchronously after the tool returns.
 
-If the user submits an empty value, Step 9 skips (no false positive to rule out). Surface that gap in the Step 12 summary.
-
-**Step 9 — Spot-check VPN/SSO certificate expiry**
-Call `check_certificate_expiry` with `host` set to the captured hostname. An expiring server cert on the far side looks identical to a local identity problem.
-
-`inputsFrom: [{ step: 8, field: "value" }]` (or use the goal-provided hostname if Step 8 was skipped).
-
-`Condition:` only run if a valid hostname is available (either from Step 8's non-empty return or from the user's goal). Skip silently otherwise.
-
-**Step 10 — Verify AD / domain binding (Windows AD environments)**
-Call `check_ad_binding`. A broken binding causes symptoms that mimic every other auth failure at once, and cannot be repaired locally — escalate to helpdesk with the specific binding error.
-
-`Condition:` always safe to run — on Entra-joined and non-domain-joined machines the tool cleanly returns "not domain-joined" without error. The result feeds Step 4's `missing` interpretation (does the machine expect Kerberos at all?).
-
-**Step 11 — Can MDM re-issue the certificate?**
-`Condition:` only run if Step 7 returned `status: "expired"` or `"expiring"`. Skip entirely when certificates were fine — the fault is NTP, Kerberos or AD binding, and those are already handled.
-
-Call `check_mdm_enrollment`. Continue to Step 12 ONLY when `isEnrolled` is true, `serialNumber` is non-null, and `mdmProvider` is Intune. Otherwise skip Steps 12–16 and escalate with the cert details from Step 7, saying which it was: unenrolled; managed by another provider (name it); or serial unreadable.
-
-**Step 12 — Locate the device in Intune**
-`Condition:` only run if Step 11 continued. Call `c_intune_find_device` — no parameters, the serial comes from the runtime. Check `matchCount` first: continue ONLY when it is exactly 1. `0` means not in this tenant; `>1` means the serial is ambiguous (VM templates and some OEM batches ship duplicates), so **act on none of them** and say IT must identify the right record. Then check `lastCheckIn`. If the device last contacted Intune more than **7 days** ago it is not collecting policy at all, so a re-sync will sit unacknowledged and the wait would be spent for nothing — skip Steps 13–16, report the stale check-in date as the finding, and escalate. That date is more useful to IT than any symptom: it says the device fell off management, not that a profile is wrong.
-
-**Step 13 — Is a certificate profile assigned, and did it apply?**
-`Condition:` only run if Step 12 found exactly one device. Call `c_intune_get_configuration_states`. Look for a SCEP / PKCS / certificate profile. If none is assigned, this device does not get its client certificate from Intune — stop, skip Steps 14–16, and escalate with that finding plus the Step 7 cert details. If one is assigned with `state: failed`, name it — that is the likely cause. `pending` or `deferred` means it is still in flight; wait rather than syncing. Report `stateReason` when present: it says *why* the profile failed, which Intune does not provide but Jamf does.
-
-**Step 14 — Re-apply the device's configuration**
-`Condition:` only run if Step 13 found an assigned certificate profile that failed to apply. Call `c_intune_sync_device`. State plainly in the rationale that this tells the device to check in and re-apply **all** its assigned configuration, that it cannot issue a certificate IT has never authored a profile for, and that re-issuance completes asynchronously after the tool returns.
-
-**Step 15 — Wait for the certificate to be re-issued**
-`Condition:` only run if Step 14 returned `status: "initiated"`. `initiated` proves only that Intune accepted the request — it is not evidence a certificate was issued. Call `wait_for_user_ack`:
+**Step 8 — Wait for the certificate to be re-issued**
+`Condition:` only run if Step 7 returned `status: "ok"`. That proves only that the MDM accepted the request — it is not evidence a certificate was issued. Call `wait_for_user_ack`:
 
 ```yaml
 prompt: "I've asked Intune to re-send your device's configuration, which should re-issue the certificate. That usually takes a minute or two. Tell me when to re-check."
@@ -182,16 +143,15 @@ options:
   - { id: "skip",  label: "Skip the re-check",    kind: "cancel" }
 ```
 
-**Step 16 — Re-check the certificates**
-`Condition:` only run if Step 15 returned `ready`. Call `list_client_certificates` again with `expiryWarnDays: 30` and compare against Step 7. A fresh certificate with a later expiry is the evidence the re-sync worked; an unchanged list means it did not — escalate with the profile named in Step 13. Never report the certificate as renewed on the strength of Step 14 alone; on `skip` at Step 15, report the sync as initiated and unverified.
+**Step 9 — Re-check the certificates**
+`Condition:` only run if Step 8 returned `ready`. Call `list_client_certificates` again with `expiryWarnDays: 30` and compare against Step 1's `certificates`. A fresh certificate with a later expiry is the evidence the re-sync worked; an unchanged list means it did not — escalate with the profile named in Step 8. Never report the certificate as renewed on the strength of Step 7 alone; on `skip` at Step 8, report the sync as initiated and unverified.
 
-**Step 17 — Summarise + guide the user**
+**Step 10 — Summarise + guide the user**
 Summarise what was found and what was fixed:
 - NTP drift corrected → apps should start working within a few minutes as auth retries succeed.
 - Kerberos TGT renewed (helper path or post-`kinit` ack) → file shares + SSO should work immediately; VPN may need a reconnect.
 - Expired client cert → user must request re-issue from IT; no silent fix possible.
 - Broken AD binding → user must contact IT; this skill cannot rebind.
-- Failing endpoint cert (Step 9) → contact IT to renew the server cert; no client-side fix.
 - Nothing obvious found → advise the user to restart their session (lock screen + sign in, or reboot if possible) so the OS re-acquires fresh credentials. If the user suspects network-layer issues (the endpoint can't reach the identity provider at all), escalate to the `network-reset` skill — this skill does not embed network probes. If that fails, escalate via the end-of-run ticket.
 
 ---
@@ -201,7 +161,7 @@ Summarise what was found and what was fixed:
 - **User travelled across time zones + laptop was asleep.** Wake-from-sleep + large time change is a classic NTP-drift trigger. Step 1 will catch it; Step 2 fixes it.
 - **FileVault unlock uses a stale password.** Not this skill's territory — FileVault credentials are separate from cloud IDP and Kerberos credentials. If the user cannot even reach the login screen, direct them to their Recovery Key or IT.
 - **MFA still fails after NTP fix.** TOTP codes depend on synced clocks. After Step 2, the user should wait ~30 seconds for a fresh code before retrying — an in-flight code was generated on the skewed clock and will still fail.
-- **Kerberos ticket renewal succeeds but VPN still fails.** Some VPN clients hold a stale cached ticket. After Step 4 the user may need to disconnect + reconnect the VPN to pick up the fresh TGT.
+- **Kerberos ticket renewal succeeds but VPN still fails.** Some VPN clients hold a stale cached ticket. After a ticket renewal the user may need to disconnect + reconnect the VPN to pick up the fresh TGT.
 - **Client cert expiring within 30 days.** Does not block auth TODAY but will in the near future. Still surface it to the user so they can schedule a renewal before it becomes an emergency.
 - **Machine is Entra-joined (no traditional AD binding).** `check_ad_binding` will report "not domain-joined" — that's correct and expected on Entra-joined endpoints. Do NOT treat as a failure; proceed to the next step.
 - **Hybrid AD + Entra with password writeback.** If the user just reset their cloud password and Kerberos still rejects, on-prem propagation can lag 15–30 min. Advise waiting before concluding Kerberos is broken.

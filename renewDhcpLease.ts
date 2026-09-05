@@ -41,10 +41,19 @@ export const meta = {
   },
   outputKeys: ["platform","results"],
   schema: {
+    // REQUIRED, and it must stay required. The privileged helper's handler
+    // declares `interface: String` with no Option and #[serde(deny_unknown_fields)],
+    // so an omitted value is rejected with "missing field" at dispatch — after
+    // the consent gate has already fired. Marking it optional here (and telling
+    // the model it could "omit to renew all") described the TS fallback path,
+    // which is not the path production takes: every system-scope tool routes
+    // through the helper. Required in the schema fails fast and locally instead.
+    //
+    // The helper requires it deliberately: `ipconfig /release` with no interface
+    // releases EVERY interface on Windows.
     interface: z
       .string()
-      .nullable().optional()
-      .describe("Network interface name (e.g. 'en0', 'Wi-Fi'). Omit to renew all active interfaces"),
+      .describe("Network interface name (e.g. 'en0', 'Wi-Fi'). Required — the privileged helper rejects a call without it."),
   },
 } as const;
 

@@ -18,7 +18,7 @@ metadata:
     goal: My USB connected device is not working, diagnose and fix.
     icon: Cable
     iconClass: text-fuchsia-500
-    order: 12
+    order: 14
   examples:
     - "my usb headset isn't working"
     - "mac doesn't recognize my external hard drive"
