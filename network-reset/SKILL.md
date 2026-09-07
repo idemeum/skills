@@ -96,7 +96,7 @@ Call `check_firewall_status`. If `blockAllConnections` is true, that's the likel
 
 Call `c_mdm_diagnose_configuration`. It reads enrollment, locates the device in the tenant, and returns the per-profile configuration states in one call. Every eligibility rule — reachable provider, readable serial, exactly one matching device, checked in within 7 days, at least one profile in `failed` — is enforced inside the tool, so do not re-derive them here.
 
-Only `outcome: "failed-items"` continues. On anything else, skip Steps 10–11 and report the tool's `message` — it is already written for the user. Two deserve emphasis: on `stale-checkin` lead with the check-in age, because a device that fell off management is more useful to IT than any symptom; on `ambiguous-serial` say plainly that nothing was acted on. On `not-enrolled` or `other-provider`, name the provider so the escalation is actionable.
+Only `outcome: "failed-items"` continues. On anything else, skip Steps 10–11 and report the tool's `message` verbatim — it already leads with the check-in age, states that a duplicate serial means nothing was acted on, and names the provider.
 
 On `failed-items`, name them from `failedItems` — that is what makes the escalation actionable — and judge relevance yourself, which the tool deliberately does not: a Wi-Fi payload speaks to the signal or DHCP symptom and a proxy payload to the proxy symptom, while an unrelated failing profile is worth reporting but does not justify a re-apply.
 

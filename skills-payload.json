@@ -211,7 +211,7 @@
         "wait_for_user_ack"
       ],
       "steps": 10,
-      "enabled": false
+      "enabled": true
     },
     {
       "skillId": "network-reset",
@@ -287,7 +287,7 @@
         "wait_for_user_ack"
       ],
       "steps": 13,
-      "enabled": false
+      "enabled": true
     },
     {
       "skillId": "software-reinstall",
@@ -309,7 +309,7 @@
         "request_user_input"
       ],
       "steps": 16,
-      "enabled": false
+      "enabled": true
     },
     {
       "skillId": "triage",

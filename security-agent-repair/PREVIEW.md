@@ -6,40 +6,40 @@ Diagnoses and repairs endpoint security agent issues including stopped processes
 
 ## What it does, step by step
 
-**Step 1.** Detects installed security agents, checks their versions, running state, and last check-in with the management console.
+**Step 1.** Detects installed security agents, checks their versions, and reports whether each has recently reached its management console.
 _read-only_ · `survey_security_agent`
 
 **Step 2.** Checks whether the security agent's system extension is approved and active on Mac devices.
 _read-only_ · `check_system_extension`
 
-**Step 2b.** Asks the user to approve the pending system extension in system settings and confirm once done.
+**Step 2b.** Asks the user to approve the pending system extension in system settings so the agent can activate.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 3.** Reviews recent agent logs for authentication, network, extension, or tamper-protection errors.
+**Step 3.** Reviews recent agent logs for authentication, connectivity, extension, or tamper-protection errors.
 _read-only_ · `check_agent_logs`
 
-**Step 4.** Restarts the stopped security agent once no blocking issue is found.
+**Step 4.** Restarts the stopped security agent process once no blocking issue is found.
 _makes a change, asks permission_ · `restart_process`
 
-**Step 4b.** Asks the user to try the vendor's built-in refresh option when a direct restart isn't possible.
+**Step 4b.** Asks the user to try the vendor's built-in refresh option when a direct restart is blocked.
 _asks the user_ · `wait_for_user_ack`, `check_agent_process`
 
 **Step 5.** Checks system integrity protection, disk encryption, and firewall status for compliance.
 _read-only_ · `survey_compliance_posture`
 
-**Step 6.** Turns the device's firewall back on if it was found disabled.
+**Step 6.** Turns the device firewall back on when it was found disabled.
 _makes a change, asks permission, preview first_ · `enable_firewall`
 
-**Step 7.** Checks the device's management enrollment and which compliance policies are failing.
+**Step 7.** Checks the device's mobile device management enrollment and policy compliance status.
 _read-only_ · `c_mdm_diagnose_configuration`
 
 **Step 8.** Tells the device to check in and re-apply all its assigned configuration.
 _makes a change, asks permission, preview first_ · `c_mdm_reapply_configuration`
 
-**Step 9.** Asks the user to wait briefly, then confirms when ready to re-check the configuration.
+**Step 9.** Asks the user to wait briefly, then confirms when ready to re-check the policy update.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 10.** Re-checks whether the security agent is now running after the configuration update.
+**Step 10.** Re-checks whether the security agent is running after the configuration update lands.
 _read-only_ · `check_agent_process`
 
 **Step 11.** Summarizes the agent's overall health and flags any issues needing IT follow-up.

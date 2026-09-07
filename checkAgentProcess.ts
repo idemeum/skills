@@ -62,7 +62,8 @@ interface AgentDefinition {
 
 // -- Agent definitions --------------------------------------------------------
 
-const AGENTS: AgentDefinition[] = [
+/** Exported so a test can pin this against survey_security_agent's SUPPORTED_VENDORS. */
+export const AGENTS: AgentDefinition[] = [
   {
     name:         "crowdstrike",
     darwinNames:  ["com.crowdstrike.falcon.Agent", "falcond", "Falcon"],

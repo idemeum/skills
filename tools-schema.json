@@ -3175,6 +3175,7 @@
         "appName",
         "installed",
         "matches",
+        "bundleState",
         "integrity",
         "permissions"
       ]

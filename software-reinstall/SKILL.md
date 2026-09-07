@@ -66,14 +66,9 @@ Do NOT use this skill to reinstall security agents (CrowdStrike, SentinelOne, Ja
 
 **Step 1 — Survey the application**
 Call `survey_app` with `appName` set to the application name. One call returns whether it is installed, whether its bundle is intact, and what permissions it holds. Read:
-- `installed` — false means there is nothing to repair: the run proceeds down the install-from-scratch path and the non-destructive fixes and the uninstall all skip safely.
-- `matches` — every catalogue hit. More than one means the name was ambiguous; ask the user which they mean before acting, rather than guessing at the first.
-- `integrity` — read `integrity.signatureValid` **against `installed`**, because a null means two different things:
-  - `integrity.signatureValid: false` → the bundle is corrupt; resets cannot help, go to the reinstall path.
-  - `integrity.signatureValid: true` → the binary is fine; this is what the non-destructive fixes exist for.
-  - null **with `installed: false`** → nothing is there. Install from scratch; there is nothing to lose.
-  - null **with `installed: true`** → the app IS present and the check did not complete. That is not evidence of corruption. Treat it as intact and offer the non-destructive fixes: they are reversible and cost the user a minute, whereas uninstalling a working application on an unproven suspicion is not. Never let an unknown route to `uninstall_app`.
-- `permissions` — missing Full Disk Access, Accessibility, Camera or Microphone is a common cause of an app crashing silently on launch. Surface any that are missing. A reinstall does NOT restore them; the post-install acknowledgement gates the user's re-grant work.
+- `bundleState` — `absent` (install from scratch) / `intact` or `unverified` (offer the non-destructive fixes) / `corrupt` (reinstall). **`unverified` is not `corrupt`** — never let it reach `uninstall_app`.
+- `matches` — every catalogue hit. More than one means the name was ambiguous; ask which they mean rather than guessing at the first.
+- `permissions` — a missing Full Disk Access, Accessibility, Camera or Microphone grant is a common cause of a silent crash on launch. Surface any missing. A reinstall does NOT restore them; Step 13 gates the user's re-grant work.
 
 **Step 2 — Check MDM enrollment**
 Call `check_mdm_enrollment`. Gates Step 5's Self Service catalog path. **On a device the Environment block already reports as unenrolled, omit this step and Steps 5–7 entirely** — the answer is known before the plan is written, and the catalog path cannot apply.
@@ -81,7 +76,7 @@ Call `check_mdm_enrollment`. Gates Step 5's Self Service catalog path. **On a de
 *On an enrolled device* the catalog is the strongly preferred install route: the corp-licensed build is the supported one, the management agent applies post-install configuration (license keys, profiles, firewall exceptions, login items), and it escalates privilege server-side so the user needs no local admin. *On an unmanaged device none of that is available* — go to the manual uninstall + reinstall path at Step 8 and do not mention Self Service to the user.
 
 **Step 2b — Capture fix-first vs. straight-to-reinstall preference**
-`Condition:` run when Step 1 reported `installed: true` AND `integrity.signatureValid` is true **or null** (intact, or unproven — either way the non-destructive fixes are worth offering). Skip only when `integrity.signatureValid` is `false` (the bundle is genuinely corrupt) or `installed` is false (nothing to fix): both go to the reinstall path. Call `wait_for_user_ack`:
+`Condition:` only run if Step 1 returned `bundleState: "intact"` or `"unverified"`. Call `wait_for_user_ack`:
 
 ```yaml
 prompt: "The app's code signature is intact, so the binary itself isn't corrupt. I can try non-destructive fixes first (reset preferences + clear cache — your data stays intact), or skip straight to a clean reinstall. Which do you want?"
@@ -93,7 +88,7 @@ options:
 This converts the prior free-text "user reports misbehaving vs. explicitly asked for a reinstall" judgement into a concrete `choice` value that Steps 3/3b branch on.
 
 **Step 3 — Try non-destructive fix: reset app preferences**
-`Condition:` only run if (a) Step 1 reported `installed: true` and `integrity.signatureValid` is true or null AND (b) Step 2b returned `choice: "try-fixes"` (`inputsFrom: [{ step: "2b", field: "choice" }]`). Skip if the signature is `false` (the binary itself is corrupt — go straight to reinstall) or Step 2b returned `choice: "reinstall"`.
+`Condition:` only run if Step 1 returned `bundleState: "intact"` or `"unverified"` AND Step 2b returned `choice: "try-fixes"` (`inputsFrom: [{ step: "2b", field: "choice" }]`).
 
 Call `reset_app_preferences` with `appName` set to the same display name from Step 3. G4 auto-triggers the dry-run preview (`tool.meta.destructive: true` + `supportsDryRun: true`) listing which preference files would be removed, then the consent gate fires (`requiresConsent: true`). Warn in the rationale that this resets the app's settings — accounts may need re-adding for some apps.
 
@@ -143,7 +138,7 @@ Substitute the first sentence based on Step 6: "opened Self Service for you" if 
 On `installed`: jump to Step 12 (verify the catalog install registered). On `app-not-found` / `failed` / `skip`: fall through to Step 8 (manual uninstall + reinstall path).
 
 **Step 8 — Uninstall the existing application**
-`Condition:` only run if (a) the catalog path failed (Step 5 returned `none`, OR Step 7 returned `app-not-found` / `failed` / `skip`) OR (b) Step 2 returned `enrolled: false` (BYOD/unmanaged). Skip if the catalog path succeeded — the catalog handled the uninstall internally.
+`Condition:` **never run after Step 4 returned `fixed`** — the app already works. Otherwise run when a reinstall is warranted (Step 2b returned `reinstall`, OR Step 4 returned `still-broken` / `skip`, OR Step 1 returned `bundleState: "corrupt"`) AND the managed path did not resolve it (Step 5 returned `none`, OR Step 7 returned `app-not-found` / `failed` / `skip`, OR Step 2 returned `enrolled: false`). Skip if the catalog path succeeded — the catalog handled the uninstall internally.
 
 Call `uninstall_app` with `deep: true`. G4 auto-triggers the dry-run preview (`high + destructive: true + supportsDryRun: true`) showing the app bundle, support files, caches, preferences, and logs that would be removed (with total size), followed by the consent gate. A deep uninstall ensures the reinstall starts from a completely clean state.
 

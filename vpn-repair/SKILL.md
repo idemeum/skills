@@ -118,7 +118,7 @@ This used to be a hypothesis inferred from what other probes did *not* find — 
 
 Call `c_mdm_diagnose_configuration`. It reads enrollment, locates the device in the tenant, and returns the per-item states in one call. Every eligibility rule — reachable provider, readable serial, exactly one matching device, checked in within 7 days, at least one item in `failed` — is enforced inside the tool, so do not re-derive them here.
 
-Only `outcome: "failed-items"` continues. On anything else, skip Steps 13–14 and escalate with the tool's `message` — it is already written for the user. On `stale-checkin` lead with the check-in age: a device that fell off management is more useful to IT than any symptom.
+Only `outcome: "failed-items"` continues. On anything else, skip Steps 13–14 and escalate with the tool's `message` verbatim — it already leads with the check-in age and names the provider.
 
 On `failed-items`, make the judgement the tool deliberately does not: **look through `items` for a SCEP / PKCS / certificate profile.**
 - None present at all → this device does not get its client certificate from MDM. Stop and escalate with that finding. This is a real answer, not a failure.

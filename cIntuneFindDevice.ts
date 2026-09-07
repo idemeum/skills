@@ -35,6 +35,7 @@ export const meta = {
     "osName",
     "osVersion",
     "lastCheckIn",
+    "matches",
     "matchCount",
     "httpStatus",
     "failureReason",
@@ -44,6 +45,9 @@ export const meta = {
 
 // -- Types --------------------------------------------------------------------
 
+interface MatchesEntry {
+  id: string;
+}
 interface IntuneFindDeviceData {
   deviceId: string;
   deviceName: string;
@@ -52,6 +56,7 @@ interface IntuneFindDeviceData {
   osVersion: string;
   lastCheckIn: string;
   matchCount: number;
+  matches: MatchesEntry[];
 }
 
 export interface IntuneFindDeviceResult {
@@ -64,6 +69,7 @@ export interface IntuneFindDeviceResult {
   osVersion?: string;
   lastCheckIn?: string;
   matchCount?: number;
+  matches?: MatchesEntry[];
   httpStatus?:    number;
   failureReason?: CloudGatewayResult["failureReason"];
 }
@@ -105,5 +111,6 @@ export async function run(_args: Record<string, never>, ctx?: { deviceSerial?: s
     osVersion: d.osVersion,
     lastCheckIn: d.lastCheckIn,
     matchCount: d.matchCount,
+    matches: d.matches,
   };
 }

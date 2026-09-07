@@ -63,7 +63,6 @@ Call `survey_security_agent`. One call detects every known agent, reads each ins
 - `detectedAgents[]` / `anyRunning` — which agents are installed and which have stopped. A stopped agent is the fault this skill repairs; do not restart it until the blockers below are ruled out.
 - `versions` — one entry per supported vendor. An outdated version may be *intentionally* stopped by the console: some platforms auto-quarantine agents below a minimum version, so a restart will not hold.
 - `heartbeat` — when the agent last reached its console. Not reporting means IT has no visibility even if the process is alive, which is itself worth escalating.
-- `unsupportedVendors[]` — detected agents this toolchain has no version or heartbeat support for. Say so in the final report ("console reachability not tested") rather than omitting it.
 
 **Step 2 — Check system extension approval (macOS only)**
 `Condition:` only run if platform is `darwin`. On Windows, `check_system_extension` falls back to checking services / Defender status — the macOS-specific approval flow does not apply, so skip Step 2b's user-approval ack on Windows.
@@ -104,7 +103,7 @@ Call `check_agent_logs` for the affected agent with `errorOnly: true` to surface
 
 Call `restart_process` with `name` from Step 1's `detectedAgents[].processName` (`inputsFrom: [{ step: 1, field: "detectedAgents" }]`) — e.g. `"com.crowdstrike.falcon.Agent"`, `"SentinelAgent"`, `"wdavdaemon"`. The tool does NOT support dry-run (`supportsDryRun: false`). The G4 consent gate handles user confirmation automatically (`requiresConsent: true`, `destructive: true`, `riskLevel: medium`).
 
-**Privilege reality.** All enterprise security agents run as **root** (macOS) or **SYSTEM** (Windows). When a non-admin user attempts to restart one without the helper daemon, the OS rejects with EPERM / "Access denied". The privileged helper daemon (default — `HELPER_DAEMON_ENABLED=true`) routes `restart_process` for the agent and completes silently for **all users — admin and non-admin alike**. **Tamper protection** is a separate blocker — even an admin call fails if the agent's tamper protection is enabled (most enterprise deployments); the proper path is via the management console (Falcon Console → Host Management → Restart Sensor; Microsoft 365 Defender portal). Step 4b's ack surfaces the vendor-UI refresh fallback when the OS call denies.
+A denial here is expected, not exceptional: tamper protection blocks the call even for admins on most enterprise deployments. Step 4b handles that path — see **Privilege handling** below.
 
 Read `stillRunning` from the result — the tool waits and confirms the process is actually alive, so do NOT re-call `check_agent_process` to find that out. `stillRunning: false` means the agent was re-launched and stopped again immediately, which points at tamper protection or a blocker Steps 2–3 did not surface; report that rather than claiming a fix. `null` means the check could not be made. Then re-call `check_agent_heartbeat` to confirm the agent is reporting to console — that is a different question the restart cannot answer.
 
@@ -191,12 +190,7 @@ Step 4 (`restart_process` of the security agent) is the only privileged operatio
 **When the helper is unavailable** (`HELPER_DAEMON_ENABLED=false`, helper not installed, or helper unreachable — `denyCategory: "helper-unavailable"` / `"helper-error"` / `"scope-boundary"`) **OR when tamper protection blocks the restart even with admin rights**: the restart denies and the diagnostic continues to completion. In this fallback case, in the response:
 
 1. **Do not present the denied step as a failure.** State plainly that restarting the agent could not be performed on this device and explain why (helper unavailable, non-admin user, or tamper protection blocking the call even for admins).
-2. **Try the vendor's built-in user-space refresh first** — most enterprise agents expose a "Refresh connection" or "Reset" action in their menu-bar / system-tray UI that does NOT require admin and bypasses tamper protection:
-   - CrowdStrike Falcon: menu-bar icon → "Refresh sensor connection"
-   - SentinelOne: tray icon → "Reset agent"
-   - Microsoft Defender: open Defender app → Settings → "Sync"
-   - Jamf Protect: menu-bar icon → "Check in now"
-   - Carbon Black: tray icon → "Send Status"
+2. **Try the vendor's built-in user-space refresh first** — most agents expose a "Refresh connection" or "Reset" action in their menu-bar / tray UI that needs no admin and bypasses tamper protection. Step 4b's ack prompt lists the per-vendor path; that copy is the one the user reads, so do not restate it here.
 3. **Management-console restart** — when tamper protection is enabled (most enterprise deployments), even an admin restart will fail; the proper path is via the management console:
    - CrowdStrike: Falcon Console → Host Management → select host → Restart Sensor
    - SentinelOne: Management Console → Sentinels → select agent → Actions → Restart

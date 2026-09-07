@@ -53,6 +53,7 @@ export const meta = {
     "appName",
     "installed",
     "matches",
+    "bundleState",
     "integrity",
     "permissions",
   ],
@@ -73,12 +74,44 @@ export interface SurveyAppResult {
    */
   matches: unknown[];
   /**
+   * The one question the workflow actually asks of the two fields above:
+   * is there a bundle, and can it be trusted?
+   *
+   *   "absent"     — nothing installed. Install from scratch.
+   *   "corrupt"    — the seal is broken. Resets cannot help; reinstall.
+   *   "intact"     — verified good.
+   *   "unverified" — present, but the check did not complete. NOT evidence of
+   *                  corruption, and must never be treated as "corrupt".
+   *
+   * This lives here rather than in prose because every skill reading
+   * `signatureValid` had to re-derive it against `installed`, and getting it
+   * wrong is expensive in one direction only: `software-reinstall` read a
+   * null as corruption on 2026-09-04 and reached `uninstall_app` on a healthy
+   * app. One right answer, computed once.
+   */
+  bundleState: "absent" | "corrupt" | "intact" | "unverified";
+  /**
    * Code signature and Gatekeeper state. Null when the app is not installed —
    * absence, not a failed check.
    */
   integrity: unknown | null;
   /** Granted / denied system permissions. Null when the app is not installed. */
   permissions: unknown | null;
+}
+
+/**
+ * Collapse `installed` + `signatureValid` into the state the caller needs.
+ *
+ * Exported for tests.
+ */
+export function deriveBundleState(
+  installed: boolean,
+  signatureValid: unknown,
+): "absent" | "corrupt" | "intact" | "unverified" {
+  if (!installed)              return "absent";
+  if (signatureValid === true) return "intact";
+  if (signatureValid === false) return "corrupt";
+  return "unverified";
 }
 
 /**
@@ -106,7 +139,11 @@ export async function run(
   const matches = (listed.apps ?? []) as unknown[];
 
   if (matches.length === 0) {
-    return { appName, installed: false, matches, integrity: null, permissions: null };
+    return {
+      appName, installed: false, matches,
+      bundleState: "absent",
+      integrity: null, permissions: null,
+    };
   }
 
   // The listing has already resolved the real bundle — hand its path to the
@@ -128,5 +165,11 @@ export async function run(
     checkAppPermissions({ appName }),
   ]);
 
-  return { appName, installed: true, matches, integrity, permissions };
+  const signatureValid = (integrity as { signatureValid?: unknown } | null)?.signatureValid;
+
+  return {
+    appName, installed: true, matches,
+    bundleState: deriveBundleState(true, signatureValid),
+    integrity, permissions,
+  };
 }

@@ -6,43 +6,43 @@ Diagnoses and repairs network connectivity issues including no internet access, 
 
 ## What it does, step by step
 
-**Step 1.** Asks whether other devices also lack internet, to rule out a router or ISP issue first.
+**Step 1.** Asks whether other devices are also affected to rule out a router or ISP issue first.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 2.** Surveys network reachability, interfaces, and Wi-Fi signal to pinpoint the connectivity problem.
+**Step 2.** Checks reachability, active connection, and Wi-Fi signal quality to pinpoint the connectivity problem.
 _read-only, conditional_ · `survey_network`
 
-**Step 3.** Renews the device's network address lease when it lacks a valid IP.
+**Step 3.** Renews the network address lease when the device has an invalid or self-assigned IP.
 _read-only, conditional_ · `renew_dhcp_lease`
 
 **Step 4.** Clears the DNS cache when websites fail to resolve despite a working connection.
 _read-only, conditional_ · `flush_dns_cache`
 
-**Step 5.** Checks whether a proxy is configured and reports its settings for each protocol.
+**Step 5.** Checks whether a proxy is configured that might be blocking web access.
 _read-only_ · `check_proxy_settings`
 
-**Step 6.** Tests whether a configured proxy server is actually reachable.
+**Step 6.** Checks whether the configured proxy server itself is reachable.
 _read-only_ · `check_connectivity`
 
-**Step 7.** Turns off a proxy found to be unreachable, after confirming with the user.
+**Step 7.** Turns off a proxy that is configured but unreachable, after confirming with the user.
 _makes a change, asks permission, preview first_ · `disable_proxy`
 
 **Step 8.** Checks whether the firewall is blocking all network connections.
 _read-only_ · `check_firewall_status`
 
-**Step 9.** Checks the device's management configuration for failed profiles when connectivity is broken.
+**Step 9.** Checks the device's management configuration for failed profiles when connectivity is still broken.
 _read-only_ · `c_mdm_diagnose_configuration`
 
-**Step 10.** Reapplies the device's full management configuration to fix a diagnosed policy problem.
+**Step 10.** Tells the device to re-check in and reapply its assigned configuration.
 _makes a change, asks permission, preview first_ · `c_mdm_reapply_configuration`
 
-**Step 11.** Waits for the reapplied configuration to take effect before re-testing the connection.
+**Step 11.** Waits for the reapplied configuration to take effect before retesting.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 12.** Re-checks connectivity after a fix was applied, to confirm whether it worked.
+**Step 12.** Retests connectivity after a fix was applied to confirm it worked.
 _read-only_ · `check_connectivity`
 
-**Step 13.** Reports the diagnosis and any fixes applied, plus manual steps if problems remain.
+**Step 13.** Reports the diagnosis and any fixes made, and suggests manual steps if problems remain.
 _no tools_
 
 ## Tools it may use

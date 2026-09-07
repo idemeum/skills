@@ -37,7 +37,8 @@ import { run as checkAgentHeartbeat } from "./checkAgentHeartbeat";
  * outside this set is still reported by the process probe — it simply gets no
  * version or heartbeat, which is a gap to surface rather than an error.
  */
-const SUPPORTED = new Set([
+/** Exported so a test can pin it against what check_agent_process probes. */
+export const SUPPORTED_VENDORS = new Set([
   "crowdstrike", "sentinelone", "jamf", "carbonblack", "cylance", "defender",
 ]);
 
@@ -142,8 +143,8 @@ export async function run(
     .map((a) => String(a.name ?? "").toLowerCase())
     .filter((n) => n.length > 0);
 
-  const supported = names.filter((n) => SUPPORTED.has(n)) as Vendor[];
-  const unsupportedVendors = names.filter((n) => !SUPPORTED.has(n));
+  const supported = names.filter((n) => SUPPORTED_VENDORS.has(n)) as Vendor[];
+  const unsupportedVendors = names.filter((n) => !SUPPORTED_VENDORS.has(n));
 
   if (supported.length === 0) {
     return {

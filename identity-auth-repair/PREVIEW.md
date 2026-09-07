@@ -6,16 +6,16 @@ Diagnoses and repairs SSO / Kerberos / client-certificate authentication failure
 
 ## What it does, step by step
 
-**Step 1.** Checks the device's clock, Kerberos ticket, client certificates, and domain binding for the likely single cause.
+**Step 1.** Checks the device's clock, Kerberos ticket, certificates, and domain binding for the likely cause of failed logins.
 _read-only_ · `survey_identity`
 
-**Step 2.** Corrects the device's clock when it has drifted enough to break sign-in.
+**Step 2.** Synchronizes the system clock when it has drifted enough to break authentication.
 _makes a change, asks permission, preview first_ · `sync_system_time`
 
-**Step 3.** Waits for the user to confirm they've manually synced the clock with elevated permissions.
+**Step 3.** Waits for the user to confirm they've manually run the time-sync command as admin.
 _asks the user_ · `wait_for_user_ack`, `check_ntp_status`
 
-**Step 4.** Renews an expiring or expired Kerberos ticket so sign-in works again.
+**Step 4.** Renews an expiring or expired Kerberos ticket so single sign-on works again.
 _makes a change, asks permission, preview first_ · `renew_kerberos_ticket`, `check_kerberos_ticket`
 
 **Step 5.** Waits for the user to confirm they've manually renewed their Kerberos ticket.
@@ -27,13 +27,13 @@ _read-only_ · `c_mdm_diagnose_configuration`
 **Step 7.** Tells the device to re-check in and reapply its assigned configuration, including certificates.
 _makes a change, asks permission, preview first_ · `c_mdm_reapply_configuration`
 
-**Step 8.** Waits briefly for the reissued certificate to arrive before checking again.
+**Step 8.** Waits a couple of minutes for the reissued certificate to arrive before rechecking.
 _asks the user_ · `wait_for_user_ack`
 
-**Step 9.** Rechecks the device's certificates to confirm a new one was actually issued.
+**Step 9.** Rechecks certificates to confirm a new one was actually issued after the resync.
 _read-only_ · `list_client_certificates`
 
-**Step 10.** Reports what was found and fixed, and guides the user on any remaining manual steps.
+**Step 10.** Summarizes what was found and fixed, and advises the user on any remaining next steps.
 _no tools_
 
 ## Tools it may use
