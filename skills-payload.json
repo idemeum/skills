@@ -234,6 +234,48 @@
       "enabled": true
     },
     {
+      "skillId": "okta-account-unlock",
+      "name": "Unlock an Okta user account",
+      "description": "Unlocks an Okta user account stuck in LOCKED_OUT status after too many failed sign-in attempts, restoring the user's ability to authenticate. Use when the user says \"my Okta account is locked out\", \"too many failed logins on Okta\", \"Okta says my account is locked\", or an admin needs to clear an Okta lockout.",
+      "risk": "high",
+      "allowedTools": [
+        "wait_for_user_ack",
+        "c_okta_get_user",
+        "c_okta_get_mfa_status",
+        "c_okta_unlock_account"
+      ],
+      "steps": 6,
+      "enabled": true
+    },
+    {
+      "skillId": "okta-mfa-reset",
+      "name": "Reset MFA for an Okta user",
+      "description": "Resets all enrolled MFA factors for an Okta user so they are required to re-enroll authenticators on their next sign-in. Use when the user says \"I lost my phone and can't complete Okta Verify\", \"reset my Okta MFA factors\", \"I got a new phone and need to re-enroll Okta Verify\", or similar Okta-specific MFA complaints.",
+      "risk": "high",
+      "allowedTools": [
+        "wait_for_user_ack",
+        "c_okta_get_user",
+        "c_okta_get_mfa_status",
+        "c_okta_reset_mfa"
+      ],
+      "steps": 6,
+      "enabled": true
+    },
+    {
+      "skillId": "okta-password-reset",
+      "name": "Reset an Okta user's password",
+      "description": "Generates a temporary password for an Okta user via the Okta Admin API and expires their current password, with the gateway emailing the temporary password to the user's recovery address and returning only a delivery receipt (never the password itself). Use when a user forgot their Okta password, self-service reset (SSPR) is unavailable, or an admin needs to force-reset an Okta account.",
+      "risk": "high",
+      "allowedTools": [
+        "c_okta_get_user",
+        "c_okta_get_mfa_status",
+        "wait_for_user_ack",
+        "c_okta_reset_password"
+      ],
+      "steps": 5,
+      "enabled": true
+    },
+    {
       "skillId": "printer-repair",
       "name": "Printer not working or print queue stuck",
       "description": "Diagnoses and repairs printing issues including stuck print queues, offline printers, and CUPS/Spooler service failures. Clears jammed queues and restarts the print service; guides self-service + IT escalation for driver/config corruption. Use when a printer is not printing, showing as offline, or the print queue is jammed.",
