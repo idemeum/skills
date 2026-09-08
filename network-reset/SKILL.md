@@ -110,7 +110,7 @@ Call `c_mdm_reapply_configuration`. State plainly in the rationale that this tel
 `Condition:` only run if Step 10 returned `status: "ok"`. Call `wait_for_user_ack`:
 
 ```yaml
-prompt: "I've asked Intune to re-send your device's configuration. That usually takes a minute or two. Tell me when to re-test."
+prompt: "I've asked your device management system to re-send this device's configuration. That usually takes a minute or two. Tell me when to re-test."
 options:
   - { id: "ready", label: "Ready — re-test now", kind: "primary" }
   - { id: "skip",  label: "Skip the re-test",    kind: "cancel" }

@@ -2,8 +2,9 @@
  * mcp/skills/cMdmDiagnoseConfiguration.ts — c_mdm_diagnose_configuration
  *
  * Provider-neutral, read-only MDM diagnosis. Collapses three SKILL.md steps —
- * `check_mdm_enrollment` → `c_intune_find_device` → `c_intune_get_*_states` —
- * into one call.
+ * `check_mdm_enrollment` → find device → read per-item states — into one call,
+ * dispatching to a per-provider backend (`BACKENDS`) chosen from the locally
+ * probed `mdmProvider`. Intune and Jamf are wired; the skills never name either.
  *
  * Naming
  * ------
@@ -26,9 +27,15 @@
  * code, and testable.
  *
  * UNVERIFIED against a live gateway. No gateway has ever answered one of these
- * calls, so the response shapes below are inferred from `intune.yaml`. That risk
- * already existed across four SKILL.md arms; consolidating it here means the
- * eventual correction is one file rather than four.
+ * calls, so the response shapes below are inferred from `intune.yaml` and
+ * `jamf.yaml`. That risk already existed across four SKILL.md arms; consolidating
+ * it here means the eventual correction is one file rather than four.
+ *
+ * The two providers are not symmetric, and the asymmetry is deliberately visible
+ * rather than smoothed over: Jamf reports failed MDM *commands* instead of
+ * per-profile states, so it can say what broke but not what is healthy
+ * (`itemsComplete: false`), and it has no compliance-policy model at all
+ * (`state-set-unsupported`).
  *
  * What deliberately stays with the LLM
  * ------------------------------------
@@ -42,6 +49,8 @@ import { run as checkMdmEnrollment }        from "./checkMdmEnrollment";
 import { run as intuneFindDevice }          from "./cIntuneFindDevice";
 import { run as intuneGetConfigStates }     from "./cIntuneGetConfigurationStates";
 import { run as intuneGetComplianceStates } from "./cIntuneGetComplianceStates";
+import { run as jamfFindDevice }            from "./cJamfFindDevice";
+import { run as jamfGetFailedCommands }     from "./cJamfGetFailedCommands";
 import { z }                                from "zod";
 
 // -- Rules, as constants ------------------------------------------------------
@@ -64,8 +73,111 @@ const STALE_CHECKIN_DAYS = 7;
  */
 const ACTIONABLE_STATE = "failed";
 
-/** The one provider reachable through the gateway today. */
-const SUPPORTED_PROVIDER = /intune|microsoft|endpoint manager/i;
+// -- Provider backends --------------------------------------------------------
+
+/** The neutral device record every backend must produce. */
+interface BackendDevice {
+  status:           "ok" | "failed" | "not-configured";
+  message:          string;
+  matchCount?:      number;
+  deviceName?:      string;
+  deviceId?:        string;
+  /** Intune only. Jamf has no equivalent and nothing branches on it. */
+  complianceState?: string;
+  lastCheckIn?:     string;
+}
+
+/** The neutral per-item state set every backend must produce. */
+interface BackendStates {
+  status:  "ok" | "failed" | "not-configured";
+  message: string;
+  states?: { name: string; state: string; stateReason: string | null }[];
+}
+
+interface MdmBackend {
+  /** Tested against the locally probed `mdmProvider` string. */
+  matches: RegExp;
+  findDevice(ctx?: { deviceSerial?: string }): Promise<BackendDevice>;
+  /**
+   * Null when this provider cannot report the requested set at all — the run
+   * ends in `state-set-unsupported` rather than pretending an empty result.
+   */
+  getStates(
+    which: "configuration" | "compliance",
+    ctx?: { deviceSerial?: string },
+  ): Promise<BackendStates> | null;
+  /**
+   * Whether `getStates` returns every assigned item or only the failures.
+   *
+   * Load-bearing for `items`: `identity-auth-repair` and `vpn-repair` reason
+   * about *absence* ("is a certificate profile assigned at all?"), which is only
+   * valid when the list is complete. Surfaced to callers as `itemsComplete`.
+   */
+  reportsAllItems: boolean;
+}
+
+/**
+ * Jamf reports failed MDM *commands*, not profile states, and the command log
+ * spans far more than profiles — restarts, lock attempts, inventory queries.
+ * Without this filter an unrelated command failure would be reported as a
+ * configuration fault.
+ */
+const JAMF_PROFILE_COMMANDS = /^(install|remove)profile$/i;
+
+const BACKENDS: MdmBackend[] = [
+  {
+    matches: /intune|microsoft|endpoint manager/i,
+    findDevice: (ctx) => intuneFindDevice({}, ctx),
+    getStates: (which, ctx) =>
+      which === "compliance"
+        ? intuneGetComplianceStates({}, ctx)
+        : intuneGetConfigStates({}, ctx),
+    reportsAllItems: true,
+  },
+  {
+    matches: /jamf/i,
+    findDevice: async (ctx) => {
+      const r = await jamfFindDevice({}, ctx);
+      if (r.status !== "ok") return { status: r.status, message: r.message };
+      return {
+        status:      "ok",
+        message:     r.message,
+        matchCount:  r.matchCount,
+        deviceName:  r.name ?? undefined,
+        deviceId:    r.id ?? undefined,
+        lastCheckIn: r.lastContactTime ?? undefined,
+        // complianceState deliberately absent — Jamf exposes no equivalent, and
+        // synthesising one from `supervised` / `mdmCapable` would invent a
+        // judgement the tenant never made.
+      };
+    },
+    getStates: (which, ctx) => {
+      // Jamf has no compliance-policy model; compliance is expressed through
+      // smart groups, which is a different shape entirely.
+      if (which === "compliance") return null;
+      return (async (): Promise<BackendStates> => {
+        const r = await jamfGetFailedCommands({}, ctx);
+        if (r.status !== "ok") return { status: r.status, message: r.message };
+        return {
+          status:  "ok",
+          message: r.message,
+          states: (r.commands ?? [])
+            .filter((c) => JAMF_PROFILE_COMMANDS.test(c.commandType))
+            // Jamf carries no display name on a command — only the type. The
+            // profileId that would resolve one is not returned by this endpoint.
+            .map((c) => ({
+              name:        c.commandType,
+              state:       ACTIONABLE_STATE,
+              stateReason: c.commandError,
+            })),
+        };
+      })();
+    },
+    // The endpoint returns only ERROR commands, so a healthy device yields an
+    // empty list that says nothing about how many profiles are assigned.
+    reportsAllItems: false,
+  },
+];
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -103,6 +215,7 @@ export const meta = {
     "failedItems",
     "items",
     "itemCount",
+    "itemsComplete",
     "reapplyWarranted",
   ],
   schema: {
@@ -135,6 +248,7 @@ export type MdmDiagnoseOutcome =
   | "not-found"          // serial not present in the tenant
   | "ambiguous-serial"   // more than one device shares this serial
   | "stale-checkin"      // device has not collected policy recently
+  | "state-set-unsupported" // provider reachable, but cannot report this set
   | "no-failed-items"    // reachable and current, nothing in failed state
   | "failed-items";      // actionable: at least one profile or policy failed
 
@@ -168,6 +282,15 @@ export interface MdmDiagnoseResult {
    */
   items:             MdmStateItem[];
   itemCount?:        number;
+  /**
+   * Whether `items` lists every assigned item or only the failures.
+   *
+   * False on a provider that exposes failures alone (Jamf), where an empty
+   * `items` means "nothing failed", NOT "nothing is assigned". Any skill that
+   * reasons about absence — identity-auth-repair and vpn-repair both do — must
+   * check this before concluding a profile is missing.
+   */
+  itemsComplete?:    boolean;
   /**
    * The single field a re-apply step should gate on. True only when a re-apply
    * could actually change something: exactly one device, checked in recently, at
@@ -232,7 +355,8 @@ export async function run(
   }
 
   const provider = enrollment.mdmProvider;
-  if (!provider || !SUPPORTED_PROVIDER.test(provider)) {
+  const backend  = provider ? BACKENDS.find((b) => b.matches.test(provider)) : undefined;
+  if (!backend) {
     return base(
       "other-provider",
       `This device is managed by ${provider ?? "an unidentified provider"}, ` +
@@ -257,7 +381,7 @@ export async function run(
   const common = { isEnrolled: true, mdmProvider: provider, serialNumber: ctx.deviceSerial };
 
   // ── 2. Locate the device in the tenant ───────────────────────────────────
-  const found = await intuneFindDevice({}, ctx);
+  const found = await backend.findDevice(ctx);
 
   if (found.status === "not-configured") return base("not-configured", found.message, common);
   if (found.status !== "ok") {
@@ -308,10 +432,16 @@ export async function run(
   }
 
   // ── 3. Per-item states ───────────────────────────────────────────────────
-  const states =
-    which === "compliance"
-      ? await intuneGetComplianceStates({}, ctx)
-      : await intuneGetConfigStates({}, ctx);
+  const pending = backend.getStates(which, ctx);
+  if (pending === null) {
+    return base(
+      "state-set-unsupported",
+      `${provider} does not report ${noun} states in a form this agent can read, ` +
+      "so this check cannot be completed from here. It must be run from the MDM console.",
+      { ...withDevice, daysSinceCheckIn: age },
+    );
+  }
+  const states = await pending;
 
   if (states.status === "not-configured") {
     return base("not-configured", states.message, { ...withDevice, daysSinceCheckIn: age });
@@ -333,9 +463,21 @@ export async function run(
   if (failed.length === 0) {
     return base(
       "no-failed-items",
-      `All ${items.length} ${noun}(s) on this device are in a non-failed state, ` +
-      "so re-applying them would change nothing.",
-      { ...withDevice, daysSinceCheckIn: age, items, itemCount: items.length },
+      backend.reportsAllItems
+        ? `All ${items.length} ${noun}(s) on this device are in a non-failed state, ` +
+          "so re-applying them would change nothing."
+        // A failures-only provider cannot make the stronger claim: no failures
+        // is not evidence that anything is assigned, let alone healthy.
+        : `No failed ${noun}(s) are recorded for this device, so a re-apply has ` +
+          `nothing to act on. ${provider} reports only failures, so this does ` +
+          "not confirm that every profile is present and applied.",
+      {
+        ...withDevice,
+        daysSinceCheckIn: age,
+        items,
+        itemCount:     items.length,
+        itemsComplete: backend.reportsAllItems,
+      },
     );
   }
 
@@ -347,6 +489,7 @@ export async function run(
     failedItems:      failed,
     items,
     itemCount:        items.length,
+    itemsComplete:    backend.reportsAllItems,
     reapplyWarranted: true,
   };
 }

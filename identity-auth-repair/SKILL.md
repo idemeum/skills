@@ -137,7 +137,7 @@ On `failed-items`, make the judgement the tool deliberately does not: **look thr
 `Condition:` only run if Step 7 returned `status: "ok"`. That proves only that the MDM accepted the request — it is not evidence a certificate was issued. Call `wait_for_user_ack`:
 
 ```yaml
-prompt: "I've asked Intune to re-send your device's configuration, which should re-issue the certificate. That usually takes a minute or two. Tell me when to re-check."
+prompt: "I've asked your device management system to re-send this device's configuration, which should re-issue the certificate. That usually takes a minute or two. Tell me when to re-check."
 options:
   - { id: "ready", label: "Ready — re-check now", kind: "primary" }
   - { id: "skip",  label: "Skip the re-check",    kind: "cancel" }

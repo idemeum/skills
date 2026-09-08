@@ -129,7 +129,7 @@ Call `survey_compliance_posture`. One call returns the three device-compliance c
 Any field may carry `status: "error"` when that one probe failed; the other two still stand.
 
 **Step 6 — Turn the firewall back on**
-`Condition:` only run if Step 5's `firewall.enabled` is false. Call `enable_firewall`. This is the one compliance failure with a local remedy: re-pushing policy does **not** fix a firewall the user switched off, because the policy is already assigned and applied — the device state simply diverged from it. Fixing it here also avoids a pointless Intune round-trip in Steps 7–8.
+`Condition:` only run if Step 5's `firewall.enabled` is false. Call `enable_firewall`. This is the one compliance failure with a local remedy: re-pushing policy does **not** fix a firewall the user switched off, because the policy is already assigned and applied — the device state simply diverged from it. Fixing it here also avoids a pointless MDM round-trip in Steps 7–8.
 
 The tool cannot disable a firewall and takes no state parameter. On macOS it flips the global state only, leaving stealth mode and per-application rules alone; on Windows it enables all three profiles, since a compliance rule fails if any one is off. Say that in the rationale — a user who thinks their firewall rules are being rewritten will decline.
 
@@ -153,7 +153,7 @@ Call `c_mdm_reapply_configuration`. State plainly in the rationale that this tel
 `Condition:` only run if Step 8 returned `status: "ok"`. That proves only that the MDM accepted the request — it is not evidence that the device re-applied anything. Call `wait_for_user_ack`:
 
 ```yaml
-prompt: "I've asked Intune to re-send your device's configuration. That usually takes a minute or two. Tell me when to re-check."
+prompt: "I've asked your device management system to re-send this device's configuration. That usually takes a minute or two. Tell me when to re-check."
 options:
   - { id: "ready", label: "Ready — re-check now", kind: "primary" }
   - { id: "skip",  label: "Skip the re-check",    kind: "cancel" }
@@ -173,7 +173,7 @@ Summarise the agent's health across all dimensions checked:
 - FileVault (Step 5): enabled/disabled — if disabled, whether the user was given the self-service steps
 - Firewall (Steps 8–6): was enabled / was off and re-enabled / was off and could not be re-enabled
 - MDM enrollment (Step 7): enrolled/unenrolled
-- Intune device record (Step 8): found/not-in-tenant/ambiguous-serial/not-checked
+- MDM device record (Step 8): found/not-in-tenant/ambiguous-serial/not-checked
 - Failing policy (Step 9): named policy, or none
 - Re-sync (Step 8) + re-check (Steps 9–10): initiated-and-settled / initiated-unverified / skipped
 

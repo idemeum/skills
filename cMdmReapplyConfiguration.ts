@@ -21,16 +21,60 @@
  * accepted, not that the profile has landed. Skills MUST report that distinction
  * rather than claiming the fix is done (SKILL-AUDIT-CHECKLIST §10i).
  *
+ * Not equally broad across providers. Intune re-delivers every assigned
+ * configuration and compliance policy; Jamf reconciles DDM-managed declarations
+ * only, because it exposes no per-device re-push for classic configuration
+ * profiles. The backend is chosen from the locally probed provider, never
+ * assumed — see BACKENDS below.
+ *
  * UNVERIFIED against a live gateway — see c_mdm_diagnose_configuration.
  */
 
+import { run as checkMdmEnrollment } from "./checkMdmEnrollment";
 import {
   run as intuneSyncDevice,
   meta as intuneSyncMeta,
 } from "./cIntuneSyncDevice";
+import { run as jamfForceDdmSync } from "./cJamfForceDdmSync";
 
-/** Mirrors c_mdm_diagnose_configuration's view of what this agent can reach. */
-const SUPPORTED_PROVIDER = /intune|microsoft|endpoint manager/i;
+// -- Provider backends --------------------------------------------------------
+
+/**
+ * The corrective each provider offers. Mirrors the BACKENDS table in
+ * c_mdm_diagnose_configuration — same providers, same match order.
+ */
+interface ReapplyBackend {
+  matches: RegExp;
+  /** Name reported back to the caller, so the skill can say what it asked. */
+  label:   string;
+  sync(
+    args: { dryRun?: boolean },
+    ctx?: { deviceSerial?: string },
+  ): Promise<{
+    status:         "ok" | "failed" | "not-configured";
+    message:        string;
+    willPost?:      boolean;
+    endpoint?:      string;
+    httpStatus?:    number;
+    failureReason?: string;
+  }>;
+}
+
+const BACKENDS: ReapplyBackend[] = [
+  {
+    matches: /intune|microsoft|endpoint manager/i,
+    label:   "Intune",
+    sync:    (args, ctx) => intuneSyncDevice(args, ctx),
+  },
+  {
+    // Narrower than Intune's sync: this reconciles DDM-managed declarations
+    // only. Jamf exposes no per-device re-push for classic configuration
+    // profiles at all, so there is nothing broader to call.
+    matches: /jamf/i,
+    label:   "Jamf Pro",
+    sync:    (args, ctx) => jamfForceDdmSync(args, ctx),
+  },
+];
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -91,24 +135,31 @@ export async function run(
     };
   }
 
-  // Only meaningful when a caller has already established the provider; absent
-  // is normal, since the diagnosis has usually gated this.
-  if (ctx.mdmProvider && !SUPPORTED_PROVIDER.test(ctx.mdmProvider)) {
+  // Nothing injects ctx.mdmProvider today, so this resolves it from the same
+  // local probe the diagnosis uses. Defaulting to one provider was harmless
+  // while only Intune was reachable; with two backends it would send an Intune
+  // sync to a Jamf-managed Mac.
+  const provider = ctx.mdmProvider ?? (await checkMdmEnrollment()).mdmProvider;
+  const backend  = provider ? BACKENDS.find((b) => b.matches.test(provider)) : undefined;
+
+  if (!backend) {
     return {
       status:   "failed",
-      provider: ctx.mdmProvider,
-      message:
-        `This device is managed by ${ctx.mdmProvider}, which this agent cannot ` +
-        "reach yet. The re-apply must be issued from the MDM console.",
+      provider: provider ?? undefined,
+      message: provider
+        ? `This device is managed by ${provider}, which this agent cannot ` +
+          "reach yet. The re-apply must be issued from the MDM console."
+        : "This device's MDM provider could not be determined, so the re-apply " +
+          "cannot be routed. It must be issued from the MDM console.",
     };
   }
 
-  const r = await intuneSyncDevice(args, ctx);
+  const r = await backend.sync(args, ctx);
 
   return {
     status:        r.status,
     message:       r.message,
-    provider:      ctx.mdmProvider ?? "Intune",
+    provider:      backend.label,
     willPost:      r.willPost,
     endpoint:      r.endpoint,
     httpStatus:    r.httpStatus,
