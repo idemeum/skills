@@ -2,7 +2,7 @@
  * mcp/skills/runInstaller.ts — run_installer skill
  *
  * Executes a downloaded installer file (.pkg/.dmg on macOS;
- * .msi/.exe on Windows) to (re)install a software application.
+ * .msi/.exe/.msix on Windows) to (re)install a software application.
  * Use after `download_installer` (Skill #8 Step 6) when the user has
  * confirmed they want to proceed with installation.
  *
@@ -20,10 +20,14 @@
  *
  * Platform strategy
  * -----------------
- * macOS .pkg   `installer -pkg <path> -target /`
- * macOS .dmg   mount via `hdiutil`, copy .app to /Applications, eject
- * Windows .msi `msiexec /i <path> /qn /norestart`
- * Windows .exe Start-Process with /S silent flag
+ * macOS .pkg    `installer -pkg <path> -target /`
+ * macOS .dmg    mount via `hdiutil`, copy .app to /Applications, eject
+ * Windows .msi  `msiexec /i <path> /qn /norestart`
+ * Windows .exe  Start-Process with /S silent flag
+ * Windows .msix `Add-AppxPackage -Path <path> -AllUsers` — unlike the other
+ *               three types, this requires the package's signing certificate
+ *               to already be trusted on the machine; an otherwise-valid
+ *               package fails here if that trust hasn't been provisioned.
  *
  * Smoke test
  *   npx tsx -r dotenv/config mcp/skills/runInstaller.ts
@@ -39,8 +43,8 @@ import { z }          from "zod";
 export const meta = {
   name: "run_installer",
   description:
-    "Runs a downloaded installer file (.pkg/.dmg on macOS; .msi/.exe on " +
-    "Windows) to (re)install a software application.  Use after " +
+    "Runs a downloaded installer file (.pkg/.dmg on macOS; .msi/.exe/.msix " +
+    "on Windows) to (re)install a software application.  Use after " +
     "download_installer when the user has confirmed they want to " +
     "proceed with installation.  Requires admin privileges, which the " +
     "privileged helper daemon supplies for non-admin users.",
@@ -54,7 +58,9 @@ export const meta = {
     darwin:
       "sudo installer -pkg <path>.pkg -target /  # for .pkg; .dmg requires hdiutil mount + cp + eject",
     win32:
-      "msiexec /i <path>.msi /qn /norestart  # for .msi; .exe varies per vendor (try /S for silent install)",
+      "msiexec /i <path>.msi /qn /norestart  # for .msi; .exe varies per vendor (try /S for silent install); " +
+      "Add-AppxPackage -Path <path>.msix -AllUsers  # for .msix — requires the package's signing certificate " +
+      "to already be trusted on the machine",
   },
   outputKeys: ["installerPath","installerType","dryRun","plannedCommand","exitCode","durationMs","message"],
   schema: {
@@ -71,12 +77,12 @@ export const meta = {
         "filePath returned by a prior download_installer call.",
       ),
     installer_type: z
-      .enum(["pkg", "dmg", "msi", "exe"])
+      .enum(["pkg", "dmg", "msi", "exe", "msix"])
       .nullable().optional()
       .describe(
         "Installer type.  When omitted, auto-detected from the file " +
         "extension.  Must match the platform (pkg/dmg → macOS; " +
-        "msi/exe → Windows).",
+        "msi/exe/msix → Windows).",
       ),
     dryRun: z
       .boolean()
@@ -92,7 +98,7 @@ export const meta = {
 
 interface RunInstallerResult {
   installerPath: string;
-  installerType: "pkg" | "dmg" | "msi" | "exe";
+  installerType: "pkg" | "dmg" | "msi" | "exe" | "msix";
   dryRun:        boolean;
   /** The exact command string the helper / sudo would execute.  Echoed
    *  in dry-run mode so the consent gate can show it to the user. */
@@ -106,9 +112,9 @@ interface RunInstallerResult {
 
 // -- Helpers ------------------------------------------------------------------
 
-function detectInstallerType(installerPath: string): "pkg" | "dmg" | "msi" | "exe" {
+function detectInstallerType(installerPath: string): "pkg" | "dmg" | "msi" | "exe" | "msix" {
   const ext = path.extname(installerPath).toLowerCase().replace(/^\./, "");
-  if (ext === "pkg" || ext === "dmg" || ext === "msi" || ext === "exe") {
+  if (ext === "pkg" || ext === "dmg" || ext === "msi" || ext === "exe" || ext === "msix") {
     return ext;
   }
   throw new Error(
@@ -117,7 +123,7 @@ function detectInstallerType(installerPath: string): "pkg" | "dmg" | "msi" | "ex
 }
 
 function plannedCommandFor(
-  type: "pkg" | "dmg" | "msi" | "exe",
+  type: "pkg" | "dmg" | "msi" | "exe" | "msix",
   installerPath: string,
 ): string {
   switch (type) {
@@ -129,6 +135,8 @@ function plannedCommandFor(
       return `msiexec /i "${installerPath}" /qn /norestart`;
     case "exe":
       return `Start-Process -FilePath "${installerPath}" -ArgumentList /S -Wait -PassThru`;
+    case "msix":
+      return `Add-AppxPackage -Path "${installerPath}" -AllUsers`;
   }
 }
 
@@ -140,19 +148,19 @@ export async function run({
   dryRun = true,
 }: {
   installer_path:  string;
-  installer_type?: "pkg" | "dmg" | "msi" | "exe";
+  installer_type?: "pkg" | "dmg" | "msi" | "exe" | "msix";
   dryRun?:         boolean;
 }): Promise<RunInstallerResult> {
   // Resolve the installer type (explicit or auto-detected).
   const resolvedType = installerType ?? detectInstallerType(installerPath);
 
   // Cross-platform sanity: the agent-side schema validation already
-  // accepts any of the four; here we surface a clear error if the user
+  // accepts any of the five; here we surface a clear error if the user
   // is on the wrong platform for the chosen type before calling the
   // helper (which would also reject, but with a less friendly message).
   const platform = os.platform();
   const macosTypes = ["pkg", "dmg"] as const;
-  const winTypes   = ["msi", "exe"] as const;
+  const winTypes   = ["msi", "exe", "msix"] as const;
   if (platform === "darwin" && (winTypes as readonly string[]).includes(resolvedType)) {
     throw new Error(
       `Installer type '${resolvedType}' is for Windows; this device is macOS`,

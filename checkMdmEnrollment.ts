@@ -262,10 +262,19 @@ if ($enrollments) { @($enrollments) | ConvertTo-Json -Depth 2 -Compress } else {
       result.mdmProvider    = active[0].ProviderID ?? null;
       result.serverUrl      = active[0].DiscoveryServiceFullURL ?? null;
 
+      // ProviderID is often just the generic OMA-DM protocol identifier
+      // ("MS DM Server") on real Intune enrollments, not a vendor name, so it
+      // alone can't be trusted to rule a provider out. Check ProviderID and
+      // DiscoveryServiceFullURL independently (not else-if) and accept a
+      // match from either — mirrors the darwin implementation's sequential
+      // (non-exclusive) ifs against serverUrl. If neither matches, the raw
+      // ProviderID value (e.g. "MS DM Server") is kept as-is rather than
+      // discarded, so the caller still sees real diagnostic data.
       if (result.mdmProvider) {
         if (/intune|microsoft/i.test(result.mdmProvider)) result.mdmProvider = "Microsoft Intune";
         if (/jamf/i.test(result.mdmProvider))             result.mdmProvider = "Jamf";
-      } else if (result.serverUrl) {
+      }
+      if (result.serverUrl) {
         if (/intune|microsoft/i.test(result.serverUrl)) result.mdmProvider = "Microsoft Intune";
         if (/jamf/i.test(result.serverUrl))             result.mdmProvider = "Jamf";
       }

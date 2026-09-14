@@ -3120,7 +3120,7 @@
     },
     {
       "toolId": "run_installer",
-      "description": "Runs a downloaded installer file (.pkg/.dmg on macOS; .msi/.exe on Windows) to (re)install a software application.  Use after download_installer when the user has confirmed they want to proceed with installation.  Requires admin privileges, which the privileged helper daemon supplies for non-admin users.",
+      "description": "Runs a downloaded installer file (.pkg/.dmg on macOS; .msi/.exe/.msix on Windows) to (re)install a software application.  Use after download_installer when the user has confirmed they want to proceed with installation.  Requires admin privileges, which the privileged helper daemon supplies for non-admin users.",
       "riskLevel": "high",
       "destructive": true,
       "requiresConsent": true,
@@ -3151,7 +3151,8 @@
             "pkg",
             "dmg",
             "msi",
-            "exe"
+            "exe",
+            "msix"
           ]
         },
         {

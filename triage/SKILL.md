@@ -16,7 +16,12 @@ allowed-tools:
 metadata:
   maxAggregateRisk: low
   userLabel: "Submit issue to IT helpdesk"
-  examples: []
+  examples:
+    - get me a human
+    - I need to talk to IT
+    - can someone from IT call me
+    - I want to raise a ticket
+    - just escalate this to IT
   pill:
     label: Report Issue
     goal: I need to report an IT issue that doesn't match a known category
@@ -27,7 +32,7 @@ metadata:
 
 ## When to use
 
-This skill is selected automatically by runtime.ts when the skill router exhausts its clarification rounds without matching a skill (the "unclear" branch). It is NOT router-matched — the `examples` list is intentionally empty.
+Two ways in. The skill router matches it when the user asks for a human directly — that is what the `examples` list is for, and those phrasings are deliberately escalation-only so they cannot compete with a real skill. It is also selected automatically by runtime.ts when the router exhausts its clarification rounds without matching a skill (the "unclear" branch).
 
 Do NOT select this skill if the user's request clearly matches another skill — this is a last-resort fallback only.
 

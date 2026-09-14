@@ -162,7 +162,7 @@
         "c_entra_reset_mfa"
       ],
       "steps": 7,
-      "enabled": false
+      "enabled": true
     },
     {
       "skillId": "entra-password-reset",
