@@ -35,6 +35,11 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
+  // Default G4 step timeout (60s) is routinely too short for real installer
+  // downloads — observed failing on a 167 MB Zoom download alone. Match
+  // run_installer's ceiling so a normal-sized install package survives
+  // both steps of the reinstall skill.
+  timeoutMs:       120_000,
   outputKeys: ["localPath","fileSizeMb","checksumValid","checksumProvided","message"],
   schema: {
     url: z
