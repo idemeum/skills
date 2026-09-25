@@ -44,7 +44,7 @@ Do NOT use for Entra or Google MFA issues — those require different admin APIs
 Call `c_okta_get_user`.
 
 - If `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
-- If `status: "failed"` with `httpStatus: 404` → the login was not found in Okta; ask the user to double-check the spelling
+- If `status: "failed"` with `httpStatus: 404` → the signed-in account was not found in Okta; tell the user their account could not be found in the directory and to contact IT — STOP
 - If `status: "failed"` (other) → report the error to the user and stop
 - If account status (`accountStatus`) is `SUSPENDED` or `DEPROVISIONED` → warn the user MFA reset may not help until the account is reactivated
 - If account status is `LOCKED_OUT` → note this is a separate issue; suggest `okta-account-unlock` as a follow-up

@@ -48,7 +48,7 @@ Do NOT use for Okta or Google account issues — this is Entra/Graph-specific. D
 Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
-- `status: "failed"`, `httpStatus: 404` → UPN not found; ask user to check spelling
+- `status: "failed"`, `httpStatus: 404` → the signed-in account was not found in Entra; tell the user their account could not be found in the directory and to contact IT — STOP
 - `accountEnabled` is `false` → warn the account is disabled; licence can still be assigned but sign-in stays blocked until re-enabled
 - **`usageLocation` is null/empty → STOP.** Tell the user Microsoft Graph requires a usage location before a licence can be assigned, and this skill cannot set one — an admin must add it in Entra first
 - On success, note `displayName` for messaging

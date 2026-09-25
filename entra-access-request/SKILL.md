@@ -49,7 +49,7 @@ Do NOT use for Okta or Google access requests — different admin APIs. Do NOT u
 Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
-- `status: "failed"`, `httpStatus: 404` → UPN not found; ask user to check spelling
+- `status: "failed"`, `httpStatus: 404` → the signed-in account was not found in Entra; tell the user their account could not be found in the directory and to contact IT — STOP
 - `accountEnabled` is `false` → warn the account is disabled; access grants will not restore sign-in
 - On success, note `displayName` for messaging
 

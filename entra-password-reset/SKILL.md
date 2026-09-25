@@ -52,7 +52,7 @@ Do NOT use for Okta or Google password resets. Do NOT use for MFA re-enrollment 
 Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up; contact IT admin
-- `status: "failed"`, `httpStatus: 404` → UPN not found; ask user to check spelling
+- `status: "failed"`, `httpStatus: 404` → the signed-in account was not found in Entra; tell the user their account could not be found in the directory and to contact IT — STOP
 - `accountEnabled` is `false` → warn the account is disabled; reset can proceed but sign-in stays blocked until re-enabled
 - **`recoveryEmail` is null/empty → STOP.** Tell the user there is no recovery address on file, so the gateway has nowhere to deliver a temporary password. Do not proceed; advise adding a recovery email or contacting an admin
 - On success with a valid `recoveryEmail`, note `displayName` for messaging

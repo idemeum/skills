@@ -44,7 +44,7 @@ Do NOT use for Entra ID or Google Workspace lockouts — those use different adm
 Call `c_okta_get_user`.
 
 - If `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
-- If `status: "failed"` with `httpStatus: 404` → the login was not found in Okta; ask the user to double-check the spelling
+- If `status: "failed"` with `httpStatus: 404` → the signed-in account was not found in Okta; tell the user their account could not be found in the directory and to contact IT — STOP
 - If `status: "failed"` (other) → report the error to the user and stop
 - On success, note the display name for user-friendly messaging, then inspect the returned account state (`accountStatus`):
   - `"LOCKED_OUT"` → proceed to Step 2

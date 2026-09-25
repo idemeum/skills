@@ -50,7 +50,7 @@ Do NOT use for Entra or Google password resets. Do NOT use for account unlock (`
 Call `c_okta_get_user`.
 
 - `status: "not-configured"` → tell the user the gateway isn't set up on this machine; contact IT admin
-- `status: "failed"` with `httpStatus: 404` → the login was not found in Okta; ask the user to double-check the spelling
+- `status: "failed"` with `httpStatus: 404` → the signed-in account was not found in Okta; tell the user their account could not be found in the directory and to contact IT — STOP
 - `status: "failed"` (other) → report the error to the user and stop
 - On success, note the display name for user-friendly messaging, then inspect the returned account state (`accountStatus`) and `email`:
   - If the account is locked out → tell the user `okta-account-unlock` is the correct fix for that and stop

@@ -45,7 +45,7 @@ Do NOT use for Okta or Google MFA issues — those require different admin APIs.
 Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine and they should contact their IT administrator
-- `status: "failed"`, `httpStatus: 404` → the UPN was not found in Entra; ask the user to double-check the spelling
+- `status: "failed"`, `httpStatus: 404` → the signed-in account was not found in Entra; tell the user their account could not be found in the directory and to contact IT — STOP
 - `accountEnabled` is `false` → warn the user their account is disabled and MFA reset may not help until it is re-enabled
 - On success, note `displayName` for user-friendly messaging
 
