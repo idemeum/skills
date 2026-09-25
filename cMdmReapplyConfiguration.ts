@@ -31,11 +31,8 @@
  */
 
 import { run as checkMdmEnrollment } from "./checkMdmEnrollment";
-import {
-  run as intuneSyncDevice,
-  meta as intuneSyncMeta,
-} from "./cIntuneSyncDevice";
-import { run as jamfForceDdmSync } from "./cJamfForceDdmSync";
+import { z }              from "zod";
+import { runCatalogTool } from "./_shared/catalogExecutor";
 
 // -- Provider backends --------------------------------------------------------
 
@@ -64,7 +61,7 @@ const BACKENDS: ReapplyBackend[] = [
   {
     matches: /intune|microsoft|endpoint manager/i,
     label:   "Intune",
-    sync:    (args, ctx) => intuneSyncDevice(args, ctx),
+    sync:    (args, ctx) => runCatalogTool("c_intune_sync_device", args, ctx) as ReturnType<ReapplyBackend["sync"]>,
   },
   {
     // Narrower than Intune's sync: this reconciles DDM-managed declarations
@@ -72,7 +69,7 @@ const BACKENDS: ReapplyBackend[] = [
     // profiles at all, so there is nothing broader to call.
     matches: /jamf/i,
     label:   "Jamf Pro",
-    sync:    (args, ctx) => jamfForceDdmSync(args, ctx),
+    sync:    (args, ctx) => runCatalogTool("c_jamf_force_ddm_sync", args, ctx) as ReturnType<ReapplyBackend["sync"]>,
   },
 ];
 
@@ -103,7 +100,12 @@ export const meta = {
     "failureReason",
   ],
   // Borrowed from the tool this wraps so the dry-run contract cannot drift.
-  schema: intuneSyncMeta.schema,
+  schema: {
+    dryRun: z
+      .boolean()
+      .nullable().optional()
+      .describe("When true, returns the operation preview without executing."),
+  },
 } as const;
 
 // -- Types --------------------------------------------------------------------

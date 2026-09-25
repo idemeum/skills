@@ -48,7 +48,7 @@ import { execAsync, isDarwin }   from "./_shared/platform";
 // double-quoted argv. osascript then raises syntax error -2741 because
 // AppleScript requires actual newlines between statements. Use execFile so
 // the script reaches osascript as a single argv element with newlines
-// intact. See emptyTrash.ts:75 for the same fix applied to that tool.
+// intact. See emptyTrash.ts:81 for the same fix applied to that tool.
 const execFileAsync = promisify(execFile);
 import { listCookieStores, type CookieStore, type Browser } from "./_shared/browser";
 

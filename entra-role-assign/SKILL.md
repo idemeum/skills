@@ -48,7 +48,7 @@ Do NOT use for Okta or Google role/permission changes. Do NOT use for enterprise
 Call `c_entra_get_user_info`.
 
 - `status: "not-configured"` → tell the user the cloud gateway is not set up on this machine; contact IT admin
-- `status: "failed"`, `httpStatus: 404` → UPN not found; ask the user to check spelling
+- `status: "failed"`, `httpStatus: 404` → the signed-in account was not found in Entra; tell the user their account could not be found in the directory and to contact IT — STOP
 - `accountEnabled` is `false` → warn the account is disabled; role assignment can still be granted but sign-in stays blocked until re-enabled
 - On success, note `displayName` for messaging
 

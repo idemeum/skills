@@ -46,11 +46,7 @@
  */
 
 import { run as checkMdmEnrollment }        from "./checkMdmEnrollment";
-import { run as intuneFindDevice }          from "./cIntuneFindDevice";
-import { run as intuneGetConfigStates }     from "./cIntuneGetConfigurationStates";
-import { run as intuneGetComplianceStates } from "./cIntuneGetComplianceStates";
-import { run as jamfFindDevice }            from "./cJamfFindDevice";
-import { run as jamfGetFailedCommands }     from "./cJamfGetFailedCommands";
+import { runCatalogTool }                   from "./_shared/catalogExecutor";
 import { z }                                from "zod";
 
 // -- Rules, as constants ------------------------------------------------------
@@ -124,20 +120,45 @@ interface MdmBackend {
  */
 const JAMF_PROFILE_COMMANDS = /^(install|remove)profile$/i;
 
+/**
+ * The connector operations each backend calls, run through the catalog
+ * executor.  An operation missing from this machine's connector catalog comes
+ * back "not-configured", which ends the run exactly as an unconfigured
+ * gateway does.  The result fields are the operations' catalog outputKeys.
+ */
+interface JamfDeviceResult {
+  status:           "ok" | "failed" | "not-configured";
+  message:          string;
+  matchCount?:      number;
+  id?:              string | null;
+  name?:            string | null;
+  lastContactTime?: string | null;
+}
+
+interface JamfCommandsResult {
+  status:    "ok" | "failed" | "not-configured";
+  message:   string;
+  commands?: { commandType: string; commandError: string | null }[];
+}
+
 const BACKENDS: MdmBackend[] = [
   {
     matches: /intune|microsoft|endpoint manager/i,
-    findDevice: (ctx) => intuneFindDevice({}, ctx),
+    findDevice: (ctx) =>
+      runCatalogTool("c_intune_find_device", {}, ctx) as Promise<BackendDevice>,
     getStates: (which, ctx) =>
-      which === "compliance"
-        ? intuneGetComplianceStates({}, ctx)
-        : intuneGetConfigStates({}, ctx),
+      runCatalogTool(
+        which === "compliance"
+          ? "c_intune_get_compliance_states"
+          : "c_intune_get_configuration_states",
+        {}, ctx,
+      ) as Promise<BackendStates>,
     reportsAllItems: true,
   },
   {
     matches: /jamf/i,
     findDevice: async (ctx) => {
-      const r = await jamfFindDevice({}, ctx);
+      const r = await runCatalogTool("c_jamf_find_device", {}, ctx) as JamfDeviceResult;
       if (r.status !== "ok") return { status: r.status, message: r.message };
       return {
         status:      "ok",
@@ -156,7 +177,7 @@ const BACKENDS: MdmBackend[] = [
       // smart groups, which is a different shape entirely.
       if (which === "compliance") return null;
       return (async (): Promise<BackendStates> => {
-        const r = await jamfGetFailedCommands({}, ctx);
+        const r = await runCatalogTool("c_jamf_get_failed_commands", {}, ctx) as JamfCommandsResult;
         if (r.status !== "ok") return { status: r.status, message: r.message };
         return {
           status:  "ok",

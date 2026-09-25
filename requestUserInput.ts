@@ -10,7 +10,7 @@
  * SKILL.md authors frequently write prose like "ask the user via chat for
  * their printer IP" or "ask if not known" — these are functionally broken
  * in the current ReAct loop because the conversationIdRef clears on run
- * end (see useAgent.ts:156). When the LLM emits a text response asking a
+ * end (see useAgent.ts:163). When the LLM emits a text response asking a
  * question, the run terminates and the next user message starts a fresh
  * conversation with no memory of the prior turn.
  *

@@ -16,7 +16,7 @@
  *
  * Why a dedicated gate (not a blocking run())?
  * --------------------------------------------
- * electron/agent/guards/execution.ts:1122 wraps every tool invocation in
+ * electron/agent/guards/execution.ts:3661 wraps every tool invocation in
  * Promise.race([skillPromise, timeoutPromise]) against TOOL_TIMEOUT_MS
  * (default 60 s).  An out-of-band SSPR / cloud password reset can take
  * minutes — a blocking tool run() would be force-killed at 60 s and the
