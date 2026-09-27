@@ -42,7 +42,7 @@ export const meta = {
   schema: {
     idp: z
       .enum(["okta", "entra", "google", "unknown"])
-      .describe("IDP identifier from detect_identity_provider."),
+      .describe("Identity provider: okta, entra, google or unknown."),
     tenant: z
       .string()
       .nullable().optional()

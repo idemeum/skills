@@ -1111,61 +1111,6 @@
       ]
     },
     {
-      "toolId": "detect_identity_provider",
-      "description": "Detects which cloud identity provider (Okta, Microsoft Entra, or Google Workspace) the endpoint is joined to. Inspects installed agents and domain configuration, not user credentials. Returns the primary IDP plus any secondary detections and the evidence. Use at the start of cloud password-reset or SSO-repair workflows.",
-      "riskLevel": "low",
-      "destructive": false,
-      "requiresConsent": false,
-      "supportsDryRun": false,
-      "affectedScope": [
-        "user"
-      ],
-      "outputKeys": [
-        "platform",
-        "primary",
-        "secondary",
-        "evidence"
-      ]
-    },
-    {
-      "toolId": "detect_idp_username",
-      "description": "Detects the user's IDP login username (email / UPN) from on-device IDP-agent state. Used to auto-populate username for cloud-IDP reset flows rather than asking the user via chat. Supports Windows × {Entra, Okta} (Phase 1) and macOS × {Entra, Okta, Google via Jamf Connect} (Phase 2). Phase 2 macOS probes read other apps' plists / Application Support JSON files which are gated by Full Disk Access on macOS 14+, hence tccCategories. Returns null with a reason for unsupported combinations — never throws.",
-      "riskLevel": "low",
-      "destructive": false,
-      "requiresConsent": false,
-      "supportsDryRun": false,
-      "affectedScope": [
-        "user"
-      ],
-      "tccCategories": [
-        "FullDiskAccess"
-      ],
-      "outputKeys": [
-        "primaryUsername",
-        "candidates",
-        "platform",
-        "idp",
-        "reason"
-      ],
-      "params": [
-        {
-          "name": "idp",
-          "type": "string",
-          "required": true,
-          "enum": [
-            "okta",
-            "entra",
-            "google"
-          ]
-        },
-        {
-          "name": "tenant",
-          "type": "string",
-          "required": false
-        }
-      ]
-    },
-    {
       "toolId": "disable_proxy",
       "description": "Switches the system proxy off for a network service, leaving the configured server and port intact so it can be re-enabled from System Settings. Use when check_proxy_settings shows an enabled proxy pointing at an unreachable server — the classic 'I have internet but no websites load'.",
       "riskLevel": "medium",
@@ -2258,7 +2203,7 @@
           "name": "idp",
           "type": "string",
           "required": true,
-          "description": "IDP identifier from detect_identity_provider.",
+          "description": "Identity provider: okta, entra, google or unknown.",
           "enum": [
             "okta",
             "entra",
@@ -3102,7 +3047,7 @@
           "name": "idp",
           "type": "string",
           "required": true,
-          "description": "IDP identifier from detect_identity_provider.",
+          "description": "Identity provider: okta, entra, google or unknown.",
           "enum": [
             "okta",
             "entra",
