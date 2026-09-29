@@ -36,6 +36,9 @@
  * POST ${CLOUD_GATEWAY_URL}/kb/query   { query }
  *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
  *
+ * The loop itself runs in idemeum Automate, not the gateway; the gateway fronts
+ * it, so this agent only ever talks to the gateway.
+ *
  * See docs/architecture/CONVERSATION-LAYER.md §5.3.
  */
 
@@ -130,9 +133,10 @@ export interface KbQueryResult {
 // -- Implementation -----------------------------------------------------------
 
 /**
- * The server side runs a bounded LLM loop over the tenant's MCP servers, so
- * this call is slower than a REST proxy and the default 10 s response timeout
- * is too tight. Overridable for a tenant with slow upstreams.
+ * Behind the gateway, the automate service runs a bounded LLM loop over the
+ * tenant's MCP servers, so this call is slower than a REST proxy and the
+ * default 10 s response timeout is too tight. Overridable for a tenant with
+ * slow upstreams.
  */
 function resolveKbTimeout(): number {
   const v = parseInt(process.env["CLOUD_KB_RESPONSE_TIMEOUT_MS"] ?? "30000", 10);
