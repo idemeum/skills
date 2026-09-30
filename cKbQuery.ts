@@ -2,7 +2,7 @@
  * c_kb_query
  *
  * Answers a question from the tenant's connected knowledge sources (HR,
- * finance, payroll, benefits, written policy) via the cloud gateway.
+ * finance, payroll, benefits, written policy) via idemeum Automate.
  *
  * ─── Why the loop is server-side ─────────────────────────────────────────────
  * This is the opposite of every other c_* tool, and deliberately so. Those are
@@ -19,30 +19,44 @@
  * allowed-tools, so a dynamic surface here would break it); and third-party
  * text is scrubbed before it crosses to a device rather than after.
  *
+ * ─── Why this one does NOT go through the gateway ────────────────────────────
+ * Every other c_* tool calls the gateway. This one calls idemeum Automate
+ * directly, because that is where the orchestrator loop runs and fronting a
+ * long-running agentic loop behind a proxy buys nothing. Automate is a SIBLING
+ * host of the tenant — automate.<domain>, not a path under TENANT_URL — so it
+ * needs its own URL and its own auth headers.
+ *
  * ─── Self-gating ─────────────────────────────────────────────────────────────
- * No KB-specific env var, by design (CONVERSATION-LAYER.md §12): the shared
- * `cloudGatewayCall` helper already returns `status: "not-configured"` when
- * CLOUD_GATEWAY_URL or the API key is unset, so the lane is inert on a tenant
- * without a gateway and the caller treats it exactly like a miss.
+ * The lane is inert on a tenant without Automate: unset CLOUD_KB_URL (or the
+ * key) and this returns `status: "not-configured"`, which the caller treats
+ * exactly like a miss (CONVERSATION-LAYER.md §12).
  *
  * ─── Tenant-scoped only, for now ─────────────────────────────────────────────
  * "What is the parental leave policy" — yes. "How much is my next paycheck" —
- * later: user-scoped answers need delegated per-user auth. That is why
- * `requiresVerifiedIdentity` is false: the flag is emitted only for a
- * gatewayPath carrying {upn}, so a tenant-wide lookup never triggers a sign-in.
+ * later: user-scoped answers need delegated per-user auth. `requiresVerifiedIdentity`
+ * is false because the call is tenant-scoped and carries no user subject — which
+ * is what keeps a KB question from triggering a sign-in. It flips the day answers
+ * become user-scoped.
  *
  * Wire contract
  * -------------
- * POST ${CLOUD_GATEWAY_URL}/kb/query   { query }
- *   X-Idemeum-Eoc-Api-Key: ${CLOUD_GATEWAY_API_KEY}
+ * POST ${CLOUD_KB_URL}                 { query }
+ *   X-Idemeum-Automate-Tenant:  ${CLOUD_KB_TENANT}   <- subdomain LABEL, not host
+ *   X-Idemeum-Automate-Api-Key: ${CLOUD_KB_API_KEY}
  *
- * The loop itself runs in idemeum Automate, not the gateway; the gateway fronts
- * it, so this agent only ever talks to the gateway.
+ * CLOUD_KB_URL is the FULL endpoint, not a base: the installer writes
+ * ${scheme}://automate.${domain}/kb/query. Both headers are required —
+ * Automate is multi-tenant and resolves the tenant from the header, not from
+ * the key. The URL and tenant are written by build/scripts/postinstall and
+ * scripts/install-exe.ps1 alongside CLOUD_GATEWAY_URL. The KEY is not — no
+ * *_API_KEY is written in that block; IDEMEUM_API_KEY is written once in the
+ * credentials block and every consumer falls back to it in code, which is what
+ * resolveKbApiKey() below does. CLOUD_KB_API_KEY is an optional override.
  *
  * See docs/architecture/CONVERSATION-LAYER.md §5.3.
  */
 
-import { cloudGatewayCall, type CloudGatewayResult } from "./_shared/cloudGateway";
+import { httpPost } from "./_shared/platform";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -50,7 +64,7 @@ export const meta = {
   name: "c_kb_query",
   description:
     "Answers a question from the tenant's connected knowledge sources (HR, finance, payroll, " +
-    "benefits, written policy). Returns a synthesised answer with citations via the cloud gateway.",
+    "benefits, written policy). Returns a synthesised answer with citations via idemeum Automate.",
   riskLevel:       "low",
   destructive:     false,
   requiresConsent: false,
@@ -81,6 +95,9 @@ export const meta = {
 } as const;
 
 // -- Types --------------------------------------------------------------------
+
+export type KbFailureReason =
+  | "connect_timeout" | "response_timeout" | "network" | "circuit_open" | "http" | "parse";
 
 export interface KbCitation {
   source: string;
@@ -127,58 +144,122 @@ export interface KbQueryResult {
    */
   usage?:            KbUsage;
   httpStatus?:       number;
-  failureReason?:    CloudGatewayResult["failureReason"];
+  failureReason?:    KbFailureReason;
 }
 
 // -- Implementation -----------------------------------------------------------
 
 /**
- * Behind the gateway, the automate service runs a bounded LLM loop over the
- * tenant's MCP servers, so this call is slower than a REST proxy and the
- * default 10 s response timeout is too tight. Overridable for a tenant with
- * slow upstreams.
+ * Automate runs a bounded LLM loop over the tenant's MCP servers, so this call
+ * is slower than a REST proxy and the default 10 s response timeout is too
+ * tight. Overridable for a tenant with slow upstreams.
  */
 function resolveKbTimeout(): number {
   const v = parseInt(process.env["CLOUD_KB_RESPONSE_TIMEOUT_MS"] ?? "30000", 10);
   return isNaN(v) || v <= 0 ? 30_000 : v;
 }
 
+/**
+ * Falls back to IDEMEUM_API_KEY, the same pattern every other outbound key
+ * follows (TICKET_API_KEY, CLOUD_ENV_API_KEY …). The installer writes
+ * CLOUD_KB_API_KEY explicitly; the fallback covers a hand-edited .env.
+ */
+function resolveKbApiKey(): string {
+  return (
+    process.env["CLOUD_KB_API_KEY"] ??
+    process.env["IDEMEUM_API_KEY"] ??
+    ""
+  ).trim();
+}
+
 export async function run(
   args: { query?: string },
-  ctx?: { userSessionHandle?: string },
 ): Promise<KbQueryResult> {
   const query = typeof args?.query === "string" ? args.query.trim() : "";
   if (!query) {
     return { status: "failed", message: "No question supplied.", answered: false };
   }
 
-  const r = await cloudGatewayCall<KbQueryData>({
-    method: "POST",
-    path:   "/kb/query",
-    body:   { query },
-    timeoutMs: resolveKbTimeout(),
-    // Its own breaker: a KB outage must not open the circuit on the entra
-    // routes, and vice versa. The loop here is slow and the REST routes are
-    // not, so one shared failure budget would mis-attribute both.
-    breakerKey: "CLOUD_KB_URL",
-    ...(ctx?.userSessionHandle ? { userSessionHandle: ctx.userSessionHandle } : {}),
-  });
+  const endpoint = (process.env["CLOUD_KB_URL"] ?? "").trim();
+  const apiKey   = resolveKbApiKey();
+  const tenant   = (process.env["CLOUD_KB_TENANT"] ?? "").trim();
 
-  if (r.status !== "ok") {
+  // Fail closed rather than calling Automate without credentials — the same
+  // reasoning as cloudGateway's: an unauthenticated call surfaces a 401 that
+  // reads as a lookup failure when it is really a provisioning problem.
+  if (!endpoint || !apiKey || !tenant) {
+    const missing = [
+      !endpoint ? "CLOUD_KB_URL" : null,
+      !apiKey   ? "CLOUD_KB_API_KEY" : null,
+      !tenant   ? "CLOUD_KB_TENANT"  : null,
+    ].filter(Boolean).join(", ");
     return {
-      status:        r.status,
-      message:       r.message,
-      // A gateway failure, an open circuit and a missing gateway are all
-      // "we could not answer this" as far as the caller is concerned — which
-      // is better than pretending an answer exists (§14).
-      answered:      false,
-      ...(r.httpStatus    !== undefined ? { httpStatus: r.httpStatus }       : {}),
-      ...(r.failureReason !== undefined ? { failureReason: r.failureReason } : {}),
+      status:  "not-configured",
+      message: `Knowledge base is not configured on this machine (${missing}). ` +
+               "Contact your MSP administrator.",
+      answered: false,
     };
   }
 
-  const d = r.data ?? {};
-  const answered = d.answered === true && typeof d.answer === "string" && d.answer.trim().length > 0;
+  // Its own breaker: the KB loop is slow and the gateway's REST routes are not,
+  // so one shared failure budget would mis-attribute both. A KB outage must not
+  // open the circuit on the entra routes, or vice versa.
+  const r = await httpPost(
+    endpoint,
+    JSON.stringify({ query }),
+    {
+      "Content-Type":              "application/json",
+      "Accept":                    "application/json",
+      "X-Idemeum-Automate-Tenant":  tenant,
+      "X-Idemeum-Automate-Api-Key": apiKey,
+    },
+    { timeoutMs: resolveKbTimeout(), breakerKey: "CLOUD_KB_URL" },
+  );
+
+  if (r.failureReason) {
+    const isTimeout =
+      r.failureReason === "connect_timeout" || r.failureReason === "response_timeout";
+    return {
+      status:        "failed",
+      failureReason: r.failureReason,
+      // An Automate failure, an open circuit and a missing endpoint are all
+      // "we could not answer this" as far as the caller is concerned — which
+      // is better than pretending an answer exists (§14).
+      answered:      false,
+      message:
+        r.failureReason === "circuit_open"
+          ? "Knowledge base unavailable — circuit open."
+          : isTimeout
+            ? "Knowledge base request timed out."
+            : "Could not reach the knowledge base.",
+    };
+  }
+
+  if (r.statusCode < 200 || r.statusCode >= 300) {
+    return {
+      status:        "failed",
+      failureReason: "http",
+      httpStatus:    r.statusCode,
+      answered:      false,
+      message:       `Knowledge base returned HTTP ${r.statusCode}.`,
+    };
+  }
+
+  let d: KbQueryData;
+  try {
+    d = JSON.parse(r.body) as KbQueryData;
+  } catch {
+    return {
+      status:        "failed",
+      failureReason: "parse",
+      httpStatus:    r.statusCode,
+      answered:      false,
+      message:       "Knowledge base returned a non-JSON response.",
+    };
+  }
+
+  const answered =
+    d.answered === true && typeof d.answer === "string" && d.answer.trim().length > 0;
 
   return {
     status:  "ok",
@@ -188,6 +269,6 @@ export async function run(
     ...(Array.isArray(d.citations)        ? { citations: d.citations }               : {}),
     ...(Array.isArray(d.sourcesConsulted) ? { sourcesConsulted: d.sourcesConsulted } : {}),
     ...(d.usage            !== undefined ? { usage: d.usage }                       : {}),
-    ...(r.httpStatus       !== undefined ? { httpStatus: r.httpStatus }             : {}),
+    httpStatus: r.statusCode,
   };
 }
