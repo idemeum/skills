@@ -111,9 +111,24 @@ export interface KbCitation {
 }
 
 export interface KbUsage {
-  inputTokens?:  number;
-  outputTokens?: number;
-  model?:        string;
+  inputTokens?:         number;
+  outputTokens?:        number;
+  /**
+   * Prompt-cache counters, returned by Automate's /kb/query alongside the
+   * plain token counts. Carried through unchanged so the portal's cost
+   * formula sees the same shape it does for a run — cached input is billed
+   * differently from fresh input, so dropping these would overstate cost.
+   */
+  cacheReadTokens?:     number;
+  cacheCreationTokens?: number;
+  model?:               string;
+  /**
+   * Only if Automate reports it. It resolves llmProvider per tenant from its
+   * own config, so this is authoritative when present; the agent falls back to
+   * its own ACTIVE_LLM, which holds because a tenant's Automate and its
+   * devices are deployed on the same provider.
+   */
+  provider?:            string;
 }
 
 interface KbQueryData {
