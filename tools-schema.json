@@ -2277,7 +2277,7 @@
     },
     {
       "toolId": "present_intake_form",
-      "description": "Presents a structured intake form pre-filled by the executor LLM for user review and editing before ticket submission. Use in the triage skill when no specific workflow matched the user's request after clarification rounds.\n\nIMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses the 60s TOOL_TIMEOUT_MS ceiling for this call and instead races the user's interaction against USER_ACK_TIMEOUT_MS (default 15 min). The gate injects `ticketingEnabled` from deployment config — do NOT pass it as a tool param.",
+      "description": "Presents a structured intake form pre-filled by the executor LLM for user review and editing before ticket submission. Use in the triage skill to capture a request that has to go to IT.\n\nIMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses the 60s TOOL_TIMEOUT_MS ceiling for this call and instead races the user's interaction against USER_ACK_TIMEOUT_MS (default 15 min). The gate injects `ticketingEnabled` from deployment config — do NOT pass it as a tool param.",
       "riskLevel": "low",
       "destructive": false,
       "requiresConsent": false,

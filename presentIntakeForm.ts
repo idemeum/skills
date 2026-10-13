@@ -1,16 +1,17 @@
 /**
  * mcp/skills/presentIntakeForm.ts — present_intake_form synthetic user-wait gate
  *
- * Fourth user-wait gate alongside `present_preview` (multi-select card),
+ * A user-wait gate, like `present_preview` (multi-select card),
  * `wait_for_user_ack` (button picker), and `request_user_input` (text input).
  * This one presents a **structured intake form** pre-filled by the executor
  * LLM for the user to review and edit before ticket submission.
  *
  * Why this exists
  * ---------------
- * When the skill router exhausts its clarification rounds without matching a
- * skill (the "unclear" branch), runtime.ts falls through to the `triage`
- * skill.  The triage SKILL.md instructs the executor LLM to extract structured
+ * The `triage` skill captures a request IT has to handle — reached by the
+ * Report Issue pill, a direct request for a human, the conversation layer's
+ * triage offer, or (layer off) exhausted clarification rounds.  Its SKILL.md
+ * instructs the executor LLM to extract structured
  * fields (category, urgency, summary, affected system, symptoms) from the
  * accumulated clarification context and pass them as tool params.  This gate
  * renders them as an editable form so the user can correct any misclassification
@@ -40,9 +41,11 @@
  * -------
  *   { category, urgency, summary, affectedSystem, symptoms, additionalNotes?, action }
  *
- * `action` is "submit" when the user clicks Submit/Copy, "cancel" on
- * dismiss/timeout/abort.  Downstream steps and the ticket payload both
- * branch on `action`.
+ * `action` is "submit" on Submit, "continue" on Continue (ticketing off), and
+ * "cancel" on Cancel / timeout / abort — the user backed out.  The skill's
+ * diagnostic step runs only when it is not "cancel", and deriveRunStatus()
+ * records a cancelled intake as "unresolved"; the ticket still carries the
+ * form.  See docs/architecture/TRIAGE-ARCHITECTURE.md § Cancel.
  *
  * Smoke test
  *   npx tsx -r dotenv/config mcp/skills/presentIntakeForm.ts
@@ -56,8 +59,8 @@ export const meta = {
   name: "present_intake_form",
   description:
     "Presents a structured intake form pre-filled by the executor LLM for user " +
-    "review and editing before ticket submission. Use in the triage skill when " +
-    "no specific workflow matched the user's request after clarification rounds.\n" +
+    "review and editing before ticket submission. Use in the triage skill to " +
+    "capture a request that has to go to IT.\n" +
     "\n" +
     "IMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses " +
     "the 60s TOOL_TIMEOUT_MS ceiling for this call and instead races the " +

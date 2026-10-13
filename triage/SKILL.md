@@ -105,5 +105,5 @@ Call the selected tool with default arguments. Only after the intake form is sub
 ## Edge cases
 
 - **Vague user input** — When the accumulated context is sparse (e.g. "something broke"), do your best: category `Other`, urgency `medium`, summary paraphrasing the original goal, affectedSystem from the broadest term the user mentioned (e.g. "Computer", "Laptop") — never default to "Unknown" unless the user gave zero context, symptoms with at least the user's own words. The form is editable — the user can correct urgency, summary, affected system, and symptoms. Category is read-only (set by the planner's classification) because the diagnostic step is tied to it.
-- **User cancels the form** — The gate returns `action: "cancel"`. The run completes with no corrective action and `runStatus` will be `unresolved`. A ticket is still created via the post-execution path but with empty diagnostics.
+- **User cancels the form** — The gate returns `action: "cancel"`. Do not run the Step 2 diagnostic. The run is recorded `unresolved`, and the ticket is still created, carrying the form with `action: "cancel"`.
 - **Ticketing disabled** — The gate injects `ticketingEnabled: false` from deployment config. The card heading changes to informational and the Submit button is hidden, but the user can still copy the structured summary. The run still completes normally.
