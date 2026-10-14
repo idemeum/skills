@@ -9,8 +9,9 @@
  * Why this exists
  * ---------------
  * The `triage` skill captures a request IT has to handle — reached by the
- * Report Issue pill, a direct request for a human, the conversation layer's
- * triage offer, or (layer off) exhausted clarification rounds.  Its SKILL.md
+ * Report Issue pill, a direct request for a human, a clear IT request no other
+ * skill handles (the router's rule), the conversation layer's triage offer, or
+ * (layer off) exhausted clarification rounds.  Its SKILL.md
  * instructs the executor LLM to extract structured
  * fields (category, urgency, summary, affected system, symptoms) from the
  * accumulated clarification context and pass them as tool params.  This gate
@@ -26,6 +27,7 @@
  *   - present_preview      → runPresentPreviewGate (multi-select card)
  *   - request_user_input   → runUserInputGate      (text input)
  *   - present_intake_form  → runIntakeFormGate      (editable intake form)
+ *   - record_screen        → runScreenRecordingGate (screen recording)
  *   - wait_for_user_ack    → runUserAckGate         (button picker, fallback)
  *
  * Ticket flow
@@ -42,10 +44,11 @@
  *   { category, urgency, summary, affectedSystem, symptoms, additionalNotes?, action }
  *
  * `action` is "submit" on Submit, "continue" on Continue (ticketing off), and
- * "cancel" on Cancel / timeout / abort — the user backed out.  The skill's
- * diagnostic step runs only when it is not "cancel", and deriveRunStatus()
- * records a cancelled intake as "unresolved"; the ticket still carries the
- * form.  See docs/architecture/TRIAGE-ARCHITECTURE.md § Cancel.
+ * "cancel" on Cancel / timeout / abort.  After a Cancel or timeout the skill's
+ * diagnostic step is not run and deriveRunStatus() records the run
+ * "unresolved"; the ticket still carries the form.  An abort (new run, Stop)
+ * ends the run on the abort path instead.  See
+ * docs/architecture/TRIAGE-ARCHITECTURE.md § Cancel.
  *
  * Smoke test
  *   npx tsx -r dotenv/config mcp/skills/presentIntakeForm.ts

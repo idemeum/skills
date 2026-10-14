@@ -32,7 +32,7 @@ metadata:
 
 ## When to use
 
-Two ways in. The skill router matches it when the user asks for a human directly — that is what the `examples` list is for, and those phrasings are deliberately escalation-only so they cannot compete with a real skill. It is also selected automatically by runtime.ts when the router exhausts its clarification rounds without matching a skill (the "unclear" branch).
+Reached when the user taps the Report Issue pill or accepts a "Raise with IT" offer; when they ask for a human directly — that is what the `examples` list is for, and those phrasings are deliberately escalation-only so they cannot compete with a real skill; or when they make a clear IT request that no other skill handles ("I need a new laptop"), which the skill router sends here. A request too vague to tell what is wrong gets a question instead, not this skill.
 
 Do NOT select this skill if the user's request clearly matches another skill — this is a last-resort fallback only.
 
