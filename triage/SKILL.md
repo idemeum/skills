@@ -98,9 +98,9 @@ Write every other field from the user's request, any clarification answers, the 
 - issueSummary — 1–2 sentences a helpdesk technician understands without the conversation: what, where, since when.
 - affectedSystem — the app, device or service by its common name ("Outlook", not "Microsoft Outlook for Mac"; "Wi-Fi", not "802.11ac wireless"). For a broad target like "my laptop", the most specific term the user used ("Laptop", "MacBook"). "Unknown" only when nothing can be inferred.
 - symptoms — short phrases, at least one when anything can be inferred. tags — keywords.
-- sentiment — the user's tone: neutral, frustrated or urgent.
+- sentiment — the user's tone: exactly one of neutral, frustrated or angry.
 - entities — persons, devices, software, vendors, locations and accounts the user named — each a list, empty when none. Never a password or other secret.
-- evidence — one entry for Step 1: the tool, why it ran ("Category Network"), and what it showed in plain words ("DNS lookups fail; the gateway answers").
+- evidence — one entry for Step 1: the tool, why it ran ("Category Network"), and what it showed in plain words ("DNS lookups fail; the gateway answers"). Write findings only from what the tool returned — never from the step's rationale or what it was meant to check.
 - recommendations — nextSteps: what IT should try first; alerts: { type, detail } for a security concern or a frustrated user, empty otherwise.
 - automation — score 0–100: how much of this the device's connectors could have done; relevantConnectors: which ones; recommendation: the skill worth writing, or "".
 

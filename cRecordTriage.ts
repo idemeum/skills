@@ -32,7 +32,7 @@
 
 import { z } from "zod";
 
-import type { UrgencyLevel } from "./_shared/triageRecord";
+import type { Sentiment, UrgencyLevel } from "./_shared/triageRecord";
 
 
 // -- Meta ---------------------------------------------------------------------
@@ -81,7 +81,9 @@ export const meta = {
       .describe('The primary app, device or service, by its common name; "Unknown" only when nothing can be inferred.'),
     symptoms: z.array(z.string().trim().min(1)).describe("Short phrases."),
     tags: z.array(z.string().trim().min(1)).describe("Keywords for search and reporting."),
-    sentiment: z.string().trim().min(1).describe("The requester's tone: neutral, frustrated, urgent …"),
+    sentiment: z
+      .enum(["neutral", "frustrated", "angry"]) // SENTIMENTS, literal for the static readers
+      .describe("The requester's tone: neutral, frustrated or angry."),
     issueSummary: z
       .string().trim().min(1)
       .describe("1–2 sentences a technician understands without the ticket: what, where, when."),
@@ -98,7 +100,10 @@ export const meta = {
       .describe("Identifiers named in the ticket. Never a password or other secret."),
     evidence: z
       .array(z.object({ source: z.string().trim().min(1), reason: z.string().trim().min(1), findings: z.array(z.string().trim().min(1)) }).strict())
-      .describe("One entry per lookup that ran: the tool, why it ran, what it showed in plain words."),
+      .describe(
+        "One entry per lookup that ran: the tool, why it ran, what it showed in plain words. " +
+        "Write findings only from what the tool returned — never from the step's rationale or what it was meant to check.",
+      ),
     recommendations: z
       .object({
         nextSteps: z.array(z.string().trim().min(1)),
@@ -120,10 +125,12 @@ export const recordTriageSchema = meta.schema;
 
 export type RecordTriageParams = z.infer<z.ZodObject<typeof recordTriageSchema>>;
 
-// The literal enum above must stay URGENCY_LEVELS: a mismatch fails to compile here.
+// The literal enums above must stay URGENCY_LEVELS and SENTIMENTS: a mismatch fails to compile here.
 const _urgencyMatches: UrgencyLevel = "" as RecordTriageParams["urgency"];
 const _urgencyCovers: RecordTriageParams["urgency"] = "" as UrgencyLevel;
-void _urgencyMatches; void _urgencyCovers;
+const _sentimentMatches: Sentiment = "" as RecordTriageParams["sentiment"];
+const _sentimentCovers: RecordTriageParams["sentiment"] = "" as Sentiment;
+void _urgencyMatches; void _urgencyCovers; void _sentimentMatches; void _sentimentCovers;
 
 // -- Exported run function ----------------------------------------------------
 

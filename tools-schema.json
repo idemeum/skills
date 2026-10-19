@@ -114,7 +114,12 @@
           "name": "sentiment",
           "type": "string",
           "required": true,
-          "description": "The requester's tone: neutral, frustrated, urgent …"
+          "description": "The requester's tone: neutral, frustrated or angry.",
+          "enum": [
+            "neutral",
+            "frustrated",
+            "angry"
+          ]
         },
         {
           "name": "issueSummary",
@@ -131,8 +136,7 @@
         {
           "name": "evidence",
           "type": "array",
-          "required": true,
-          "description": "One entry per lookup that ran: the tool, why it ran, what it showed in plain words."
+          "required": true
         },
         {
           "name": "recommendations",
