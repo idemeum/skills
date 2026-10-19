@@ -1,0 +1,32 @@
+# The triage skill's ticketing values for HaloPSA — an example to edit.
+#
+# Paste this block under `metadata:` in mcp/skills/triage/SKILL.md (indented
+# two spaces, in place of the commented example), replace the names and IDs
+# with your tenant's, and upload the file as a custom skill named `triage`.
+# Shared design: docs/architecture/TRIAGE-ARCHITECTURE.md § Frontmatter.
+triage:
+  # Your HaloPSA categories — appmanagement's reference-data endpoint lists
+  # them. Matched case-insensitively; a path may stop at any level. Quote a
+  # name that contains ": ".
+  categories:
+    Hardware:
+      Laptop: []
+      Printer: []
+    Software: []
+    Network: []
+    Account: []
+    Security: []
+  # Written to the ticket's urgency. HaloPSA takes its own urgency IDs —
+  # look yours up in HaloPSA (appmanagement has no endpoint for them yet).
+  # The IDs below are placeholders: replace every one.
+  urgency:
+    critical: 1
+    high: 2
+    medium: 3
+    low: 4
+  ticketUpdates:
+    minCertainty:
+      category: 80
+      urgency: 80
+    neverSet:
+      urgency: []

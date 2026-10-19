@@ -4,7 +4,6 @@ description: Collects structured intake information when no specific skill match
 license: Proprietary
 compatibility: Requires Node.js 18+, Windows or macOS
 allowed-tools:
-  - present_intake_form
   - check_connectivity
   - get_top_consumers
   - list_installed_apps
@@ -13,6 +12,7 @@ allowed-tools:
   - check_mail_account_config
   - list_printers
   - get_processes
+  - c_record_triage
 metadata:
   maxAggregateRisk: low
   userLabel: "Submit issue to IT helpdesk"
@@ -28,6 +28,26 @@ metadata:
     icon: ClipboardList
     iconClass: text-amber-500
     order: 99
+  # OPTIONAL — your ticketing system's own values (TRIAGE-ARCHITECTURE.md
+  # § Frontmatter). Shipped without them, so nothing is written to a ticket's
+  # category or urgency on any system; triage still classifies, and the note
+  # still shows what it chose. To have triage set them, add a `triage:` block
+  # here — start from examples/connectwise.triage.yaml or
+  # examples/halopsa.triage.yaml in this folder — then upload the file as a
+  # custom skill named `triage`, which replaces this one. Its shape:
+  #
+  # triage:
+  #   categories:          # ConnectWise: type › subtype › item on your board;
+  #     Hardware:          #   HaloPSA: your categories. A path may stop at any level.
+  #       Laptop: [Battery, Screen]
+  #   urgency:             # ConnectWise: High | Medium | Low. HaloPSA: urgency IDs.
+  #     critical: High
+  #     high: High
+  #     medium: Medium
+  #     low: Low
+  #   ticketUpdates:       # optional; both thresholds default to 80
+  #     minCertainty: { category: 80, urgency: 80 }
+  #     neverSet: { urgency: [critical] }
 ---
 
 ## When to use
@@ -40,24 +60,7 @@ Do NOT select this skill if the user's request clearly matches another skill —
 
 ## Steps
 
-**Step 1 — Present intake form for user review**
-
-Call `present_intake_form` with fields extracted from the user's description and clarification answers. The accumulated context from the clarification rounds is available in the conversation — extract the structured fields below from it.
-
-```yaml
-title: "Review your IT request"
-category: "<extracted category>"
-urgency: "<extracted urgency>"
-summary: "<extracted summary>"
-affectedSystem: "<extracted system>"
-symptoms: ["<symptom 1>", "<symptom 2>"]
-```
-
-### Executor guidance
-
-Extract each field from the user's original request and any clarification answers they provided:
-
-**category** — Map to exactly one of these values:
+Pick the category first — the one that best matches the root cause when the description spans several; `Other` when genuinely ambiguous:
 - `Network` — Wi-Fi, Ethernet, VPN, DNS, connectivity, firewall, proxy
 - `Software` — app crashes, installation, updates, licensing, compatibility
 - `Hardware` — laptop, monitor, keyboard, mouse, dock, USB, Bluetooth, audio/video peripherals
@@ -68,25 +71,9 @@ Extract each field from the user's original request and any clarification answer
 - `Security` — malware, suspicious activity, data loss, encryption
 - `Other` — anything that does not fit the categories above
 
-When the user's description spans multiple categories, pick the one that best matches the root cause. Default to `Other` when genuinely ambiguous.
+**Step 1 — Run the diagnostic for the category**
 
-**urgency** — Classify based on business impact:
-- `critical` — system or account completely unusable, user cannot work at all
-- `high` — significant workflow impact, major feature broken, no workaround
-- `medium` — inconvenience with a workaround available, partial functionality
-- `low` — cosmetic issue, informational question, nice-to-have request
-
-When the user has not described impact severity, default to `medium`.
-
-**summary** — Write a 1-2 sentence plain-English summary that an IT helpdesk technician would understand without seeing the original conversation. Include the what (symptom), the where (system/app), and the when (if the user mentioned timing).
-
-**affectedSystem** — The primary application, device, or service affected. Use the common name (e.g. "Outlook" not "Microsoft Outlook for Mac", "Wi-Fi" not "802.11ac wireless"). When the user mentions a broad target like "my computer" or "my laptop", write the most specific term they used (e.g. "Laptop", "Desktop", "MacBook"). Write "Unknown" only when absolutely nothing can be inferred.
-
-**symptoms** — List of specific symptoms the user described, each as a short phrase. If the user's description was vague, extract what you can and include at least one entry. Empty array only when absolutely nothing can be inferred.
-
-**Step 2 — Collect category-specific diagnostics**
-
-After the intake form is submitted, run one diagnostic tool matching the classified category. The planner selects the tool based on the category:
+Run the one read-only diagnostic for the category you picked, with default arguments:
 
 - `Network` → call `check_connectivity`
 - `Software` → call `list_installed_apps`
@@ -98,12 +85,29 @@ After the intake form is submitted, run one diagnostic tool matching the classif
 - `Security` → call `check_firewall_status`
 - `Other` → call `get_processes`
 
-Call the selected tool with default arguments. Only after the intake form is submitted (action is not "cancel").
+**Step 2 — Record the triage for the user to review**
+
+Call `c_record_triage` with `category: ["<the category you picked>"]`. It shows the record to the user on the intake form, to review before anything is sent to IT.
+
+### Executor guidance
+
+Write every other field from the user's request, any clarification answers, the knowledge-base answer and what Step 1 found:
+- kind — issue: something is broken; request: something is wanted.
+- urgency — critical: the user cannot work at all; high: significant impact, no workaround; medium: a workaround exists; low: cosmetic or a question. When the user has not described the impact, medium.
+- categoryCertainty, urgencyCertainty — 0–100, how sure you are.
+- issueSummary — 1–2 sentences a helpdesk technician understands without the conversation: what, where, since when.
+- affectedSystem — the app, device or service by its common name ("Outlook", not "Microsoft Outlook for Mac"; "Wi-Fi", not "802.11ac wireless"). For a broad target like "my laptop", the most specific term the user used ("Laptop", "MacBook"). "Unknown" only when nothing can be inferred.
+- symptoms — short phrases, at least one when anything can be inferred. tags — keywords.
+- sentiment — the user's tone: neutral, frustrated or urgent.
+- entities — persons, devices, software, vendors, locations and accounts the user named — each a list, empty when none. Never a password or other secret.
+- evidence — one entry for Step 1: the tool, why it ran ("Category Network"), and what it showed in plain words ("DNS lookups fail; the gateway answers").
+- recommendations — nextSteps: what IT should try first; alerts: { type, detail } for a security concern or a frustrated user, empty otherwise.
+- automation — score 0–100: how much of this the device's connectors could have done; relevantConnectors: which ones; recommendation: the skill worth writing, or "".
 
 ---
 
 ## Edge cases
 
-- **Vague user input** — When the accumulated context is sparse (e.g. "something broke"), do your best: category `Other`, urgency `medium`, summary paraphrasing the original goal, affectedSystem from the broadest term the user mentioned (e.g. "Computer", "Laptop") — never default to "Unknown" unless the user gave zero context, symptoms with at least the user's own words. The form is editable — the user can correct urgency, summary, affected system, and symptoms. Category is read-only (set by the planner's classification) because the diagnostic step is tied to it.
-- **User cancels the form** — The gate returns `action: "cancel"`. Do not run the Step 2 diagnostic. The run is recorded `unresolved`, and the ticket is still created, carrying the form with `action: "cancel"`.
+- **Vague user input** — When the description is sparse ("something broke"), do your best: category `Other`, urgency `medium`, issueSummary paraphrasing the request, affectedSystem from the broadest term the user mentioned ("Computer", "Laptop") — never "Unknown" unless the user gave no context — and symptoms with at least the user's own words. The user can correct urgency, the issue summary, the affected system and the symptoms on the form; category is read-only, because the diagnostic already ran for it.
+- **User cancels the form** — The gate returns `action: "cancel"`. The diagnostic has already run; its output stays on the ticket, so IT can see what was checked. Nothing is sent to the helpdesk.
 - **Ticketing disabled** — The gate injects `ticketingEnabled: false` from deployment config. The card heading changes to informational and the Submit button is hidden, but the user can still copy the structured summary. The run still completes normally.

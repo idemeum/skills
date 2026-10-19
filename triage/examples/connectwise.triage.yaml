@@ -1,0 +1,40 @@
+# The triage skill's ticketing values for ConnectWise — an example to edit.
+#
+# Paste this block under `metadata:` in mcp/skills/triage/SKILL.md (indented
+# two spaces, in place of the commented example), replace the names with your
+# board's, and upload the file as a custom skill named `triage`.
+# Shared design: docs/architecture/TRIAGE-ARCHITECTURE.md § Frontmatter.
+triage:
+  # Type › subtype › item names on the board configured for your tenant in
+  # appmanagement — its reference-data endpoints list them. Matched
+  # case-insensitively; a path may stop at any level. Quote a name that
+  # contains ": ".
+  categories:
+    Hardware:
+      Laptop: [Battery, Screen, Keyboard]
+      Printer: []
+      Peripheral: []
+    Software:
+      Office 365: []
+      Line of business app: []
+    Network:
+      Wi-Fi: []
+      VPN: []
+    Account:
+      Password: []
+      MFA: []
+      Access request: []
+    Security: []
+  # Written to the ticket's severity and impact (both), so your priority
+  # matrix still sets the priority. ConnectWise accepts High, Medium, Low.
+  urgency:
+    critical: High
+    high: High
+    medium: Medium
+    low: Low
+  ticketUpdates:
+    minCertainty:
+      category: 80
+      urgency: 80
+    neverSet:
+      urgency: []

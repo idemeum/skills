@@ -6,12 +6,12 @@ Collects structured intake information when no specific skill matches the user's
 
 ## What it does, step by step
 
-**Step 1.** Shows a summary of the request's category, urgency, system, and symptoms for confirmation.
-_asks the user, conditional_ · `present_intake_form`
-
-**Step 2.** Gathers extra technical details relevant to the issue's category to aid troubleshooting.
+**Step 1.** Runs a read-only diagnostic for the selected category to gather relevant details.
 _read-only_ · `check_connectivity`, `list_installed_apps`, `list_usb_devices`, `get_processes`, `check_mail_account_config`, `list_printers`, `get_top_consumers`, `check_firewall_status`
+
+**Step 2.** Records the issue classification, urgency, affected system, and symptoms for review before submission.
+_asks the user, conditional_ · `c_record_triage`
 
 ## Tools it may use
 
-`present_intake_form`, `check_connectivity`, `get_top_consumers`, `list_installed_apps`, `list_usb_devices`, `check_firewall_status`, `check_mail_account_config`, `list_printers`, `get_processes`
+`check_connectivity`, `get_top_consumers`, `list_installed_apps`, `list_usb_devices`, `check_firewall_status`, `check_mail_account_config`, `list_printers`, `get_processes`, `c_record_triage`

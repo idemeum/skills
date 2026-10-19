@@ -37,6 +37,117 @@
       ]
     },
     {
+      "toolId": "c_record_triage",
+      "description": "Records the triage of a request no skill could fix — what it is, how urgent, what the diagnostics found and what IT should do first — and shows it to the user on the intake form to review before it is sent to IT. Call it last, once, after every diagnostic in the plan. It changes nothing.\n\nIMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses the 60s TOOL_TIMEOUT_MS ceiling for this call and instead races the user's interaction against USER_ACK_TIMEOUT_MS (default 15 min). The gate injects `ticketingEnabled` from deployment config — do NOT pass it as a tool param.",
+      "riskLevel": "low",
+      "destructive": false,
+      "requiresConsent": false,
+      "supportsDryRun": false,
+      "isUserWaitGate": true,
+      "affectedScope": [
+        "user"
+      ],
+      "outputKeys": [
+        "status",
+        "action"
+      ],
+      "params": [
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "description": "issue: something is broken. request: something is wanted.",
+          "enum": [
+            "issue",
+            "request"
+          ]
+        },
+        {
+          "name": "category",
+          "type": "array",
+          "required": true,
+          "description": "The category path, top level first. Set by the plan — pass it as given."
+        },
+        {
+          "name": "categoryCertainty",
+          "type": "number",
+          "required": true,
+          "description": "How sure you are, 0–100."
+        },
+        {
+          "name": "urgency",
+          "type": "string",
+          "required": true,
+          "description": "critical: cannot work at all; high: no workaround; medium: a workaround exists; low: cosmetic.",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        {
+          "name": "urgencyCertainty",
+          "type": "number",
+          "required": true,
+          "description": "How sure you are, 0–100."
+        },
+        {
+          "name": "affectedSystem",
+          "type": "string",
+          "required": true,
+          "description": "The primary app, device or service, by its common name; \"Unknown\" only when nothing can be inferred."
+        },
+        {
+          "name": "symptoms",
+          "type": "array",
+          "required": true,
+          "description": "Short phrases."
+        },
+        {
+          "name": "tags",
+          "type": "array",
+          "required": true,
+          "description": "Keywords for search and reporting."
+        },
+        {
+          "name": "sentiment",
+          "type": "string",
+          "required": true,
+          "description": "The requester's tone: neutral, frustrated, urgent …"
+        },
+        {
+          "name": "issueSummary",
+          "type": "string",
+          "required": true,
+          "description": "1–2 sentences a technician understands without the ticket: what, where, when."
+        },
+        {
+          "name": "entities",
+          "type": "string",
+          "required": true,
+          "description": "Identifiers named in the ticket. Never a password or other secret."
+        },
+        {
+          "name": "evidence",
+          "type": "array",
+          "required": true,
+          "description": "One entry per lookup that ran: the tool, why it ran, what it showed in plain words."
+        },
+        {
+          "name": "recommendations",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "automation",
+          "type": "string",
+          "required": true,
+          "description": "How much of this the tenant's connectors could have done, and the skill worth writing."
+        }
+      ]
+    },
+    {
       "toolId": "check_ad_binding",
       "description": "Checks whether the Mac is bound to an Active Directory domain and reports the binding status, domain name, and last successful authentication. Use when diagnosing AD login failures or password sync issues.",
       "riskLevel": "low",
@@ -2272,68 +2383,6 @@
           "type": "boolean",
           "required": false,
           "description": "If true, report the command(s) that would run without touching the system."
-        }
-      ]
-    },
-    {
-      "toolId": "present_intake_form",
-      "description": "Presents a structured intake form pre-filled by the executor LLM for user review and editing before ticket submission. Use in the triage skill to capture a request that has to go to IT.\n\nIMPORTANT — this is a user-wait GATE, not a regular tool. G4 bypasses the 60s TOOL_TIMEOUT_MS ceiling for this call and instead races the user's interaction against USER_ACK_TIMEOUT_MS (default 15 min). The gate injects `ticketingEnabled` from deployment config — do NOT pass it as a tool param.",
-      "riskLevel": "low",
-      "destructive": false,
-      "requiresConsent": false,
-      "supportsDryRun": false,
-      "isUserWaitGate": true,
-      "affectedScope": [
-        "user"
-      ],
-      "outputKeys": [
-        "category",
-        "urgency",
-        "summary",
-        "affectedSystem",
-        "symptoms",
-        "additionalNotes",
-        "action"
-      ],
-      "params": [
-        {
-          "name": "title",
-          "type": "string",
-          "required": true,
-          "description": "Card heading shown above the form (e.g. 'Review your IT request"
-        },
-        {
-          "name": "category",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "urgency",
-          "type": "string",
-          "required": true,
-          "enum": [
-            "low",
-            "medium",
-            "high",
-            "critical"
-          ]
-        },
-        {
-          "name": "summary",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "affectedSystem",
-          "type": "string",
-          "required": true,
-          "description": "The primary system, application, or device affected (e.g. 'Wi-Fi', 'Outlook', 'MacBook Pro"
-        },
-        {
-          "name": "symptoms",
-          "type": "array",
-          "required": true,
-          "description": "List of specific symptoms the user described. Each entry should be a short phrase (e.g. 'Wi-Fi drops every 10 minutes"
         }
       ]
     },
