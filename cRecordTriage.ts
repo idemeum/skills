@@ -25,7 +25,8 @@
  * the record is not repeated in the ticket's `steps[].diagnostics`. The
  * reviewed record is kept for the runtime, which posts it as the payload's
  * `triage` block. `action` is "submit" (Submit to IT), "continue" (ticketing
- * off) or "cancel" (Cancel, the 15-minute timeout, or an abort).
+ * off) or "cancel" (Cancel or the 15-minute timeout). An abort (Stop, a new
+ * run) with the form open returns `{ status: "stopped" }` and keeps no record.
  *
  * See docs/architecture/TRIAGE-ARCHITECTURE.md § Intake form gate and § Cancel.
  */

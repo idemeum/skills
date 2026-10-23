@@ -176,8 +176,11 @@ function resolveKbTimeout(): number {
 
 /**
  * Falls back to IDEMEUM_API_KEY, the same pattern every other outbound key
- * follows (TICKET_API_KEY, CLOUD_ENV_API_KEY …). The installer writes
- * CLOUD_KB_API_KEY explicitly; the fallback covers a hand-edited .env.
+ * follows (TICKET_API_KEY, CLOUD_ENV_API_KEY …). The installers do not write
+ * CLOUD_KB_API_KEY, so the fallback is the normal path on an installed
+ * machine; CLOUD_KB_API_KEY is only a per-endpoint override. `??` falls back
+ * only when it is unset — `CLOUD_KB_API_KEY=` (empty) suppresses the fallback
+ * and reads as not-configured.
  */
 function resolveKbApiKey(): string {
   return (

@@ -367,9 +367,15 @@
         "check_mail_account_config",
         "list_printers",
         "get_processes",
+        "c_entra_get_user_info",
+        "c_entra_get_mfa_status",
+        "c_entra_get_sign_in_logs",
+        "c_okta_get_user",
+        "c_okta_get_mfa_status",
+        "c_mdm_diagnose_configuration",
         "c_record_triage"
       ],
-      "steps": 2,
+      "steps": 8,
       "enabled": true
     },
     {
