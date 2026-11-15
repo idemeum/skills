@@ -20,8 +20,10 @@ allowed-tools:
   - c_entra_get_sign_in_logs
   - c_okta_get_user
   - c_okta_get_mfa_status
-  # Device lookup — picks Intune or Jamf from what this device reports.
+  # Device lookups — each uses the MDM or RMM that manages this machine
+  # (managedBy); the planner leaves out one that no provider serves here.
   - c_mdm_diagnose_configuration
+  - c_rmm_diagnose_device
   - c_record_triage
 metadata:
   maxAggregateRisk: low
@@ -95,7 +97,19 @@ Run the one read-only diagnostic for the category you picked, with default argum
 - `Security` → call `check_firewall_status`
 - `Other` → call `get_processes`
 
-Then the lookup for that category, and only that one — `Account/Access` and `Email`: the account in the user's identity provider (Steps 2–6); `Network`, `Software`, `Hardware`, `Performance`, `Security`: the device (Step 7); `Printing` and `Other`: none. If a lookup's tool is not in your allowed tools for this run, leave its step out.
+Then that category's lookups, and only those:
+
+| Category | Steps | Step 8 `facets` |
+|---|---|---|
+| `Account/Access`, `Email` | 2–6 | |
+| `Network` | 7, 8 | info, alerts |
+| `Software` | 7, 8 | alerts, patches |
+| `Hardware` | 7, 8 | info, disks |
+| `Performance` | 7, 8 | health, alerts, disks |
+| `Security` | 7, 8 | health, disks |
+| `Printing`, `Other` | none | |
+
+Leave out a step whose tool is not in your allowed tools, or that the Environment block says cannot run here.
 
 **Step 2 — Entra: the account**
 
@@ -117,17 +131,21 @@ Call `c_okta_get_user`: enabled or locked.
 
 Call `c_okta_get_mfa_status`: the methods registered.
 
-**Step 7 — The device**
+**Step 7 — MDM: the device**
 
-Call `c_mdm_diagnose_configuration` with `states: "compliance"`. It finds this device in Intune or Jamf and reports compliance and failed items; for `Network`, a non-compliant device or a failed certificate or profile often stops VPN or corporate Wi-Fi.
+Call `c_mdm_diagnose_configuration` with `states: "compliance"`. It finds this device in its MDM and reports compliance and failed items; for `Network`, a non-compliant device or a failed certificate or profile often stops VPN or corporate Wi-Fi.
 
-**Step 8 — Record the triage for the user to review**
+**Step 8 — RMM: the device**
+
+Call `c_rmm_diagnose_device` with the category's `facets` from the table.
+
+**Step 9 — Record the triage for the user to review**
 
 Call `c_record_triage` with `category: ["<the category you picked>"]`. It shows the record to the user on the intake form, to review before anything is sent to IT.
 
 ### Executor guidance
 
-Write every other field from the user's request, the knowledge-base answer and what Steps 1–7 found:
+Write every other field from the user's request, the knowledge-base answer and what Steps 1–8 found:
 - kind — issue: something is broken; request: something is wanted.
 - urgency — critical: the user cannot work at all; high: significant impact, no workaround; medium: a workaround exists; low: cosmetic or a question. When the user has not described the impact, medium.
 - categoryCertainty, urgencyCertainty — 0–100, how sure you are.
@@ -136,7 +154,7 @@ Write every other field from the user's request, the knowledge-base answer and w
 - symptoms — short phrases, at least one when anything can be inferred. tags — keywords.
 - sentiment — the user's tone: exactly one of neutral, frustrated or angry.
 - entities — persons, devices, software, vendors, locations and accounts the user named — each a list, empty when none. Never a password or other secret.
-- evidence — one entry per tool that ran in Steps 1–7: the tool, why it ran ("Category Network", "Account lookup", "Device lookup"), and what it showed in plain words ("DNS lookups fail; the gateway answers", "Account locked since 09:12", "Non-compliant: disk encryption off"). Write findings only from what the tool returned — never from the step's rationale or what it was meant to check. A device lookup that could not find the device says why ("not enrolled in MDM", "serial not found") — record that as its finding.
+- evidence — one entry per tool that ran in Steps 1–8: the tool, why it ran ("Category Network", "Account lookup", "Device lookup"), and what it showed in plain words ("DNS lookups fail; the gateway answers", "Account locked since 09:12", "Non-compliant: disk encryption off"). Write findings only from what the tool returned — never from the step's rationale or what it was meant to check. A device lookup that found nothing says why ("not enrolled in MDM", "Not found in NinjaOne") — record that as its finding.
 - recommendations — nextSteps: what IT should try first; alerts: { type, detail } for a security concern or a frustrated user, empty otherwise.
 - automation — score 0–100: how much of this the device's connectors could have done; relevantConnectors: which ones; recommendation: the skill worth writing, or "".
 

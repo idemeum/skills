@@ -3,8 +3,11 @@
  *
  * Provider-neutral, read-only MDM diagnosis. Collapses three SKILL.md steps —
  * `check_mdm_enrollment` → find device → read per-item states — into one call,
- * dispatching to a per-provider backend (`BACKENDS`) chosen from the locally
- * probed `mdmProvider`. Intune and Jamf are wired; the skills never name either.
+ * dispatching to a per-provider backend (`BACKENDS`) chosen from `managedBy` —
+ * the connectors appmanagement says know this machine's serial
+ * (ctx.deviceManagedBy; `pickBackend`), preferring the locally probed
+ * `mdmProvider` when both Intune and Jamf know it. Intune and Jamf are wired;
+ * the skills never name either.
  *
  * Naming
  * ------
@@ -47,6 +50,7 @@
 
 import { run as checkMdmEnrollment }        from "./checkMdmEnrollment";
 import { runCatalogTool }                   from "./_shared/catalogExecutor";
+import { pickBackend, type DeviceToolContext } from "./_shared/deviceProviders";
 import { z }                                from "zod";
 
 // -- Rules, as constants ------------------------------------------------------
@@ -91,16 +95,18 @@ interface BackendStates {
 }
 
 interface MdmBackend {
-  /** Tested against the locally probed `mdmProvider` string. */
+  /** The connector this backend calls — matched against `managedBy`. */
+  connectorId: string;
+  /** Tested against the locally probed `mdmProvider` string, to prefer it when several manage this machine. */
   matches: RegExp;
-  findDevice(ctx?: { deviceSerial?: string }): Promise<BackendDevice>;
+  findDevice(ctx?: DeviceToolContext): Promise<BackendDevice>;
   /**
    * Null when this provider cannot report the requested set at all — the run
    * ends in `state-set-unsupported` rather than pretending an empty result.
    */
   getStates(
     which: "configuration" | "compliance",
-    ctx?: { deviceSerial?: string },
+    ctx?: DeviceToolContext,
   ): Promise<BackendStates> | null;
   /**
    * Whether `getStates` returns every assigned item or only the failures.
@@ -143,6 +149,7 @@ interface JamfCommandsResult {
 
 const BACKENDS: MdmBackend[] = [
   {
+    connectorId: "intune",
     matches: /intune|microsoft|endpoint manager/i,
     findDevice: (ctx) =>
       runCatalogTool("c_intune_find_device", {}, ctx) as Promise<BackendDevice>,
@@ -156,6 +163,7 @@ const BACKENDS: MdmBackend[] = [
     reportsAllItems: true,
   },
   {
+    connectorId: "jamf",
     matches: /jamf/i,
     findDevice: async (ctx) => {
       const r = await runCatalogTool("c_jamf_find_device", {}, ctx) as JamfDeviceResult;
@@ -220,6 +228,10 @@ export const meta = {
   // ToolRunContext.deviceSerial — never a parameter. See CLAUDE.md
   // § meta.requiresDeviceSerial.
   requiresDeviceSerial: true,
+  // Read-only cloud lookup: passes G4's network-tier admin-or-MDM test.
+  kind:            "diagnostic",
+  // The planner leaves this step out when neither manages this machine.
+  deviceProviders: ["intune", "jamf"],
   sensitiveParams: [],
   outputKeys: [
     "outcome",
@@ -356,7 +368,7 @@ function base(
 
 export async function run(
   args: { states?: "configuration" | "compliance" | null } = {},
-  ctx?: { deviceSerial?: string },
+  ctx?: DeviceToolContext,
 ): Promise<MdmDiagnoseResult> {
   const which = args.states ?? "configuration";
   const noun  = which === "compliance" ? "compliance policy" : "configuration profile";
@@ -375,9 +387,17 @@ export async function run(
     );
   }
 
+  // The backend is an MDM that knows this machine's serial (`managedBy`),
+  // preferring the one the local probe names when both Intune and Jamf do.
   const provider = enrollment.mdmProvider;
-  const backend  = provider ? BACKENDS.find((b) => b.matches.test(provider)) : undefined;
-  if (!backend) {
+  const ours     = provider ? BACKENDS.some((b) => b.matches.test(provider)) : false;
+  const backend  = provider && !ours ? undefined : pickBackend(BACKENDS, ctx?.deviceManagedBy, provider);
+
+  // The local probe names an MDM this agent has no backend for (Kandji, …):
+  // that MDM holds this machine's configuration, so say which — even if the
+  // tenant's Intune also knows the serial. Or nothing names one and no
+  // connected MDM knows this machine.
+  if (!backend && (!provider || !ours)) {
     return base(
       "other-provider",
       `This device is managed by ${provider ?? "an unidentified provider"}, ` +
@@ -396,6 +416,18 @@ export async function run(
       "This device is MDM-managed but its hardware serial could not be read, " +
       "so it cannot be located in the tenant. Common on virtual machines.",
       { isEnrolled: true, mdmProvider: provider, serialNumber: null },
+    );
+  }
+
+  // Enrolled in Intune or Jamf, but the tenant's connected MDM does not have
+  // this serial (or the startup lookup has not succeeded — fail closed).
+  if (!backend) {
+    return base(
+      "not-found",
+      `This device is enrolled in ${provider}, but the tenant's connected MDM ` +
+      "does not know this machine's serial. It may be enrolled in another " +
+      "tenant, or its record may have been removed.",
+      { isEnrolled: true, mdmProvider: provider, serialNumber: ctx.deviceSerial },
     );
   }
 

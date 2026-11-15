@@ -373,9 +373,10 @@
         "c_okta_get_user",
         "c_okta_get_mfa_status",
         "c_mdm_diagnose_configuration",
+        "c_rmm_diagnose_device",
         "c_record_triage"
       ],
-      "steps": 8,
+      "steps": 9,
       "enabled": true
     },
     {

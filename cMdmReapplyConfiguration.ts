@@ -24,8 +24,9 @@
  * Not equally broad across providers. Intune re-delivers every assigned
  * configuration and compliance policy; Jamf reconciles DDM-managed declarations
  * only, because it exposes no per-device re-push for classic configuration
- * profiles. The backend is chosen from the locally probed provider, never
- * assumed — see BACKENDS below.
+ * profiles. The backend is chosen from `managedBy` (ctx.deviceManagedBy),
+ * preferring the locally probed provider when both know this machine — never
+ * assumed. See BACKENDS below.
  *
  * UNVERIFIED against a live gateway — see c_mdm_diagnose_configuration.
  */
@@ -33,6 +34,7 @@
 import { run as checkMdmEnrollment } from "./checkMdmEnrollment";
 import { z }              from "zod";
 import { runCatalogTool } from "./_shared/catalogExecutor";
+import { pickBackend, type DeviceToolContext } from "./_shared/deviceProviders";
 
 // -- Provider backends --------------------------------------------------------
 
@@ -41,12 +43,14 @@ import { runCatalogTool } from "./_shared/catalogExecutor";
  * c_mdm_diagnose_configuration — same providers, same match order.
  */
 interface ReapplyBackend {
+  /** The connector this backend calls — matched against `managedBy`. */
+  connectorId: string;
   matches: RegExp;
   /** Name reported back to the caller, so the skill can say what it asked. */
   label:   string;
   sync(
     args: { dryRun?: boolean },
-    ctx?: { deviceSerial?: string },
+    ctx?: DeviceToolContext,
   ): Promise<{
     status:         "ok" | "failed" | "not-configured";
     message:        string;
@@ -59,6 +63,7 @@ interface ReapplyBackend {
 
 const BACKENDS: ReapplyBackend[] = [
   {
+    connectorId: "intune",
     matches: /intune|microsoft|endpoint manager/i,
     label:   "Intune",
     sync:    (args, ctx) => runCatalogTool("c_intune_sync_device", args, ctx) as ReturnType<ReapplyBackend["sync"]>,
@@ -67,6 +72,7 @@ const BACKENDS: ReapplyBackend[] = [
     // Narrower than Intune's sync: this reconciles DDM-managed declarations
     // only. Jamf exposes no per-device re-push for classic configuration
     // profiles at all, so there is nothing broader to call.
+    connectorId: "jamf",
     matches: /jamf/i,
     label:   "Jamf Pro",
     sync:    (args, ctx) => runCatalogTool("c_jamf_force_ddm_sync", args, ctx) as ReturnType<ReapplyBackend["sync"]>,
@@ -89,6 +95,10 @@ export const meta = {
   auditRequired:   true,
   affectedScope:   ["network"],
   requiresDeviceSerial: true,
+  // Changes device state: keeps G4's network-tier admin-or-MDM test.
+  kind:            "corrective",
+  // The planner leaves this step out when neither manages this machine.
+  deviceProviders: ["intune", "jamf"],
   sensitiveParams: [],
   outputKeys: [
     "status",
@@ -124,7 +134,7 @@ export interface MdmReapplyResult {
 
 export async function run(
   args: { dryRun?: boolean } = {},
-  ctx?: { deviceSerial?: string; mdmProvider?: string },
+  ctx?: DeviceToolContext & { mdmProvider?: string },
 ): Promise<MdmReapplyResult> {
   // Fail closed on an unreadable serial rather than letting the wrapped tool
   // decide — the message here names the cause the user can act on.
@@ -137,20 +147,39 @@ export async function run(
     };
   }
 
-  // Nothing injects ctx.mdmProvider today, so this resolves it from the same
-  // local probe the diagnosis uses. Defaulting to one provider was harmless
-  // while only Intune was reachable; with two backends it would send an Intune
-  // sync to a Jamf-managed Mac.
+  // The backend is one of the MDMs that know this machine (`managedBy`), never
+  // a default: an Intune sync sent to a Jamf-managed Mac would address nothing.
+  // The local probe only breaks a tie when both know it — the same choice the
+  // diagnosis made. Nothing injects ctx.mdmProvider today.
   const provider = ctx.mdmProvider ?? (await checkMdmEnrollment()).mdmProvider;
-  const backend  = provider ? BACKENDS.find((b) => b.matches.test(provider)) : undefined;
+  const ours     = provider ? BACKENDS.some((b) => b.matches.test(provider)) : false;
+
+  // An MDM this agent has no backend for (Kandji, …) holds this machine's
+  // configuration: a sync sent to another MDM would re-apply nothing.
+  if (provider && !ours) {
+    return {
+      status:   "failed",
+      provider,
+      message:
+        `This device is managed by ${provider}, which this agent cannot ` +
+        "reach yet. The re-apply must be issued from the MDM console.",
+    };
+  }
+
+  // With no provider named, act only when exactly one connected MDM knows this
+  // machine — never guess between two.
+  const managing = BACKENDS.filter((b) => (ctx.deviceManagedBy ?? []).includes(b.connectorId));
+  const backend  = provider
+    ? pickBackend(BACKENDS, ctx.deviceManagedBy, provider)
+    : managing.length === 1 ? managing[0] : undefined;
 
   if (!backend) {
     return {
       status:   "failed",
       provider: provider ?? undefined,
-      message: provider
-        ? `This device is managed by ${provider}, which this agent cannot ` +
-          "reach yet. The re-apply must be issued from the MDM console."
+      message: provider || managing.length === 0
+        ? "No MDM connected to this tenant manages this device, so the re-apply " +
+          "cannot be routed. It must be issued from the MDM console."
         : "This device's MDM provider could not be determined, so the re-apply " +
           "cannot be routed. It must be issued from the MDM console.",
     };
