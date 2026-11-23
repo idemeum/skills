@@ -99,23 +99,30 @@ interface DuplicateGroup {
 
 const MAX_DEPTH = 10;
 
-const SKIP_DIRS = new Set([
-  "node_modules", ".git", ".npm", ".yarn", ".cache",
-  "__pycache__", ".venv", "venv",
-  // Trash directories are excluded explicitly so dupes in the Trash don't
-  // double-count against the dedicated "trash" cleanup category — see the
-  // matching comment in getLargeFiles.ts SKIP_DIRS.
-  ".Trash", ".Trashes",                  // macOS trash (user + per-volume)
-  "$Recycle.Bin", "System Volume Information",
-  // macOS app sandbox roots — not user-meaningful "duplicates", and they
-  // dominate ~/Library walk time. Same set used by the cache scanners.
-  "Containers", "Group Containers", "Caches",
-  // Windows-only: Store/UWP app sandboxes (Packages) contain cross-app
-  // duplicate components (Edge WebView, etc.) that must not be deleted, and
-  // DirectX shader cache (D3DSCache) is system-generated noise. Skipping
-  // both cuts walk time significantly on Windows home directories.
-  ...(process.platform === "win32" ? ["Packages", "D3DSCache"] : []),
-]);
+export function skipDirs(platform: NodeJS.Platform = process.platform): ReadonlySet<string> {
+  return new Set([
+    "node_modules", ".git", ".npm", ".yarn", ".cache",
+    "__pycache__", ".venv", "venv",
+    // Trash directories are excluded explicitly so dupes in the Trash don't
+    // double-count against the dedicated "trash" cleanup category — see the
+    // matching comment in getLargeFiles.ts SKIP_DIRS.
+    ".Trash", ".Trashes",                  // macOS trash (user + per-volume)
+    "$Recycle.Bin", "System Volume Information",
+    // macOS app sandbox roots — not user-meaningful "duplicates", and they
+    // dominate ~/Library walk time. Same set used by the cache scanners.
+    "Containers", "Group Containers", "Caches",
+    // Windows-only: Store/UWP app sandboxes (Packages) contain cross-app
+    // duplicate components (Edge WebView, etc.) that must not be deleted, and
+    // DirectX shader cache (D3DSCache) is system-generated noise. Skipping
+    // both cuts walk time significantly on Windows home directories.
+    // AppData too: app data and per-user installed apps, where a "duplicate"
+    // is often a file an app needs (OneDrive keeps its installer in each
+    // version folder). Same reason as getLargeFiles.ts skipDirs().
+    ...(platform === "win32" ? ["AppData", "Packages", "D3DSCache"] : []),
+  ]);
+}
+
+const SKIP_DIRS = skipDirs();
 
 // On Windows HDDs, 16 concurrent readers cause disk-head thrashing — each
 // reader forces random seeks across 16 different file positions, serialising

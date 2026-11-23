@@ -92,17 +92,25 @@ const MAX_DEPTH         = 12; // prevent stack overflow on deep trees
 // Trash double-count under both the "large-files" and "trash" categories
 // on the cleanup card, and a "large-files" deletion would race against
 // the user's "trash" empty.
-const SKIP_DIRS = new Set([
-  "node_modules", ".git", ".npm", ".yarn", ".cache",
-  "Library", "__pycache__", ".venv", "venv",
-  ".Trash", ".Trashes",                      // macOS trash (user + per-volume)
-  "$Recycle.Bin", "System Volume Information", "Windows",
-  "Program Files", "Program Files (x86)",
-  // Windows-only: Store/UWP app sandboxes (134+ dirs, thousands of entries
-  // per app — Teams alone has ~3,800) and DirectX shader cache. Neither
-  // contains user-meaningful large files.
-  ...(process.platform === "win32" ? ["Packages", "D3DSCache"] : []),
-]);
+export function skipDirs(platform: NodeJS.Platform = process.platform): ReadonlySet<string> {
+  return new Set([
+    "node_modules", ".git", ".npm", ".yarn", ".cache",
+    "Library", "__pycache__", ".venv", "venv",
+    ".Trash", ".Trashes",                      // macOS trash (user + per-volume)
+    "$Recycle.Bin", "System Volume Information", "Windows",
+    "Program Files", "Program Files (x86)",
+    // Windows-only. AppData is Windows' Library: app data, settings, caches
+    // and per-user installed apps — never a file the user would delete by
+    // hand. Observed 2026-11-22: the cleanup card offered OneDriveSetup.exe
+    // from OneDrive's live install folder (AppData\Local\Microsoft\OneDrive\
+    // <version>). Its caches are cleared by the cache categories instead.
+    // Packages and D3DSCache are skipped too where AppData is reached by
+    // another route (a scan rooted inside it).
+    ...(platform === "win32" ? ["AppData", "Packages", "D3DSCache"] : []),
+  ]);
+}
+
+const SKIP_DIRS = skipDirs();
 
 // formatBytes is imported from _shared/formatBytes.
 
