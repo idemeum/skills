@@ -190,9 +190,9 @@ Step 9 returns `{ selected: string[] }` — the category ids the user kept check
 
 For each category id in Step 9's `selected` output, call the relevant tool. Do NOT pass `dryRun` — the dry-run preview + consent flow is applied automatically for every destructive tool.
 
-- `"large-files"`    → call `delete_files` **once** with `paths: [<every file.path from Step 2's output.files>]`. Step 2 already returns at most 10 files via `limit: 10`, so this is naturally bounded. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
-- `"duplicates"`     → call `delete_files` **once** with `paths: [<every entry.path from Step 3's output.topDeletables>]`. Step 3 already returned at most 10 pre-sorted deletables via `topDeletableLimit: 10`, so no per-group selection logic is needed at this step. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
-- `"old-downloads"`  → collect every `oldFiles[].path` from the `find_old_downloads` output and call `delete_files` **once** with `paths: [<all old-download paths>]`. A single batched call produces one dry-run preview (listing every stale download) and one consent prompt — never iterate per file.
+- `"large-files"`    → call `delete_files` **once** with `inputsFrom: [{ source: "steps.2.output.paths", param: "paths" }]`. Step 2 already returns at most 10 files via `limit: 10`, so this is naturally bounded. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
+- `"duplicates"`     → call `delete_files` **once** with `inputsFrom: [{ source: "steps.3.output.deletablePaths", param: "paths" }]`. Step 3 already returned at most 10 pre-sorted deletables via `topDeletableLimit: 10`, so no per-group selection logic is needed at this step. A single batched call produces one dry-run preview (listing all files) and one consent prompt — never iterate per file.
+- `"old-downloads"`  → call `delete_files` **once** with `inputsFrom: [{ source: "steps.4.output.paths", param: "paths" }]`. A single batched call produces one dry-run preview (listing every stale download) and one consent prompt — never iterate per file.
 - `"app-cache"`      → call `clear_app_cache`
 - `"browser-cache"`  → call `clear_browser_cache` with `browser: "all"`
 - `"dev-cache"`      → call `clear_dev_cache`
@@ -200,7 +200,9 @@ For each category id in Step 9's `selected` output, call the relevant tool. Do N
 - `"docker"`         → call `prune_docker`
 - `"trash"`          → call `empty_trash`
 
-Each corrective step sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `Condition:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
+Bind each `paths` from the flat list the scan tool returns (`output.paths` / `output.deletablePaths`) — never `output.files.path`, `output.topDeletables.path` or `output.oldFiles.path`: a reference cannot read a field from every item of a list, so the step fails and nothing is deleted.
+
+Each corrective step also sets `inputsFrom: [{ step: <step-9-index>, field: "selected" }]` and a `Condition:` clause testing whether its category id is in the selection (e.g. `only if "large-files" is in Step 9's selected`). Skip silently when the category id is not in `selected`.
 
 **Step 11 — Final report**
 Call `get_disk_usage` to show the current free space on the volume (fast, no recursive walk). Then summarise total space recovered by aggregating the bytes-freed values from each Step 10 corrective tool's output already in the scratchpad. Do NOT call `disk_scan` here — it is slow, redundant with Step 1, and produces a second plan entry that the plan-order gate blocks until all diagnostic steps complete.

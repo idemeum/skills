@@ -49,7 +49,7 @@ export const meta = {
   // ctx.deadlineMs internally and returns partial results before this
   // hard timeout fires.
   timeoutMs:       180_000,
-  outputKeys: ["scannedPath","scannedFiles","topDeletables","partial","warning","duplicateGroups","totalWastedBytes"],
+  outputKeys: ["scannedPath","scannedFiles","topDeletables","deletablePaths","partial","warning","duplicateGroups","totalWastedBytes"],
   schema: {
     path: z
       .string()
@@ -72,7 +72,8 @@ export const meta = {
         "When set, the tool returns ONLY a pre-computed `topDeletables: " +
         "[{path, sizeBytes}]` array of the N largest deletable duplicate " +
         "files (one keeper per group is preserved; the rest are deletable, " +
-        "ranked by per-file size descending). `duplicateGroups` and " +
+        "ranked by per-file size descending), plus the same paths as a flat " +
+        "`deletablePaths: string[]`. `duplicateGroups` and " +
         "`totalWastedBytes` are omitted to prevent downstream substitution " +
         "from accidentally surfacing scan-wide aggregates as if they were " +
         "the actionable slice. Use this when the caller wants a bounded " +
@@ -387,6 +388,10 @@ export async function run(
       scannedPath:   scanPath,
       scannedFiles:  files.length,
       topDeletables,
+      // The same paths as a flat list, bindable into one delete_files call
+      // (`paths ← steps.3.output.deletablePaths`) — a reference cannot read
+      // a field from every item of a list.
+      deletablePaths: topDeletables.map((d) => d.path),
       partial:       walkStats.deadlineHit || hashDeadlineHit,
       ...(warning ? { warning } : {}),
     };

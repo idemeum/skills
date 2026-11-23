@@ -7,7 +7,11 @@
  * Platform strategy
  * -----------------
  * darwin  Scans ~/Library/Caches — subdirectories per application
- * win32   Scans %LOCALAPPDATA% and %TEMP% for app cache folders
+ * win32   Clears only known cache folders: cache-named folders inside each
+ *         app's folder in %LOCALAPPDATA% / %APPDATA% (Slack\Cache, GPUCache),
+ *         whole-cache folders (D3DSCache, CrashDumps) and the contents of
+ *         %TEMP%. Never the top-level folders of %LOCALAPPDATA% — those hold
+ *         app data and installed apps. See _shared/win32AppCaches.ts.
  *
  * Smoke test
  *   npx tsx -r dotenv/config mcp/skills/clearAppCache.ts [appName]
@@ -21,11 +25,11 @@ import { z }         from "zod";
 import {
   DARWIN_BROWSER_CACHE_DIR_NAMES,
   WIN32_BROWSER_VENDOR_DIR_NAMES,
-  isWin32BrowserVendorDir,
 } from "./_shared/browserCaches";
 import { DEV_CACHE_DIR_NAMES, isDevCacheDir } from "./_shared/devCaches";
 import { getDirSizeBytes } from "./_shared/dirSize";
 import type { Footprint } from "./_shared/footprint";
+import { WIN32_NEVER_ENTER_DIR_NAMES, isInsideRoots, listWin32AppCaches, win32CacheDirs } from "./_shared/win32AppCaches";
 
 // -- Meta ---------------------------------------------------------------------
 
@@ -41,10 +45,11 @@ const APP_CACHE_FOOTPRINT: Footprint = {
     ],
   },
   win32: {
-    roots: ["%LOCALAPPDATA%", "%TEMP%"],
+    roots: ["%LOCALAPPDATA%", "%APPDATA%", "%TEMP%"],
     excludes: [
-      ...[...WIN32_BROWSER_VENDOR_DIR_NAMES].map((n) => `%LOCALAPPDATA%/${n}`),
+      ...[...WIN32_BROWSER_VENDOR_DIR_NAMES].flatMap((n) => [`%LOCALAPPDATA%/${n}`, `%APPDATA%/${n}`]),
       ...[...DEV_CACHE_DIR_NAMES].map((n) => `%LOCALAPPDATA%/${n}`),
+      ...[...WIN32_NEVER_ENTER_DIR_NAMES].map((n) => `%LOCALAPPDATA%/${n}`),
     ],
   },
 };
@@ -68,7 +73,7 @@ export const meta = {
     appName: z
       .string()
       .nullable().optional()
-      .describe("App name to target (e.g. 'Slack', 'Chrome'). Omit + dryRun:false to clear every app cache (used by the disk-cleanup present_preview flow)."),
+      .describe("App name to target (e.g. 'Slack'). Narrows the list of caches; on Windows only the app's cache folders are cleared, never the app itself. Omit + dryRun:false to clear every app cache (used by the disk-cleanup present_preview flow)."),
     dryRun: z
       .boolean()
       .nullable().optional()
@@ -190,57 +195,44 @@ async function clearAppCacheWin32(
   dryRun:     boolean,
   deadlineMs: number,
 ): Promise<{ caches: CacheEntry[]; totalSizeMb: number; deleted: boolean; freedMb: number }> {
-  const localAppData = process.env["LOCALAPPDATA"] ?? nodePath.join(os.homedir(), "AppData", "Local");
-  const tempDir      = process.env["TEMP"]         ?? nodePath.join(os.homedir(), "AppData", "Local", "Temp");
+  // Only known cache folders — never the top-level folders of %LOCALAPPDATA%,
+  // which hold app data and installed apps. See _shared/win32AppCaches.ts.
+  const { localAppData, roamingAppData, tempDir } = win32CacheDirs();
+  const roots = [localAppData, roamingAppData, tempDir];
+  const { targets } = await listWin32AppCaches(appName);
 
-  const roots = [localAppData, tempDir];
-  const seen  = new Set<string>();
-  const all:  { name: string; fullPath: string; root: string }[] = [];
-
-  for (const root of roots) {
-    let dirents: import("fs").Dirent[];
-    try {
-      dirents = await fs.readdir(root, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const d of dirents) {
-      if (!d.isDirectory() || seen.has(d.name.toLowerCase())) continue;
-      if (appName && !d.name.toLowerCase().includes(appName.toLowerCase())) continue;
-      // In the bulk (no appName) flow, NEVER recurse-delete a browser vendor
-      // dir (holds the full browser profile, not just cache) or a dev cache dir
-      // (pip/Yarn) — those are owned by clear_browser_cache / clear_dev_cache.
-      // An explicit appName target still wins.
-      // See _shared/browserCaches.ts and _shared/devCaches.ts.
-      if (!appName && (isWin32BrowserVendorDir(d.name) || isDevCacheDir(d.name))) continue;
-      seen.add(d.name.toLowerCase());
-      all.push({ name: d.name, fullPath: nodePath.join(root, d.name), root });
-    }
-  }
-
-  const caches: CacheEntry[] = await Promise.all(
-    all.map(async ({ name, fullPath }) => {
-      const { sizeBytes } = await getDirSizeBytes(fullPath, deadlineMs);
-      return { name, path: fullPath, sizeMb: Math.round((sizeBytes / 1_000_000) * 100) / 100 };
+  const sized = await Promise.all(
+    targets.map(async (target) => {
+      const { sizeBytes } = await getDirSizeBytes(target.path, deadlineMs);
+      return { target, entry: { name: target.name, path: target.path, sizeMb: toMb(sizeBytes) } };
     }),
   );
-
-  caches.sort((a, b) => b.sizeMb - a.sizeMb);
+  sized.sort((a, b) => b.entry.sizeMb - a.entry.sizeMb);
+  const caches      = sized.map((s) => s.entry);
   const totalSizeMb = Math.round(caches.reduce((s, c) => s + c.sizeMb, 0) * 100) / 100;
 
   if (dryRun || caches.length === 0) {
     return { caches, totalSizeMb, deleted: false, freedMb: 0 };
   }
 
-  // dryRun:false → delete every cache in `caches`. Same semantics as the
-  // darwin branch: appName-filtered when set, every cache subdir when omitted.
   let freedMb = 0;
-  for (const cache of caches) {
-    const root = roots.find((r) => cache.path.startsWith(r));
-    if (!root || !isSafePath(cache.path, root)) continue;
+  for (const { target, entry } of sized) {
+    if (!isInsideRoots(target.path, roots)) continue;
+    if (target.contentsOnly) {
+      // %TEMP%: clear what is inside, keep the folder. Files in use stay;
+      // freed is what the folder lost.
+      let children: string[] = [];
+      try { children = await fs.readdir(target.path); } catch { continue; }
+      for (const child of children) {
+        await fs.rm(nodePath.join(target.path, child), { recursive: true, force: true }).catch(() => {});
+      }
+      const after = await getDirSizeBytes(target.path, Infinity);
+      freedMb += Math.max(0, entry.sizeMb - toMb(after.sizeBytes));
+      continue;
+    }
     try {
-      await fs.rm(cache.path, { recursive: true, force: true });
-      freedMb += cache.sizeMb;
+      await fs.rm(target.path, { recursive: true, force: true });
+      freedMb += entry.sizeMb;
     } catch {
       // skip items we can't remove
     }
@@ -252,6 +244,11 @@ async function clearAppCacheWin32(
     deleted: true,
     freedMb: Math.round(freedMb * 100) / 100,
   };
+}
+
+/** Bytes to SI/decimal MB, two decimals — matches _shared/formatBytes.ts. */
+function toMb(bytes: number): number {
+  return Math.round((bytes / 1_000_000) * 100) / 100;
 }
 
 // -- Exported run function ----------------------------------------------------

@@ -952,7 +952,7 @@
           "name": "appName",
           "type": "string",
           "required": false,
-          "description": "App name to target (e.g. 'Slack', 'Chrome"
+          "description": "App name to target (e.g. 'Slack"
         },
         {
           "name": "dryRun",
@@ -1443,6 +1443,7 @@
         "scannedPath",
         "scannedFiles",
         "topDeletables",
+        "deletablePaths",
         "partial",
         "warning",
         "duplicateGroups",
@@ -1489,6 +1490,7 @@
         "downloadsPath",
         "totalFiles",
         "oldFiles",
+        "paths",
         "totalBytes",
         "totalHuman",
         "message",
@@ -1621,7 +1623,7 @@
     },
     {
       "toolId": "get_app_cache_info",
-      "description": "Reports per-application cache directory sizes on macOS (~/Library/Caches) or Windows (%LOCALAPPDATA% / %TEMP%) without deleting anything. Read-only counterpart to clear_app_cache.",
+      "description": "Reports per-application cache directory sizes on macOS (~/Library/Caches) or Windows (known cache folders in %LOCALAPPDATA% / %APPDATA%, and %TEMP%) without deleting anything. Read-only counterpart to clear_app_cache.",
       "riskLevel": "low",
       "destructive": false,
       "requiresConsent": false,
@@ -1840,6 +1842,7 @@
         "minSizeHuman",
         "returned",
         "files",
+        "paths",
         "totalFound",
         "totalBytes",
         "warning"

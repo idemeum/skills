@@ -35,7 +35,7 @@ export const meta = {
   supportsDryRun:  false,
   affectedScope:   ["user"],
   auditRequired:   false,
-  outputKeys: ["platform","downloadsPath","totalFiles","oldFiles","totalBytes","totalHuman","message","error"],
+  outputKeys: ["platform","downloadsPath","totalFiles","oldFiles","paths","totalBytes","totalHuman","message","error"],
   schema: {
     olderThanDays: z
       .number()
@@ -80,6 +80,7 @@ export async function run({
       downloadsPath,
       totalFiles:  0,
       oldFiles:    [] as OldFile[],
+      paths:       [] as string[],
       totalBytes:  0,
       totalHuman:  formatBytes(0),
       message:     `Downloads folder not found at: ${downloadsPath}`,
@@ -105,6 +106,7 @@ export async function run({
         downloadsPath,
         totalFiles:  0,
         oldFiles:    [] as OldFile[],
+        paths:       [] as string[],
         totalBytes:  0,
         totalHuman:  formatBytes(0),
         error:
@@ -161,6 +163,10 @@ export async function run({
     downloadsPath,
     totalFiles,
     oldFiles,
+    // The same paths as a flat list, bindable into one delete_files call
+    // (`paths ← steps.4.output.paths`) — a reference cannot read a field
+    // from every item of a list.
+    paths: oldFiles.map((f) => f.path),
     totalBytes,
     totalHuman: formatBytes(totalBytes),
   };

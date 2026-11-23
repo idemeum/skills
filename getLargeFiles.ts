@@ -58,7 +58,7 @@ export const meta = {
   // Defender/OneDrive overhead this can take 40–60 s on a populated home;
   // 180 s matches find_duplicate_files which does the same walk plus hashing.
   timeoutMs:       180_000,
-  outputKeys: ["scannedPath","minSizeBytes","minSizeHuman","returned","files","totalFound","totalBytes","warning"],
+  outputKeys: ["scannedPath","minSizeBytes","minSizeHuman","returned","files","paths","totalFound","totalBytes","warning"],
   schema: {
     path: z
       .string()
@@ -269,6 +269,11 @@ export async function run({
     minSizeHuman: formatBytes(minSizeBytes),
     returned:     files.length,
     files,
+    // The same paths as a flat list, so a plan can bind them into one
+    // delete_files call (`paths ← steps.2.output.paths`). A reference cannot
+    // read a field from every item of a list (`files.path`) — see
+    // docs/architecture/PLAN-THEN-EXECUTE-ARCHITECTURE.md § How values reach a tool.
+    paths:        files.map((f) => f.path),
     // Aggregates spanning the full match set (not the returned slice) are
     // only included when the caller did NOT specify `limit`. With limit set,
     // the caller already declared they want a bounded view; surfacing the

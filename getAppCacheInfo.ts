@@ -9,13 +9,14 @@
  * Platform strategy
  * -----------------
  * darwin  Scans ~/Library/Caches — subdirectories per application.
- * win32   Scans %LOCALAPPDATA% and %TEMP% for app cache folders.
+ * win32   Known cache folders only — see _shared/win32AppCaches.ts.
  *
  * Smoke test
  *   npx tsx -r dotenv/config mcp/skills/getAppCacheInfo.ts
  *
- * NOTE: enumeration logic is duplicated from `clearAppCache.ts` — keep
- * in sync if cache-directory roots or sizing approach change.
+ * NOTE: the darwin enumeration is duplicated from `clearAppCache.ts` — keep
+ * in sync if cache-directory roots or sizing approach change. win32 lists
+ * through _shared/win32AppCaches.ts, shared with clearAppCache.ts.
  */
 
 import * as fs       from "fs/promises";
@@ -25,7 +26,8 @@ import * as nodePath from "path";
 import { isDarwin, isWin32 } from "./_shared/platform";
 import { getDirSizeBytes as getDirSizeBytesShared } from "./_shared/dirSize";
 import { formatBytes } from "./_shared/formatBytes";
-import { DARWIN_BROWSER_CACHE_DIR_NAMES, isWin32BrowserVendorDir } from "./_shared/browserCaches";
+import { DARWIN_BROWSER_CACHE_DIR_NAMES } from "./_shared/browserCaches";
+import { listWin32AppCaches } from "./_shared/win32AppCaches";
 import { isDevCacheDir } from "./_shared/devCaches";
 
 // -- Meta ---------------------------------------------------------------------
@@ -34,7 +36,7 @@ export const meta = {
   name: "get_app_cache_info",
   description:
     "Reports per-application cache directory sizes on macOS (~/Library/Caches) " +
-    "or Windows (%LOCALAPPDATA% / %TEMP%) without deleting anything. Read-only " +
+    "or Windows (known cache folders in %LOCALAPPDATA% / %APPDATA%, and %TEMP%) without deleting anything. Read-only " +
     "counterpart to clear_app_cache.",
   riskLevel:       "low",
   destructive:     false,
@@ -132,29 +134,10 @@ async function getAppCacheInfoDarwin(deadlineMs: number): Promise<GetAppCacheInf
 // -- win32 --------------------------------------------------------------------
 
 async function getAppCacheInfoWin32(deadlineMs: number): Promise<GetAppCacheInfoResult> {
-  const localAppData = process.env["LOCALAPPDATA"] ?? nodePath.join(os.homedir(), "AppData", "Local");
-  const tempDir      = process.env["TEMP"]         ?? nodePath.join(localAppData, "Temp");
-
-  const roots = [localAppData, tempDir];
-  const seen  = new Set<string>();
-  const errors: GetAppCacheInfoResult["errors"] = [];
-  const all:  { name: string; fullPath: string }[] = [];
-
-  for (const root of roots) {
-    let dirents: import("fs").Dirent[];
-    try {
-      dirents = await fs.readdir(root, { withFileTypes: true });
-    } catch (err) {
-      errors.push({ scope: root, message: (err as Error).message });
-      continue;
-    }
-    for (const d of dirents) {
-      if (!d.isDirectory() || seen.has(d.name.toLowerCase())) continue;
-      if (isWin32BrowserVendorDir(d.name) || isDevCacheDir(d.name)) continue;
-      seen.add(d.name.toLowerCase());
-      all.push({ name: d.name, fullPath: nodePath.join(root, d.name) });
-    }
-  }
+  // The same folders clear_app_cache clears — known cache folders only, never
+  // the top-level folders of %LOCALAPPDATA%. See _shared/win32AppCaches.ts.
+  const { targets, errors } = await listWin32AppCaches();
+  const all = targets.map((t) => ({ name: t.name, fullPath: t.path }));
 
   let anyPartial = false;
   const caches: AppCacheEntry[] = await Promise.all(
