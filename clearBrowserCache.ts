@@ -113,6 +113,34 @@ function isSafePath(target: string, allowedRoot: string): boolean {
   return !rel.startsWith("..") && !nodePath.isAbsolute(rel);
 }
 
+/**
+ * What to tell the user when a browser cache could not be cleared.
+ * `sizeMb` set: the clear ran but the cache is still there. Unset: access denied.
+ * On macOS the cause is a Full Disk Access (TCC) denial. Windows has no such
+ * grant: the browser is open and holds its cache files, so close it.
+ */
+export function cacheNotClearedMessage(
+  name:     string,
+  platform: NodeJS.Platform = process.platform,
+  sizeMb?:  number,
+): string {
+  if (platform === "win32") {
+    const what = sizeMb !== undefined
+      ? `Could not clear ${name} cache (${sizeMb} MB still present after the operation). `
+      : `Could not clear ${name} cache — Windows denied access. `;
+    return what + `${name} is probably open and holds its cache files. Close ${name}, then run the cleanup again.`;
+  }
+  if (sizeMb !== undefined) {
+    return `Could not clear ${name} cache (${sizeMb} MB still present after ` +
+      `the operation). Full Disk Access is required to remove protected ` +
+      `browser cache files. Open System Settings → Privacy & Security → ` +
+      `Full Disk Access, enable AI Support Agent, then quit and relaunch.`;
+  }
+  return `Could not clear ${name} cache — macOS denied access. ` +
+    `Open System Settings → Privacy & Security → Full Disk Access, ` +
+    `enable AI Support Agent, then quit and relaunch.`;
+}
+
 async function processCachePath(
   name:      string,
   cachePath: string,
@@ -144,17 +172,14 @@ async function processCachePath(
     // The rm loop reports success (Promise.allSettled never throws), but
     // individual removes may have been denied silently. Re-measure after
     // the clear: if size barely changed, the cache wasn't actually cleared
-    // — almost always a TCC denial on a protected browser cache directory.
+    // — on macOS almost always a TCC denial on a protected browser cache
+    // directory; on Windows, the browser is open and holds its files.
     const sizeAfterMb = await getDirSizeMb(cachePath);
     if (sizeMb > 0 && sizeAfterMb >= sizeMb * 0.9) {
       return {
         name, cachePath, sizeMb,
         cleared: false,
-        error:
-          `Could not clear ${name} cache (${sizeMb} MB still present after ` +
-          `the operation). Full Disk Access is required to remove protected ` +
-          `browser cache files. Open System Settings → Privacy & Security → ` +
-          `Full Disk Access, enable AI Support Agent, then quit and relaunch.`,
+        error: cacheNotClearedMessage(name, process.platform, sizeMb),
       };
     }
 
@@ -165,10 +190,7 @@ async function processCachePath(
       return {
         name, cachePath, sizeMb,
         cleared: false,
-        error:
-          `Could not clear ${name} cache — macOS denied access. ` +
-          `Open System Settings → Privacy & Security → Full Disk Access, ` +
-          `enable AI Support Agent, then quit and relaunch.`,
+        error: cacheNotClearedMessage(name, process.platform),
       };
     }
     return { name, cachePath, sizeMb, cleared: false };
